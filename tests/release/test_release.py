@@ -44,7 +44,7 @@ class ReleaseTests(unittest.TestCase):
     def test_feed_hashes_package_identity_and_exact_file_set(self):
         with tempfile.TemporaryDirectory() as temp:
             p = Path(temp); v = '2026.1.0-alpha.1'
-            package = p / f'{release.PACKAGE}-{v}-win-x64-full.nupkg'
+            package = p / f'{release.PACKAGE}-{v}-workflow-win-x64-full.nupkg'
             with zipfile.ZipFile(package, 'w') as z:
                 z.writestr('test.nuspec', f'<package><metadata><id>{release.PACKAGE}</id><version>{v}</version></metadata></package>')
                 z.writestr('lib/app/' + release.EXECUTABLE, b'fixture')

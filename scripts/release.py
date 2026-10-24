@@ -69,7 +69,7 @@ def verify_publish(path):
 def verify_release(path, value):
     p = plan(value)
     path = Path(path)
-    package_name = f"{PACKAGE}-{p['version']}-win-x64-full.nupkg"
+    package_name = f"{PACKAGE}-{p['version']}-{CHANNEL}-full.nupkg"
     setup_name = f"JournalNext-{p['version']}-win-x64-OfflineSetup.exe"
     expected = {package_name, setup_name, p['feed'], "SHA256SUMS"}
     if {f.name for f in path.iterdir()} != expected:
@@ -137,12 +137,17 @@ def package(value):
                         '--noPortable', '--framework', 'net10.0-x64-runtime,net10.0-x86-runtime',
                         '--icon', str(ROOT / 'docs/design/assets/journal-icon.ico')], cwd=ROOT, check=True)
         from windows_installer import build_offline_installer
+        package_path = updates / f"{PACKAGE}-{p['version']}-{CHANNEL}-full.nupkg"
+        feed_path = updates / p['feed']
+        for expected in (package_path, feed_path):
+            if not expected.is_file():
+                raise ValueError(f"Velopack did not create {expected.name}; produced: {sorted(f.name for f in updates.iterdir())}")
         setups = list(updates.glob('*Setup.exe'))
         if len(setups) != 1:
             raise ValueError("Expected one Velopack bootstrap installer")
         (temp / 'installer').mkdir()
         offline = build_offline_installer(setups[0], staging / 'AccessHost', temp / 'installer', p['version'])
-        names = [offline, updates / f"{PACKAGE}-{p['version']}-win-x64-full.nupkg", updates / p['feed']]
+        names = [offline, package_path, feed_path]
         for item in names:
             shutil.copy2(item, output / item.name)
         (output / 'SHA256SUMS').write_text(''.join(f'{sha(output / n.name)}  {n.name}\n' for n in sorted(names, key=lambda n: n.name)), encoding='utf-8', newline='\n')
