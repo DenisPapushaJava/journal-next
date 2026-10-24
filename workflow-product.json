@@ -1,0 +1,10 @@
+{
+  "productId": "DenisPapusha.JournalWorkflow",
+  "displayName": "Journal Next",
+  "settingsFolder": "JournalWorkflow",
+  "channelPrefix": "workflow",
+  "tagPrefix": "workflow-v",
+  "mainExecutable": "Jornal.Workflow.Desktop.exe",
+  "updatesRepository": "https://github.com/DenisPapushaJava/journal-next",
+  "publicationEnabled": true
+}

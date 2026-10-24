@@ -1,0 +1,175 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:svg="clr-namespace:Avalonia.Svg;assembly=Svg.Controls.Avalonia" xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Desktop.Views.EditOrderWindow" x:DataType="vm:EditOrderViewModel"
+        Title="{Binding WindowTitle}" Width="1240" Height="760" MinWidth="1060" MinHeight="600"
+        WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <Style Selector="Border#EditSpecificationOverlay">
+      <Setter Property="Background" Value="#60505C70" /><Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+    </Style>
+    <Style Selector="Border#EditSpecificationOverlay.rejected">
+      <Setter Property="Background" Value="{DynamicResource JournalImportRejectionOverlay}" /><Setter Property="BorderBrush" Value="{DynamicResource JournalDangerForeground}" />
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="18" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBox.invalid">
+      <Setter Property="BorderBrush" Value="{DynamicResource JournalDangerForeground}" />
+    </Style>
+    <Style Selector="TextBox.invalid:focus /template/ Border#PART_BorderElement">
+      <Setter Property="BorderBrush" Value="{DynamicResource JournalDangerForeground}" />
+    </Style>
+  </Window.Styles>
+  <Grid RowDefinitions="Auto,*,Auto">
+    <Border Background="{DynamicResource JournalSurface}" BorderBrush="{DynamicResource JournalBorder}"
+            BorderThickness="0,0,0,1" Padding="24,8">
+      <Grid ColumnDefinitions="*,12,Auto">
+        <StackPanel Spacing="4">
+          <TextBlock Text="{Binding WindowTitle}" FontSize="20" FontWeight="SemiBold" />
+          <TextBlock Text="{Binding SourceName}" Classes="muted" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SourceDescription}" />
+        </StackPanel>
+        <ui:JournalButton x:Name="BrowseSpecificationButton" Grid.Column="2" Label="Заменить спецификацию" Icon="folder-plus"
+                          IconOnly="True" Width="36" Height="36" Padding="0" VerticalAlignment="Center"
+                          IsEnabled="{Binding CanImport}" Click="OnBrowseSpecification" ToolTip.Tip="Заменить спецификацию" />
+      </Grid>
+    </Border>
+    <Grid Grid.Row="1" Margin="24,8" ColumnDefinitions="*,24,260">
+      <Border Classes="panel">
+        <ScrollViewer x:Name="FormScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel x:Name="FormFields" Margin="16,6" Spacing="3" IsEnabled="{Binding CanEditFields}">
+            <TextBlock Text="Заявка и заказчик" Classes="section" />
+            <Grid ColumnDefinitions="*,24,*">
+              <ui:OrderEntryControl DataContext="{Binding OrderDate}" />
+              <ui:OrderEntryControl Grid.Column="2" DataContext="{Binding SpecificationNumber}" />
+            </Grid>
+            <Grid ColumnDefinitions="*,24,*">
+              <ui:OrderEntryControl DataContext="{Binding Manager}" />
+              <ui:OrderEntryControl Grid.Column="2" DataContext="{Binding Customer}" />
+            </Grid>
+            <TextBlock Text="Параметры резки" Classes="section" Margin="0,4,0,0" />
+            <Grid ColumnDefinitions="*,24,*">
+              <ui:OrderEntryControl DataContext="{Binding CuttingType}" />
+              <ui:OrderEntryControl Grid.Column="2" DataContext="{Binding Material}" />
+            </Grid>
+            <Grid ColumnDefinitions="*,24,*">
+              <ui:OrderEntryControl DataContext="{Binding Thickness}" />
+              <ui:OrderEntryControl Grid.Column="2" DataContext="{Binding SheetSize}" />
+            </Grid>
+            <Grid ColumnDefinitions="*,24,*">
+              <ui:OrderEntryControl DataContext="{Binding SheetCount}" />
+              <ui:OrderEntryControl Grid.Column="2" DataContext="{Binding Weight}" />
+            </Grid>
+            <Grid ColumnDefinitions="*,24,*">
+              <ui:OrderEntryControl DataContext="{Binding CutLength}" />
+              <ui:OrderEntryControl Grid.Column="2" DataContext="{Binding Coefficient}" />
+            </Grid>
+            <Grid ColumnDefinitions="*,24,*">
+              <ui:OrderEntryControl x:Name="CuttingTimeInput" DataContext="{Binding CuttingTime}" />
+            </Grid>
+            <Grid ColumnDefinitions="*,24,*" IsVisible="{Binding IsHansLaser}">
+              <ui:OrderEntryControl DataContext="{Binding MaterialId}" />
+              <ui:OrderEntryControl Grid.Column="2" DataContext="{Binding Gas}" />
+            </Grid>
+            <ui:OrderAnnotationsControl x:Name="AnnotationsInput" DataContext="{Binding Annotations}" />
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+      <Border Grid.Column="2" Classes="panel" Padding="20">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="Стоимость" Classes="section" VerticalAlignment="Center" />
+            <ui:JournalButton Grid.Column="1" x:Name="CalculatePriceButton" Label="Обновить тарифы" Icon="refresh-cw" IconOnly="True" Width="30" Height="30" Padding="0"
+                              Command="{Binding CalculateCommand}" IsEnabled="{Binding CanCalculate}" ToolTip.Tip="Обновить тарифы" />
+          </Grid>
+          <TextBlock Text="{Binding PriceText}" FontSize="18" FontWeight="Medium" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding PriceBreakdown}" Classes="muted" TextWrapping="Wrap" />
+          <StackPanel IsVisible="{Binding ShowStoredPrice}" Spacing="4">
+            <TextBlock Text="Прежняя цена" Classes="muted" />
+            <TextBlock Text="{Binding StoredPriceText}" Classes="muted" TextWrapping="Wrap" />
+          </StackPanel>
+          <TextBlock Text="{Binding PricePreviewError}" IsVisible="{Binding HasPricePreviewError}" TextWrapping="Wrap" Foreground="{DynamicResource JournalDangerForeground}" />
+          <TextBlock Text="{Binding CuttingTimeNotice}" IsVisible="{Binding HasCuttingTimeNotice}" Classes="muted" TextWrapping="Wrap" FontSize="12" />
+          <TextBlock Text="{Binding MetadataText}" IsVisible="{Binding HasMetadata}" Classes="muted" TextWrapping="Wrap" />
+          <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsImporting}" Height="3" />
+          <TextBlock Text="{Binding ImportError}" IsVisible="{Binding HasImportError}" TextWrapping="Wrap" Foreground="{DynamicResource JournalDangerForeground}" />
+          <StackPanel IsVisible="{Binding HasImport}" Spacing="8">
+            <TextBlock x:Name="ImportFileName" Text="{Binding ImportPreview.FileName}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ImportPreview.FileName}" FontWeight="Medium" />
+            <TextBlock Text="{Binding ImportDiagnostics}" IsVisible="{Binding HasImportDiagnostics}" TextWrapping="Wrap" Foreground="{DynamicResource JournalDangerForeground}" />
+          </StackPanel>
+          <StackPanel x:Name="OrderChangesPanel" IsVisible="{Binding HasChanges}" Spacing="8">
+            <Border Height="1" Background="{DynamicResource JournalBorder}" Margin="0,8" />
+            <TextBlock Text="Изменения" FontWeight="SemiBold" />
+            <ItemsControl ItemsSource="{Binding Changes}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:OrderFieldChange">
+                  <StackPanel Spacing="3" Margin="0,0,0,10">
+                    <TextBlock Text="{Binding Label}" Classes="muted" FontSize="12" />
+                    <TextBlock TextWrapping="Wrap">
+                      <Run Text="{Binding Before}" Foreground="{DynamicResource JournalMuted}" />
+                      <Run Text=" → " Foreground="{DynamicResource JournalMuted}" />
+                      <Run Text="{Binding After}" FontWeight="Medium" />
+                    </TextBlock>
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+          <StackPanel IsVisible="{Binding HasCurrentVersion}" Spacing="8">
+            <TextBlock Text="Изменено в базе" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding Comparison}" TextWrapping="Wrap" />
+          </StackPanel>
+        </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+    <Border Grid.Row="2" Background="{DynamicResource JournalSurface}" BorderBrush="{DynamicResource JournalBorder}"
+            BorderThickness="0,1,0,0" Padding="24,8">
+      <Grid ColumnDefinitions="*,24,Auto" RowDefinitions="Auto,Auto,Auto">
+        <Border Grid.ColumnSpan="3" Background="{DynamicResource JournalAccentSoft}" CornerRadius="8" Padding="12" Margin="0,0,0,12" IsVisible="{Binding HasPendingImport}">
+          <Grid ColumnDefinitions="*,16,Auto">
+            <StackPanel Spacing="4">
+              <TextBlock Text="Заменить параметры спецификации?" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding PendingImport.FileName}" AutomationProperties.LiveSetting="Polite" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding PendingImport.FileName}" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <ui:JournalButton x:Name="ReplaceImportButton" Label="Заменить" Command="{Binding ReplaceImportCommand}" />
+              <ui:JournalButton x:Name="KeepImportButton" Label="Оставить прежние" Command="{Binding CancelImportReplacementCommand}" />
+            </StackPanel>
+          </Grid>
+        </Border>
+        <StackPanel Grid.Row="1" VerticalAlignment="Center" Spacing="4">
+          <StackPanel x:Name="SaveProgress" Orientation="Horizontal" Spacing="8" IsVisible="{Binding SaveCommand.IsRunning}">
+            <ProgressBar IsIndeterminate="True" Width="64" Height="4" VerticalAlignment="Center" />
+            <TextBlock Text="Сохранение…" Foreground="{DynamicResource JournalMuted}" VerticalAlignment="Center" />
+          </StackPanel>
+          <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
+          <ui:JournalButton Label="Отменить чтение" Click="OnCancelFormImport" IsVisible="{Binding IsImporting}" HorizontalAlignment="Left" />
+          <WrapPanel>
+            <ui:JournalButton x:Name="RefreshConflictButton" Label="Обновить заявку (F5)" Command="{Binding RefreshCommand}" IsVisible="{Binding RequiresReload}" IsEnabled="{Binding CanRefresh}" Margin="0,0,8,0" />
+            <ui:JournalButton Label="Применить мои правки" Command="{Binding RebaseCommand}" IsVisible="{Binding HasCurrentVersion}" />
+          </WrapPanel>
+        </StackPanel>
+        <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+          <ui:JournalButton x:Name="CancelButton" Label="Отмена" Classes="outline" MinHeight="38"
+                            Click="OnCancelClick" IsEnabled="{Binding !SaveCommand.IsRunning}" />
+          <ui:JournalButton x:Name="SaveButton" Label="Сохранить" Classes="primary" MinHeight="38"
+                            IsEnabled="{Binding CanSave}" Command="{Binding SaveCommand}" Click="OnSaveClick" IsDefault="True" />
+        </StackPanel>
+        <ui:WindowsSecurityHelp x:Name="OrderSecurityHelp" Grid.Row="2" Grid.ColumnSpan="3" Margin="0,8,0,0"
+                                DataContext="{Binding AccessHostHelp}" />
+      </Grid>
+    </Border>
+    <Border x:Name="EditSpecificationOverlay" Grid.RowSpan="3" ZIndex="100" IsVisible="{Binding IsDraggingFiles}" Classes.rejected="{Binding HasDropRejection}"
+            BorderThickness="2" CornerRadius="8" Margin="8">
+      <Border IsVisible="{Binding HasDropRejection}" Background="{DynamicResource JournalDangerBackground}" BorderBrush="{DynamicResource JournalDangerForeground}"
+              BorderThickness="1" CornerRadius="12" Padding="24" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="560" Margin="24">
+        <StackPanel Spacing="12">
+          <svg:Svg Path="avares://Jornal.Desktop/Assets/Icons/ban.svg" Width="32" Height="32" HorizontalAlignment="Center" />
+          <TextBlock Text="{Binding DropRejection}" TextAlignment="Center" TextWrapping="Wrap" FontSize="18" Foreground="{DynamicResource JournalDangerForeground}" />
+        </StackPanel>
+      </Border>
+    </Border>
+  </Grid>
+</Window>

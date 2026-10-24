@@ -1,0 +1,620 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:svg="clr-namespace:Avalonia.Svg;assembly=Svg.Controls.Avalonia"
+        xmlns:ui="using:Jornal.Desktop.Controls">
+  <Styles.Resources>
+    <SolidColorBrush x:Key="ResultActionBackground" Color="#D6E1EE" />
+    <SolidColorBrush x:Key="ResultActionForeground" Color="#244265" />
+    <SolidColorBrush x:Key="ResultActionBorder" Color="#647F9D" />
+    <SolidColorBrush x:Key="ResultActionHover" Color="#C0D2E6" />
+    <SolidColorBrush x:Key="ResultActionPressed" Color="#ABC2DD" />
+    <ui:OrderRowOutlineWidthConverter x:Key="OrderRowOutlineWidth" />
+    <ui:OrderRowBrushConverter x:Key="OrderRowBackground" />
+    <ui:OrderRowBrushConverter x:Key="OrderRowForeground" Foreground="True" />
+    <ControlTheme x:Key="JournalCommandButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="FocusAdorner" Value="{x:Null}" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <ContentPresenter Name="CommandPresenter" Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            Background="{TemplateBinding Background}" Foreground="{TemplateBinding Foreground}"
+                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
+    <ControlTheme x:Key="JournalFilterButton" TargetType="ToggleButton" BasedOn="{StaticResource {x:Type ToggleButton}}">
+      <Setter Property="Template">
+        <ControlTemplate>
+          <ContentPresenter Name="FilterPresenter" Content="{TemplateBinding Content}"
+                            Background="{TemplateBinding Background}" Foreground="{TemplateBinding Foreground}"
+                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}"
+                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
+    <ControlTheme x:Key="JournalThemeSwitch" TargetType="ToggleButton" BasedOn="{StaticResource {x:Type ToggleButton}}">
+      <Setter Property="FocusAdorner" Value="{x:Null}" />
+      <Setter Property="Width" Value="66" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Foreground" Value="{DynamicResource JournalMuted}" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="ThemeSwitchTrack" Background="{DynamicResource JournalRaised}"
+                  BorderBrush="{DynamicResource JournalBorder}" BorderThickness="1" CornerRadius="16" Padding="3">
+            <Grid ColumnDefinitions="*,2,*">
+              <Border Name="SunSlot" CornerRadius="12" Background="{DynamicResource JournalAccentSoft}">
+                <svg:Svg Path="avares://Jornal.Desktop/Assets/Icons/sun.svg" Width="16" Height="16"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"
+                         CurrentColor="{ReflectionBinding Foreground.Color, RelativeSource={RelativeSource TemplatedParent}}" />
+              </Border>
+              <Border Name="MoonSlot" Grid.Column="2" CornerRadius="12" Background="Transparent">
+                <svg:Svg Path="avares://Jornal.Desktop/Assets/Icons/moon.svg" Width="16" Height="16"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"
+                         CurrentColor="{ReflectionBinding Foreground.Color, RelativeSource={RelativeSource TemplatedParent}}" />
+              </Border>
+            </Grid>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:checked /template/ Border#SunSlot">
+        <Setter Property="Background" Value="Transparent" />
+      </Style>
+      <Style Selector="^:checked /template/ Border#MoonSlot">
+        <Setter Property="Background" Value="{DynamicResource JournalAccentSoft}" />
+      </Style>
+      <Style Selector="^:pointerover /template/ Border#ThemeSwitchTrack, ^:focus-visible /template/ Border#ThemeSwitchTrack">
+        <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+      </Style>
+      <Style Selector="^:pressed /template/ Border#ThemeSwitchTrack">
+        <Setter Property="Background" Value="{DynamicResource JournalAccentSoft}" />
+      </Style>
+    </ControlTheme>
+    <ControlTheme x:Key="DataGridCellTextBlockTheme" TargetType="TextBlock">
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </ControlTheme>
+    <ControlTheme x:Key="JournalCalendarButton" TargetType="Button">
+      <Setter Property="Width" Value="28" />
+      <Setter Property="Foreground" Value="{DynamicResource JournalMuted}" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="Transparent">
+            <svg:Svg Path="avares://Jornal.Desktop/Assets/Icons/calendar-days.svg" Width="16" Height="16"
+                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                     CurrentColor="{ReflectionBinding Foreground.Color, RelativeSource={RelativeSource TemplatedParent}}" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
+    <ControlTheme x:Key="JournalColumnHeader" TargetType="DataGridColumnHeader"
+                  BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="HeaderBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}">
+            <Grid Name="PART_ColumnHeaderRoot" ColumnDefinitions="*,Auto" Margin="{TemplateBinding Padding}">
+              <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}" VerticalAlignment="Center"
+                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" />
+              <Path Name="SortIcon" Grid.Column="1" IsVisible="False" Width="12" Height="12" Margin="4,0,0,0" Stretch="Uniform"
+                    Fill="{DynamicResource JournalText}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Grid>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
+    <ControlTheme x:Key="{x:Type ui:LayoutHandle}" TargetType="ui:LayoutHandle">
+      <Setter Property="Focusable" Value="True" />
+      <Setter Property="Cursor" Value="SizeAll" />
+      <Setter Property="Foreground" Value="{DynamicResource JournalAccent}" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="HandleBorder" Background="{DynamicResource JournalAccentSoft}" CornerRadius="4" Padding="4,0" BorderThickness="1" BorderBrush="Transparent">
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsHitTestVisible="False">
+              <svg:Svg Path="avares://Jornal.Desktop/Assets/Icons/grip-vertical.svg" Width="14" Height="14"
+                       CurrentColor="{ReflectionBinding Foreground.Color, RelativeSource={RelativeSource TemplatedParent}}" />
+              <TextBlock Text="{TemplateBinding Title}" FontSize="12" Foreground="{TemplateBinding Foreground}" />
+            </StackPanel>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:focus-visible /template/ Border#HandleBorder">
+        <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+      </Style>
+      <Style Selector="^:pointerover /template/ Border#HandleBorder">
+        <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+      </Style>
+    </ControlTheme>
+    <ControlTheme x:Key="JournalResultResizer" TargetType="ui:LayoutHandle">
+      <Setter Property="Cursor" Value="SizeNorthSouth" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="Transparent">
+            <Border Name="ResizeTrack" Width="44" Height="3" CornerRadius="2" Background="{DynamicResource JournalBorder}" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:pointerover /template/ Border#ResizeTrack">
+        <Setter Property="Background" Value="{DynamicResource JournalAccent}" />
+      </Style>
+      <Style Selector="^:focus-visible /template/ Border#ResizeTrack">
+        <Setter Property="Background" Value="{DynamicResource JournalAccent}" />
+      </Style>
+    </ControlTheme>
+  </Styles.Resources>
+  <Style Selector="ui|LayoutHandle.result-resizer">
+    <Setter Property="Theme" Value="{StaticResource JournalResultResizer}" />
+  </Style>
+  <Style Selector="ui|LayoutHandle:focus-visible">
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+  </Style>
+  <Style Selector="TextBox#ResultTextBox">
+    <Setter Property="Padding" Value="14,10" />
+  </Style>
+  <Style Selector="Window.customizing TextBox#ResultTextBox">
+    <Setter Property="Padding" Value="14,38,14,10" />
+  </Style>
+  <Style Selector="Window.customizing DataGridRow">
+    <Setter Property="IsHitTestVisible" Value="False" />
+    <Setter Property="Focusable" Value="False" />
+  </Style>
+  <Style Selector="Window">
+    <Setter Property="Icon" Value="avares://Jornal.Desktop/Assets/Journal.png" />
+    <Setter Property="FontFamily" Value="{StaticResource JournalFont}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+    <Setter Property="Background" Value="{DynamicResource JournalBackground}" />
+  </Style>
+  <Style Selector="TextBlock.muted">
+    <Setter Property="Foreground" Value="{DynamicResource JournalMuted}" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+  <Style Selector="TextBlock.result-feedback.error">
+    <Setter Property="Foreground" Value="{DynamicResource JournalDangerForeground}" />
+  </Style>
+  <Style Selector="Border.panel">
+    <Setter Property="Background" Value="{DynamicResource JournalSurface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+  </Style>
+  <Style Selector="Window.customizing Border.panel">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="Window.customizing Border.drop-target">
+    <Setter Property="Background" Value="{DynamicResource JournalAccentSoft}" />
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+  <Style Selector="Border.command-panel">
+    <Setter Property="Padding" Value="16,10,16,12" />
+  </Style>
+  <Style Selector="Border.layout-drop-guide">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+    <Setter Property="Background" Value="{DynamicResource JournalAccentSoft}" />
+  </Style>
+  <Style Selector="Border.layout-drop-guide TextBlock.layout-drop-label">
+    <Setter Property="Foreground" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="Border.layout-drop-guide.forbidden">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalDangerForeground}" />
+    <Setter Property="Background" Value="{DynamicResource JournalDangerBackground}" />
+  </Style>
+  <Style Selector="Border.layout-drop-guide.forbidden TextBlock.layout-drop-label">
+    <Setter Property="Foreground" Value="{DynamicResource JournalDangerForeground}" />
+  </Style>
+  <Style Selector="GridSplitter.workspace-splitter">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="Transparent">
+          <Border x:Name="WorkspaceSplitterLine" Background="{DynamicResource JournalBorder}" CornerRadius="1" Opacity="0.45" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="GridSplitter.workspace-splitter.columns /template/ Border#WorkspaceSplitterLine">
+    <Setter Property="Width" Value="2" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="0,8" />
+  </Style>
+  <Style Selector="GridSplitter.workspace-splitter.rows /template/ Border#WorkspaceSplitterLine">
+    <Setter Property="Height" Value="2" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="8,0" />
+  </Style>
+  <Style Selector="GridSplitter.workspace-splitter:pointerover /template/ Border#WorkspaceSplitterLine, GridSplitter.workspace-splitter:focus.keyboard-resize /template/ Border#WorkspaceSplitterLine, Window.customizing GridSplitter.workspace-splitter /template/ Border#WorkspaceSplitterLine">
+    <Setter Property="Background" Value="{DynamicResource JournalAccent}" />
+    <Setter Property="Opacity" Value="1" />
+  </Style>
+  <Style Selector="Grid.docked Border.command-panel">
+    <Setter Property="Padding" Value="12,8" />
+  </Style>
+  <Style Selector="Grid.docked Border.command-panel TextBlock.muted">
+    <Setter Property="FontSize" Value="11" />
+  </Style>
+  <Style Selector="Button.command">
+    <Setter Property="Theme" Value="{StaticResource JournalCommandButton}" />
+    <Setter Property="MinHeight" Value="32" />
+    <Setter Property="Padding" Value="12,0" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Background" Value="{DynamicResource JournalRaised}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Grid.docked Border.command-panel Button.command">
+    <Setter Property="Height" Value="28" />
+    <Setter Property="MinHeight" Value="28" />
+    <Setter Property="Padding" Value="8,0" />
+  </Style>
+  <Style Selector="Button.command:pointerover:not(:disabled)">
+    <Setter Property="Background" Value="{DynamicResource JournalAccentSoft}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+  </Style>
+  <Style Selector="Button.command:pressed">
+    <Setter Property="Background" Value="{DynamicResource JournalControlPressed}" />
+  </Style>
+  <Style Selector="Button.command:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="Button.command.primary">
+    <Setter Property="Background" Value="{DynamicResource JournalAccent}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalOnAccent}" />
+  </Style>
+  <Style Selector="Button.command.primary:pointerover:not(:disabled)">
+    <Setter Property="Background" Value="{DynamicResource JournalAccentHover}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalOnAccent}" />
+  </Style>
+  <Style Selector="Button.command.primary:pressed">
+    <Setter Property="Background" Value="{DynamicResource JournalAccentPressed}" />
+  </Style>
+  <Style Selector="Button.command.primary:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalOnAccent}" />
+  </Style>
+  <Style Selector="Button.command:disabled">
+    <Setter Property="Opacity" Value="0.6" />
+  </Style>
+  <Style Selector="Button.command.outline">
+    <Setter Property="Background" Value="{DynamicResource JournalSurface}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Button.command.danger">
+    <Setter Property="Foreground" Value="{DynamicResource JournalDangerForeground}" />
+  </Style>
+  <Style Selector="Button.command.work">
+    <Setter Property="Background" Value="{DynamicResource WorkBackground}" />
+    <Setter Property="Foreground" Value="{DynamicResource WorkForeground}" />
+  </Style>
+  <Style Selector="Button.command.ready">
+    <Setter Property="Background" Value="{DynamicResource ReadyBackground}" />
+    <Setter Property="Foreground" Value="{DynamicResource ReadyForeground}" />
+  </Style>
+  <Style Selector="Button.command.shipped">
+    <Setter Property="Background" Value="{DynamicResource ShippedBackground}" />
+    <Setter Property="Foreground" Value="{DynamicResource ShippedForeground}" />
+  </Style>
+  <Style Selector="Button.command.danger:pointerover:not(:disabled)">
+    <Setter Property="Background" Value="{DynamicResource JournalDangerBackground}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalDangerForeground}" />
+  </Style>
+  <Style Selector="Button.command.work:pointerover:not(:disabled)">
+    <Setter Property="Background" Value="{DynamicResource WorkBackground}" />
+    <Setter Property="Foreground" Value="{DynamicResource WorkForeground}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WorkForeground}" />
+  </Style>
+  <Style Selector="Button.command.ready:pointerover:not(:disabled)">
+    <Setter Property="Background" Value="{DynamicResource ReadyBackground}" />
+    <Setter Property="Foreground" Value="{DynamicResource ReadyForeground}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ReadyForeground}" />
+  </Style>
+  <Style Selector="Button.command.shipped:pointerover:not(:disabled)">
+    <Setter Property="Background" Value="{DynamicResource ShippedBackground}" />
+    <Setter Property="Foreground" Value="{DynamicResource ShippedForeground}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ShippedForeground}" />
+  </Style>
+  <Style Selector="Button.command.result-tool">
+    <Setter Property="Background" Value="#E6CAD5E4" />
+    <Setter Property="Foreground" Value="#263B57" />
+    <Setter Property="BorderBrush" Value="#8198B4" />
+  </Style>
+  <Style Selector="Button.command.result-tool:pointerover:not(:disabled)">
+    <Setter Property="Background" Value="#BCCDE3" />
+    <Setter Property="Foreground" Value="#1E3653" />
+    <Setter Property="BorderBrush" Value="#617F9F" />
+  </Style>
+  <Style Selector="Button.command.result-tool:pressed">
+    <Setter Property="Background" Value="#A8BEDA" />
+  </Style>
+  <Style Selector="Button.command.result-tool:focus-visible">
+    <Setter Property="BorderBrush" Value="#617F9F" />
+  </Style>
+  <Style Selector="Button.command.result-tool:disabled">
+    <Setter Property="Opacity" Value="0.7" />
+  </Style>
+  <Style Selector="Button.command.result-action">
+    <Setter Property="Background" Value="{DynamicResource ResultActionBackground}" />
+    <Setter Property="Foreground" Value="{DynamicResource ResultActionForeground}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ResultActionBorder}" />
+    <Setter Property="Opacity" Value="1" />
+  </Style>
+  <Style Selector="Button.command.result-action:pointerover:not(:disabled)">
+    <Setter Property="Background" Value="{DynamicResource ResultActionHover}" />
+    <Setter Property="Foreground" Value="{DynamicResource ResultActionForeground}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ResultActionBorder}" />
+  </Style>
+  <Style Selector="Button.command.result-action:pressed:not(:disabled)">
+    <Setter Property="Background" Value="{DynamicResource ResultActionPressed}" />
+  </Style>
+  <Style Selector="Button.command.result-action:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource ResultActionForeground}" />
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+  <Style Selector="Button.command.result-action:disabled">
+    <Setter Property="Background" Value="{DynamicResource ResultActionBackground}" />
+    <Setter Property="Foreground" Value="{DynamicResource ResultActionForeground}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ResultActionBorder}" />
+    <Setter Property="Opacity" Value="0.45" />
+  </Style>
+  <Style Selector="Window.customizing Button.command.result-action:disabled">
+    <Setter Property="Background" Value="{DynamicResource ResultActionBackground}" />
+    <Setter Property="Foreground" Value="{DynamicResource ResultActionForeground}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ResultActionBorder}" />
+    <Setter Property="Opacity" Value="1" />
+  </Style>
+  <Style Selector="Button.command.read-refresh-pending:disabled">
+    <Setter Property="Opacity" Value="1" />
+  </Style>
+  <Style Selector="Window:not(.customizing) Border.result-editor:focus-within">
+    <Setter Property="BorderBrush" Value="#8297B0" />
+  </Style>
+  <Style Selector="TextBox.result-editor /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="Button.command.status-filter-trigger:not(:pointerover):not(:pressed)">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalMuted}" />
+  </Style>
+  <Style Selector="Button.command.status-filter-trigger.active, Button.command.status-filter-chip">
+    <Setter Property="Background" Value="{DynamicResource JournalAccentSoft}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="Button.command.status-filter-trigger.active">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="Button.command.status-filter-trigger:pointerover:not(:disabled), Button.command.status-filter-chip:pointerover:not(:disabled), Button.command.status-filter-trigger:pressed, Button.command.status-filter-chip:pressed">
+    <Setter Property="Background" Value="{DynamicResource JournalControlPressed}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+  </Style>
+  <Style Selector="CheckBox.status-filter-option /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Margin" Value="8,0,0,0" />
+  </Style>
+  <Style Selector="RadioButton.filter">
+    <Setter Property="Theme" Value="{StaticResource JournalFilterButton}" />
+    <Setter Property="MinHeight" Value="32" />
+    <Setter Property="Padding" Value="16,0" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Background" Value="{DynamicResource JournalRaised}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalMuted}" />
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="RadioButton.filter:pointerover">
+    <Setter Property="Background" Value="{DynamicResource JournalAccentSoft}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+  </Style>
+  <Style Selector="RadioButton.filter:pressed">
+    <Setter Property="Background" Value="{DynamicResource JournalControlPressed}" />
+  </Style>
+  <Style Selector="RadioButton.filter:checked">
+    <Setter Property="Background" Value="{DynamicResource JournalAccent}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalOnAccent}" />
+  </Style>
+  <Style Selector="RadioButton.filter:checked:pointerover">
+    <Setter Property="Background" Value="{DynamicResource JournalAccentHover}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalOnAccent}" />
+  </Style>
+  <Style Selector="RadioButton.filter:checked:pressed">
+    <Setter Property="Background" Value="{DynamicResource JournalAccentPressed}" />
+  </Style>
+  <Style Selector="RadioButton.filter:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="RadioButton.filter:checked:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalOnAccent}" />
+  </Style>
+  <Style Selector="CheckBox:checked:not(:disabled) /template/ Path#CheckGlyph, CheckBox:indeterminate:not(:disabled) /template/ Path#CheckGlyph">
+    <Setter Property="Fill" Value="{DynamicResource JournalOnAccent}" />
+  </Style>
+  <Style Selector="CheckBox:checked:not(:disabled) /template/ Border#NormalRectangle, CheckBox:indeterminate:not(:disabled) /template/ Border#NormalRectangle">
+    <Setter Property="Background" Value="{DynamicResource JournalAccent}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="CheckBox:checked:pointerover:not(:disabled) /template/ Border#NormalRectangle, CheckBox:indeterminate:pointerover:not(:disabled) /template/ Border#NormalRectangle">
+    <Setter Property="Background" Value="{DynamicResource JournalAccentHover}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccentHover}" />
+  </Style>
+  <Style Selector="CheckBox:checked:pressed /template/ Border#NormalRectangle, CheckBox:indeterminate:pressed /template/ Border#NormalRectangle">
+    <Setter Property="Background" Value="{DynamicResource JournalAccentPressed}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccentPressed}" />
+  </Style>
+  <Style Selector="TextBox, ComboBox, CalendarDatePicker">
+    <Setter Property="Background" Value="{DynamicResource JournalInput}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalControlBorder}" />
+  </Style>
+  <Style Selector="TextBox">
+    <Setter Property="PlaceholderForeground" Value="{DynamicResource JournalMuted}" />
+  </Style>
+  <Style Selector="Border.search-field">
+    <Setter Property="Background" Value="{DynamicResource JournalInput}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalControlBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+  <Style Selector="Border.search-field:pointerover, Border.search-field:focus-within, Border.search-field.popup-open">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="ComboBox.search-scope">
+    <Setter Property="MinHeight" Value="32" />
+    <Setter Property="Padding" Value="8,4,0,4" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="4" />
+  </Style>
+  <Style Selector="ComboBox.search-scope /template/ Border#Background, ComboBox.search-scope /template/ Border#HighlightBackground">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="ComboBox.search-scope:pointerover /template/ Border#Background, ComboBox.search-scope:focus-visible /template/ Border#HighlightBackground">
+    <Setter Property="Background" Value="{DynamicResource JournalAccentSoft}" />
+  </Style>
+  <Style Selector="TextBox.search-input">
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="0" />
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+  </Style>
+  <Style Selector="TextBox.search-input /template/ Border#PART_BorderElement, TextBox.search-input:focus /template/ Border#PART_BorderElement, TextBox.search-input:pointerover /template/ Border#PART_BorderElement, TextBox.search-input:disabled /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="ToggleButton.search-mode">
+    <Setter Property="Theme" Value="{StaticResource JournalFilterButton}" />
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+    <Setter Property="Padding" Value="6,0" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalMuted}" />
+  </Style>
+  <Style Selector="ToggleButton.search-mode:checked">
+    <Setter Property="Background" Value="{DynamicResource JournalAccentSoft}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="ToggleButton.search-mode:pointerover:not(:disabled), ToggleButton.search-mode:pressed">
+    <Setter Property="Background" Value="{DynamicResource JournalControlPressed}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+  </Style>
+  <Style Selector="ToggleButton.search-mode:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="ToggleButton.search-mode:disabled">
+    <Setter Property="Opacity" Value="0.6" />
+  </Style>
+  <Style Selector="Button.command.search-clear:not(:pointerover):not(:pressed)">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="CalendarDatePicker /template/ Button#PART_Button">
+    <Setter Property="Theme" Value="{StaticResource JournalCalendarButton}" />
+  </Style>
+  <Style Selector="DataGrid">
+    <Setter Property="Background" Value="{DynamicResource JournalSurface}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+    <Setter Property="RowBackground" Value="{DynamicResource JournalSurface}" />
+    <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource JournalBorder}" />
+  </Style>
+  <Style Selector="DataGridColumnHeader">
+    <Setter Property="ui:TableCellPresentation.Enabled" Value="True" />
+    <Setter Property="Theme" Value="{StaticResource JournalColumnHeader}" />
+    <Setter Property="Background" Value="{DynamicResource JournalRaised}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalMuted}" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Padding" Value="8,0" />
+  </Style>
+  <Style Selector="DataGridCell">
+    <Setter Property="Padding" Value="8,0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="FontSize" Value="{ReflectionBinding $parent[DataGrid].FontSize}" />
+  </Style>
+  <Style Selector="DataGridColumnHeader TextBlock">
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="DataGridRow">
+    <Setter Property="Background">
+      <MultiBinding Converter="{StaticResource OrderRowBackground}">
+        <ReflectionBinding Path="Color" />
+        <Binding Path="IsSelected" RelativeSource="{RelativeSource Self}" />
+        <Binding Path="IsPointerOver" RelativeSource="{RelativeSource Self}" />
+        <Binding Path="IsKeyboardFocusWithin" RelativeSource="{RelativeSource Self}" />
+        <Binding Path="ActualThemeVariant" RelativeSource="{RelativeSource Self}" />
+        <ReflectionBinding Path="DataContext.RowHighlightStrength" RelativeSource="{RelativeSource AncestorType=DataGrid}" />
+        <Binding Path="(ui:OrderRowFocus.KeyboardNavigation)" RelativeSource="{RelativeSource AncestorType=DataGrid}" />
+      </MultiBinding>
+    </Setter>
+    <Setter Property="Foreground">
+      <MultiBinding Converter="{StaticResource OrderRowForeground}">
+        <ReflectionBinding Path="Color" />
+        <Binding Path="IsSelected" RelativeSource="{RelativeSource Self}" />
+        <Binding Path="IsPointerOver" RelativeSource="{RelativeSource Self}" />
+        <Binding Path="IsKeyboardFocusWithin" RelativeSource="{RelativeSource Self}" />
+        <Binding Path="ActualThemeVariant" RelativeSource="{RelativeSource Self}" />
+        <ReflectionBinding Path="DataContext.RowHighlightStrength" RelativeSource="{RelativeSource AncestorType=DataGrid}" />
+        <Binding Path="(ui:OrderRowFocus.KeyboardNavigation)" RelativeSource="{RelativeSource AncestorType=DataGrid}" />
+      </MultiBinding>
+    </Setter>
+  </Style>
+  <Style Selector="DataGridRow /template/ Rectangle#BackgroundRectangle">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+  <Style Selector="DataGrid#OrdersGrid DataGridRow:selected /template/ Rectangle#BackgroundRectangle, DataGrid#OrdersGrid DataGridRow:selected:pointerover /template/ Rectangle#BackgroundRectangle, DataGrid#OrdersGrid DataGridRow:selected:focus /template/ Rectangle#BackgroundRectangle, DataGrid#OrdersGrid DataGridRow:selected:pointerover:focus /template/ Rectangle#BackgroundRectangle">
+    <Setter Property="IsVisible" Value="True" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+    <Setter Property="Fill" Value="{x:Null}" />
+    <Setter Property="Opacity" Value="1" />
+    <Setter Property="Stroke" Value="{DynamicResource JournalRowOutline}" />
+    <Setter Property="StrokeThickness" Value="1" />
+    <Setter Property="Margin" Value="24,0,0,0" />
+    <Setter Property="Grid.RowSpan" Value="3" />
+    <Setter Property="DataGridFrozenGrid.IsFrozen" Value="True" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Width" Value="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=DataGridRowsPresenter}, Converter={StaticResource OrderRowOutlineWidth}}" />
+  </Style>
+  <Style Selector="DataGridRow /template/ Rectangle#PART_BottomGridLine">
+    <Setter Property="Opacity" Value="0.4" />
+  </Style>
+  <Style Selector="DataGrid#OrdersGrid DataGridRow:selected /template/ Rectangle#PART_BottomGridLine">
+    <Setter Property="Opacity" Value="0" />
+  </Style>
+  <Style Selector="DataGridCell:focus /template/ Grid#FocusVisual">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+  <Style Selector="CheckBox.row-selection /template/ Border#NormalRectangle">
+    <Setter Property="CornerRadius" Value="3" />
+  </Style>
+  <Style Selector="CheckBox.row-selection:unchecked:not(:disabled) /template/ Border#NormalRectangle">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalControlBorder}" />
+    <Setter Property="Background" Value="{DynamicResource JournalInput}" />
+  </Style>
+  <Style Selector="CheckBox.row-selection:unchecked:pointerover:not(:disabled) /template/ Border#NormalRectangle">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+    <Setter Property="Background" Value="{DynamicResource JournalAccentSoft}" />
+  </Style>
+  <Style Selector="CheckBox.row-selection /template/ Grid">
+    <Setter Property="Height" Value="{ReflectionBinding Height, RelativeSource={RelativeSource TemplatedParent}}" />
+  </Style>
+  <Style Selector="CheckBox.row-selection /template/ Grid#RootGrid">
+    <Setter Property="Width" Value="20" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="DataGridCell TextBlock">
+    <Setter Property="ui:TableCellPresentation.Enabled" Value="True" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    <Setter Property="TextWrapping" Value="NoWrap" />
+    <Setter Property="MaxLines" Value="1" />
+  </Style>
+</Styles>

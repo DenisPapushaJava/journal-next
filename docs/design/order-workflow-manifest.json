@@ -1,0 +1,162 @@
+{
+  "date": "2026-10-23",
+  "status": "concept-only",
+  "integration": "Figwright 0.6.0",
+  "fileName": "Journal",
+  "fileKey": null,
+  "page": {
+    "id": "135:946",
+    "name": "Journal · Десктоп · Заявки и спецификации"
+  },
+  "components": {
+    "application": "135:1154",
+    "specification": "136:1489",
+    "comparison": "136:1696"
+  },
+  "screens": [
+    {
+      "key": "journal",
+      "nodeId": "135:947",
+      "name": "01 · Журнал заявок · Десктоп",
+      "width": 1600,
+      "height": 1000,
+      "counts": {
+        "FRAME": 147,
+        "RECTANGLE": 1,
+        "TEXT": 150,
+        "INSTANCE": 31,
+        "VECTOR": 27
+      },
+      "fonts": {
+        "Inter": 150
+      },
+      "images": [
+        {
+          "id": "135:949",
+          "name": "БЛОК · Логотип компании",
+          "width": 54,
+          "height": 30
+        }
+      ],
+      "overflow": [],
+      "unstyled": []
+    },
+    {
+      "key": "order",
+      "nodeId": "135:966",
+      "name": "02 · Заявка · Спецификации и расчёт",
+      "width": 1600,
+      "height": 1000,
+      "counts": {
+        "FRAME": 91,
+        "RECTANGLE": 1,
+        "TEXT": 97,
+        "INSTANCE": 27,
+        "VECTOR": 14
+      },
+      "fonts": {
+        "Inter": 97
+      },
+      "images": [
+        {
+          "id": "135:968",
+          "name": "БЛОК · Логотип компании",
+          "width": 54,
+          "height": 30
+        }
+      ],
+      "overflow": [],
+      "unstyled": []
+    },
+    {
+      "key": "history",
+      "nodeId": "135:985",
+      "name": "03 · История · Версии расчёта",
+      "width": 1600,
+      "height": 1000,
+      "counts": {
+        "FRAME": 68,
+        "RECTANGLE": 1,
+        "TEXT": 81,
+        "INSTANCE": 26
+      },
+      "fonts": {
+        "Inter": 81
+      },
+      "images": [
+        {
+          "id": "135:987",
+          "name": "БЛОК · Логотип компании",
+          "width": 54,
+          "height": 30
+        }
+      ],
+      "overflow": [],
+      "unstyled": []
+    },
+    {
+      "key": "editor",
+      "nodeId": "136:1797",
+      "name": "04 · Заявка · Редактирование без отдельного окна",
+      "width": 1600,
+      "height": 1000,
+      "counts": {
+        "FRAME": 96,
+        "RECTANGLE": 1,
+        "TEXT": 106,
+        "INSTANCE": 36,
+        "VECTOR": 9
+      },
+      "fonts": {
+        "Inter": 106
+      },
+      "images": [
+        {
+          "id": "136:1799",
+          "name": "БЛОК · Логотип компании",
+          "width": 54,
+          "height": 30
+        }
+      ],
+      "overflow": [],
+      "unstyled": []
+    }
+  ],
+  "prototypeLinksChecked": 10,
+  "preview": "Figma SVG exports rendered with Sharp and visually inspected; native PNG export timed out",
+  "scopeLimits": [
+    "Not implemented in Avalonia",
+    "Save/import/files are visual controls",
+    "Dark theme, compact viewport and DPI not validated"
+  ],
+  "localPrototype": {
+    "date": "2026-10-24",
+    "product": "Journal Workflow",
+    "branch": "feature/order-workflow",
+    "status": "local Avalonia prototype; Figma snapshot above remains concept-only",
+    "folderActions": "Per-row folder icons in Projects and Specifications; native project folder or imported report folder; disabled for manual rows without a path",
+    "screenshots": ".local/workflow-settings-program-ui/",
+    "verification": "113 Workflow tests: 110 passed, 3 optional skipped; 3 Python release-boundary checks passed; Release build without warnings/errors; both themes, main 1366/1180x768 and settings 900x660/800x580; bell/settings navigation, shared theme including failed preference writes, all draft restart guards, in-memory update success/failure, isolated preferences and diagnostics export verified headless",
+    "limits": [
+      "Native OS file manager and save-file picker not verified",
+      "No shared Access adapter, commits, PRs or releases",
+      "Release repository remains unconfigured; update UI/restart tests use an in-memory updater, not an actual installation"
+    ],
+    "orderNumbers": "Persisted yyyy-MM-dd-HHmmss without a Cyrillic prefix; -02/-03 for collisions; two-line date/time in the list; title starts with Заявка; exact number search",
+    "profileAndCatalog": "Centered HeaderClock; readonly employee badge; left settings navigation; exact legacy palette of 5 frequent and 24 other colors plus optional ColorWheel flyout; shared employee color and local EmployeeId/theme; safe machine removal; schema 7",
+    "creatorMarker": "4px author-color stripe in a 6px outlined track beside order date/time; creator is creation actor; shared employee color refreshed with F5; creator tooltip; no row fill or status meaning",
+    "colorPicker": "Name editor, 32px current swatch and Change Color button share one row on General; color name/hex are tooltips; existing presets/ColorWheel flyout and draft Save Profile behavior retained",
+    "trash": "Schema 7: DeletedAt/DeletedBy and immutable CreatedById; confirmed soft deletion, separate Trash window with restore, same IDs/numbers/prices/history/files; no purge or expiry; stale drafts retained with explicit reload",
+    "orderEntry": "Two fields: manager and customer, using personal editable suggestions; 600px left-aligned form, 320px manager, about 560px customer; active profile at Save provides creator and initial technologist",
+    "entrySuggestions": "General page button opens an independent modal editor, following legacy Journal; no lists navigation tab; manager/customer counts; Save closes after success, Cancel/Escape discards list edits, focus returns to opener and parent profile/root drafts remain; storage and expected-snapshot comparison unchanged",
+    "concurrency": "Current JSON store serializes atomic resolve/create against the latest workspace; preferences and workspace leases are never nested; contention fails promptly without write replay; future Access reference resolution and locking still require native testing",
+    "settings": "Three sections: General, Storage, Program; Storage merges project root/data/legacy-price-source information; General shares theme with toolbar; permanent bell opens Program in the same Settings window",
+    "updates": "Same AppUpdatesViewModel and isolated WorkflowAppUpdater/preferences; no legacy AppUpdatesPanel or WorkflowUpdatesWindow; ReleasesPageFor validates and normalizes only the configured Workflow repository; source is still null and release link is hidden; restart blocks all card/settings drafts, nested list editors and diagnostics export",
+    "diagnostics": "Program actions export allowed events from the injected Workflow DiagnosticService to Journal-Workflow-report ZIP or open WorkflowIdentity.DiagnosticsDirectory; no sender endpoint; closing/restart blocked during export; legacy profile never copied",
+    "deferredSettings": "Startup period and automatic shared-journal refresh after Access adapter, with draft preservation; no nonfunctional toggles added",
+    "displayName": "Journal Next",
+    "branding": "Working UI name is centralized in WorkflowIdentity.Name; package/profile/channel/EXE/tag identities remain isolated and unchanged; repository separation and Windows-only release are planned, not executed",
+    "brandingVerification": "18 focused main/settings/trash/update-boundary tests and 3 Python release-identity checks passed; build without warnings/errors; display name changed, stable technical identity unchanged; full suite from the preceding stage not repeated",
+    "brandingScreenshots": ".local/journal-next-branding-ui/"
+  }
+}

@@ -1,0 +1,132 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Workflow.Desktop" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Workflow.Desktop.WorkflowReportReviewWindow" x:DataType="vm:WorkflowReportReviewViewModel"
+        Title="Подбор спецификаций" Width="1366" Height="768" MinWidth="1120" MinHeight="700"
+        Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,*,12,Auto" Margin="20">
+    <Grid ColumnDefinitions="*,12,Auto" Margin="0,0,0,16">
+      <StackPanel Spacing="4">
+        <TextBlock Text="Подбор спецификаций" FontSize="22" FontWeight="SemiBold" />
+        <TextBlock Text="{Binding Summary}" Classes="muted" TextWrapping="Wrap" />
+      </StackPanel>
+      <ui:JournalButton Grid.Column="2" Label="Повторить подбор" Icon="refresh-cw" Command="{Binding RefreshCommand}" VerticalAlignment="Center" />
+    </Grid>
+    <Grid x:Name="ReviewWorkspace" Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="4*" MinWidth="390" />
+        <ColumnDefinition Width="12" />
+        <ColumnDefinition Width="6*" MinWidth="580" />
+      </Grid.ColumnDefinitions>
+      <DataGrid RowHeight="NaN" x:Name="WorkflowReportCandidates" ItemsSource="{Binding Candidates}" SelectedItem="{Binding Selected}"
+                AutoGenerateColumns="False" IsReadOnly="True" IsEnabled="{Binding CanEdit}" SelectionMode="Single"
+                HeadersVisibility="Column" GridLinesVisibility="None">
+        <DataGrid.Columns>
+          <DataGridTemplateColumn Header="✓" Width="48">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate x:DataType="vm:WorkflowReportCandidate">
+                <CheckBox IsChecked="{Binding IsSelected}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                          AutomationProperties.Name="Принять отчёт" ToolTip.Tip="Включить в набор для сохранения" />
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTemplateColumn Header="Проект" Width="*" MinWidth="190">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate x:DataType="vm:WorkflowReportCandidate">
+                <StackPanel Spacing="4" Margin="4,10,8,10">
+                  <TextBlock Text="{Binding ProjectName}" TextWrapping="Wrap" FontWeight="SemiBold" ToolTip.Tip="{Binding ProjectName}" />
+                  <TextBlock Text="{Binding PositionCaption}" Classes="muted" FontSize="12" />
+                  <TextBlock Text="{Binding Status}" TextWrapping="Wrap" FontSize="12" />
+                </StackPanel>
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTextColumn Header="Резка" Binding="{Binding Total}" Width="108" />
+        </DataGrid.Columns>
+      </DataGrid>
+      <GridSplitter x:Name="ReviewPaneSplitter" Grid.Column="1" Width="6" HorizontalAlignment="Center"
+                    ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" KeyboardIncrement="16"
+                    Background="{DynamicResource JournalBorder}" ToolTip.Tip="Ширина списка и карточки · ← →"
+                    AutomationProperties.Name="Ширина списка проектов и карточки" />
+      <Border x:Name="ReviewDetailsPanel" Grid.Column="2" Classes="panel" Padding="16">
+        <Grid RowDefinitions="Auto,12,*,12,Auto">
+          <StackPanel Spacing="4">
+            <TextBlock Text="{Binding Selected.CardTitle}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Selected.ProjectName}" Classes="muted" TextWrapping="Wrap" />
+          </StackPanel>
+          <ScrollViewer x:Name="ReviewDetailsScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" IsEnabled="{Binding CanEdit}">
+            <StackPanel Spacing="12" DataContext="{Binding Selected}" x:DataType="vm:WorkflowReportCandidate">
+              <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+              <StackPanel Spacing="4">
+                <TextBlock Text="Исходный отчёт" Classes="muted" />
+                <ComboBox ItemsSource="{Binding Choices}" SelectedItem="{Binding SelectedFile}" HorizontalAlignment="Stretch"
+                          PlaceholderText="Выберите отчёт" AutomationProperties.Name="Исходный отчёт">
+                  <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:WorkflowReportChoice"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+                </ComboBox>
+              </StackPanel>
+              <ItemsControl ItemsSource="{Binding Conflicts}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:WorkflowFieldConflict">
+                    <Border Classes="panel" Padding="12" Margin="0,0,0,6">
+                      <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,8,Auto,4,Auto">
+                        <TextBlock Text="{Binding Field}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                        <ComboBox Grid.Column="2" ItemsSource="{x:Static vm:WorkflowFieldConflict.Options}" SelectedIndex="{Binding Selection}"
+                                  PlaceholderText="Выберите значение" HorizontalAlignment="Stretch" AutomationProperties.Name="Значение спорного поля" />
+                        <TextBlock Grid.Row="2" Text="Ручное значение" Classes="muted" /><TextBlock Grid.Row="2" Grid.Column="2" Text="Новый отчёт" Classes="muted" />
+                        <TextBlock Grid.Row="4" Text="{Binding Manual}" TextWrapping="Wrap" /><TextBlock Grid.Row="4" Grid.Column="2" Text="{Binding Report}" TextWrapping="Wrap" />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <Grid IsVisible="{Binding HasDraft}">
+              <StackPanel Spacing="12" DataContext="{Binding Draft}" x:DataType="vm:SpecificationDraft">
+                <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,4,Auto,12,Auto,4,Auto,12,Auto,4,Auto,12,Auto,4,Auto">
+                  <TextBlock Text="Материал" Classes="muted" /><TextBlock Grid.Column="2" Text="Толщина, мм" Classes="muted" />
+                  <TextBox Grid.Row="2" Text="{Binding Material}" AutomationProperties.Name="Материал спецификации" />
+                  <TextBox Grid.Row="2" Grid.Column="2" Text="{Binding Thickness}" AutomationProperties.Name="Толщина спецификации, мм" />
+                  <TextBlock Grid.Row="4" Text="Заготовка" Classes="muted" /><TextBlock Grid.Row="4" Grid.Column="2" Text="Количество, шт." Classes="muted" />
+                  <TextBox Grid.Row="6" Text="{Binding BlankSize}" /><TextBox Grid.Row="6" Grid.Column="2" Text="{Binding Quantity}" />
+                  <TextBlock Grid.Row="8" Text="Длина реза, м" Classes="muted" /><TextBlock Grid.Row="8" Grid.Column="2" Text="Пробивки, шт." Classes="muted" />
+                  <TextBox x:Name="ReviewCutLength" Grid.Row="10" Text="{Binding Length}" /><TextBox Grid.Row="10" Grid.Column="2" Text="{Binding Pierces}" />
+                  <TextBlock Grid.Row="12" Text="Общий вес, кг" Classes="muted" /><TextBlock Grid.Row="12" Grid.Column="2" Text="Время резки" Classes="muted" />
+                  <TextBox Grid.Row="14" Text="{Binding Weight}" /><TextBox Grid.Row="14" Grid.Column="2" Text="{Binding Duration}" />
+                </Grid>
+                <StackPanel Spacing="4" IsVisible="{Binding UsesMaterialCategories}">
+                  <TextBlock Text="Категория тарифа HansLaser" Classes="muted" />
+                  <TextBox Text="{Binding MaterialGroup}" />
+                </StackPanel>
+                <CheckBox Content="Материал проверен" IsVisible="{Binding MaterialNeedsReview}" IsChecked="{Binding MaterialConfirmed}" />
+                <CheckBox Content="Гибка" IsChecked="{Binding HasBending}" />
+                <Expander Header="Номер и дата спецификации" HorizontalAlignment="Stretch">
+                  <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,4,Auto" Margin="0,8,0,0">
+                    <TextBlock Text="Номер спецификации" Classes="muted" /><TextBlock Grid.Column="2" Text="Дата" Classes="muted" />
+                    <TextBox Grid.Row="2" Text="{Binding Number}" /><TextBox Grid.Row="2" Grid.Column="2" Text="{Binding Date}" />
+                  </Grid>
+                </Expander>
+              </StackPanel>
+              </Grid>
+            </StackPanel>
+          </ScrollViewer>
+          <Border Grid.Row="4" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
+            <Grid ColumnDefinitions="*,16,150" RowDefinitions="Auto,4,Auto,8,Auto">
+              <TextBlock Text="Стоимость резки" Classes="muted" /><TextBlock Grid.Column="2" Text="Ручной коэффициент" Classes="muted" IsVisible="{Binding Selected.HasDraft}" />
+              <TextBlock Grid.Row="2" Text="{Binding Selected.Total}" FontSize="26" FontWeight="SemiBold" VerticalAlignment="Center" />
+              <Grid Grid.Row="2" Grid.Column="2" IsVisible="{Binding Selected.HasDraft}" IsEnabled="{Binding CanEdit}">
+                <TextBox x:Name="ReviewCoefficient" DataContext="{Binding Selected.Draft}" x:DataType="vm:SpecificationDraft"
+                         Text="{Binding Coefficient}" AutomationProperties.Name="Ручной коэффициент" />
+              </Grid>
+              <ui:JournalButton Grid.Row="4" Label="Обновить тариф" Command="{Binding RefreshRateCommand}" IsEnabled="{Binding CanEdit}"
+                                IsVisible="{Binding Selected.HasDraft}" HorizontalAlignment="Left" />
+            </Grid>
+          </Border>
+        </Grid>
+      </Border>
+    </Grid>
+    <Grid Grid.Row="3" RowDefinitions="Auto,8,Auto" ColumnDefinitions="*,12,Auto,8,Auto">
+      <TextBlock Grid.ColumnSpan="5" Text="{Binding Error}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
+      <TextBlock Grid.Row="2" Text="Отмеченные готовые отчёты сохраняются вместе" Classes="muted" VerticalAlignment="Center" />
+      <ui:JournalButton x:Name="SaveWorkflowReports" Grid.Row="2" Grid.Column="2" Label="{Binding SaveCaption}" Classes="primary" Command="{Binding SaveCommand}" />
+      <ui:JournalButton Grid.Row="2" Grid.Column="4" Label="Закрыть" Click="OnClose" />
+    </Grid>
+  </Grid>
+</Window>

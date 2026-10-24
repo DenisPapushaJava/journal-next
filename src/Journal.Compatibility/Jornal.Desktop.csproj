@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <ApplicationIcon>../../docs/design/assets/journal-icon.ico</ApplicationIcon>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <AppHostDotNetSearch>Global</AppHostDotNetSearch>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Jornal.Tests" />
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Svg.Controls.Avalonia" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" />
+    <PackageReference Include="Velopack" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <ProjectReference Include="../Jornal.Core/Jornal.Core.csproj" />
+    <ProjectReference Include="../Jornal.Infrastructure/Jornal.Infrastructure.csproj" />
+    <ProjectReference Include="../Jornal.Parsing/Jornal.Parsing.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Customization/Data/entry-suggestions.json" />
+    <AvaloniaResource Include="../../docs/design/assets/journal-icon.png" Link="Assets/Journal.png" />
+    <AvaloniaResource Include="../../docs/design/assets/startup/*.jpg" Link="Assets/Startup/%(Filename)%(Extension)" />
+    <AvaloniaResource Include="../../logo.png" Link="Assets/Startup/company-logo.png" />
+    <AvaloniaResource Include="../../docs/design/assets/lucide/*.svg" Link="Assets/Icons/%(Filename)%(Extension)" />
+    <Content Include="../../docs/licenses/Avalonia.DataGrid.txt" Link="Licenses/Avalonia.DataGrid.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../docs/licenses/Velopack.txt" Link="Licenses/Velopack.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../LICENSE" Link="Licenses/Journal.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../docs/design/assets/lucide/LICENSE" Link="Licenses/Lucide.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <!-- Native NuGet assets include large PDBs even when managed DebugType=None. -->
+  <Target Name="ExcludePublishDebugSymbols" AfterTargets="ComputeFilesToPublish" Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
+</Project>

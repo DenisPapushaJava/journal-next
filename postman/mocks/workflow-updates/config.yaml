@@ -1,0 +1,11 @@
+version: 1
+id: ecf93e81-97ce-4727-a5ab-afb8544901c4
+name: Workflow update feed
+slug: workflow-update-feed
+protocol: http
+interceptRequests: true
+port: 4500
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

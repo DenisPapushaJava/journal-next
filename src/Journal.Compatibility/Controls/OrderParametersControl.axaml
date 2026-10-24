@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:ui="using:Jornal.Desktop.Controls"
+ x:Class="Jornal.Desktop.Controls.OrderParametersControl" x:DataType="vm:NewOrderViewModel">
+ <StackPanel Spacing="6">
+            <Grid ColumnDefinitions="*,24,*">
+              <ui:OrderEntryControl DataContext="{Binding OrderDate}" />
+              <ui:OrderEntryControl Grid.Column="2" DataContext="{Binding SpecificationNumber}" />
+            </Grid>
+
+
+            <Grid ColumnDefinitions="*,24,*">
+              <ui:OrderEntryControl DataContext="{Binding CuttingType}" />
+              <ui:OrderEntryControl Grid.Column="2" DataContext="{Binding Material}" />
+            </Grid>
+            <Grid ColumnDefinitions="*,24,*">
+              <ui:OrderEntryControl DataContext="{Binding Thickness}" />
+              <ui:OrderEntryControl Grid.Column="2" DataContext="{Binding SheetSize}" />
+            </Grid>
+            <Grid ColumnDefinitions="*,24,*">
+              <ui:OrderEntryControl DataContext="{Binding SheetCount}" />
+              <ui:OrderEntryControl Grid.Column="2" DataContext="{Binding Weight}" />
+            </Grid>
+            <Grid ColumnDefinitions="*,24,*">
+              <ui:OrderEntryControl DataContext="{Binding CutLength}" />
+              <ui:OrderEntryControl Grid.Column="2" DataContext="{Binding Coefficient}" />
+            </Grid>
+            <Grid ColumnDefinitions="*,24,*">
+              <ui:OrderEntryControl DataContext="{Binding CuttingTime}" />
+            </Grid>
+            <Grid ColumnDefinitions="*,24,*" IsVisible="{Binding IsHansLaser}">
+              <ui:OrderEntryControl DataContext="{Binding MaterialId}" />
+              <ui:OrderEntryControl Grid.Column="2" DataContext="{Binding Gas}" />
+            </Grid>
+   <ui:OrderAnnotationsControl DataContext="{Binding Annotations}" />
+ </StackPanel>
+</UserControl>

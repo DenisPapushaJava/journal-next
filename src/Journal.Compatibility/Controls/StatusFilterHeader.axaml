@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:Jornal.Desktop.Controls" xmlns:vm="using:Jornal.Desktop.ViewModels"
+             x:Class="Jornal.Desktop.Controls.StatusFilterHeader" x:DataType="vm:MainWindowViewModel">
+  <Grid ColumnDefinitions="*,2,24" VerticalAlignment="Center">
+    <TextBlock Text="Статус" VerticalAlignment="Center" TextWrapping="NoWrap" />
+    <ui:JournalButton x:Name="StatusFilterButton" Grid.Column="2" Label="Фильтр статуса" Icon="funnel" IconOnly="True"
+                      Classes="status-filter-trigger" Classes.active="{Binding HasStatusFilter}" Width="24" Height="26" MinHeight="26" Padding="0"
+                      IsEnabled="{Binding CanBrowseJournal}" ToolTip.Tip="{Binding StatusFilterDescription}" AutomationProperties.HelpText="{Binding StatusFilterDescription}">
+      <Button.Flyout>
+        <Flyout Placement="BottomEdgeAlignedRight" Opened="OnFilterOpened" Closed="OnFilterClosed">
+          <!-- До подключения модели popup не наследует контекст заголовка. -->
+          <Grid x:Name="PopupRoot" DataContext="{x:Null}" IsEnabled="{Binding CanBrowseJournal}">
+            <StackPanel x:Name="PopupPanel" DataContext="{Binding StatusFilterEditor}" Width="260" Spacing="10">
+              <CheckBox x:Name="AllStatusesCheckBox" Content="Все" FontWeight="Normal" Classes="status-filter-option" IsThreeState="True" MinHeight="32"
+                        IsChecked="{Binding AllChecked, Mode=OneWay}" Command="{Binding ToggleAllCommand}" />
+              <Border Height="1" Background="{DynamicResource JournalBorder}" />
+              <ItemsControl x:Name="StatusFilterOptions" ItemsSource="{Binding Options}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:StatusFilterOption">
+                    <CheckBox Classes="status-filter-option" FontWeight="Normal" MinHeight="34" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                              AutomationProperties.Name="{Binding Label}">
+                      <CheckBox.Content>
+                        <Grid ColumnDefinitions="*,8,14,12,Auto">
+                          <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+                          <Border Grid.Column="2" Width="14" Height="14" CornerRadius="3" IsVisible="{Binding HasColor}"
+                                  Background="{Binding ColorBrush}" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="1" />
+                          <TextBlock Grid.Column="4" Text="{Binding Count}" Foreground="{DynamicResource JournalMuted}" VerticalAlignment="Center" />
+                        </Grid>
+                      </CheckBox.Content>
+                    </CheckBox>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <Border Height="1" Background="{DynamicResource JournalBorder}" />
+              <Grid ColumnDefinitions="*,8,*">
+                <ui:JournalButton x:Name="ClearStatusFilterButton" Label="Очистить фильтр" Click="OnClearFilter" />
+                <ui:JournalButton x:Name="ApplyStatusFilterButton" Grid.Column="2" Label="Применить" Classes="primary"
+                                  IsEnabled="{Binding CanApply}" Click="OnApplyFilter" />
+              </Grid>
+            </StackPanel>
+          </Grid>
+        </Flyout>
+      </Button.Flyout>
+    </ui:JournalButton>
+  </Grid>
+</UserControl>

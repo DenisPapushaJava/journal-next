@@ -1,0 +1,59 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Jornal.Desktop.Startup.SplashWindow"
+        Width="640" Height="360" CanResize="False" WindowDecorations="None"
+        WindowStartupLocation="CenterScreen" ShowInTaskbar="True"
+        RequestedThemeVariant="Dark" Background="Transparent" Foreground="#F4F7FB"
+        TransparencyLevelHint="Transparent" TransparencyBackgroundFallback="#0C1624"
+        Icon="avares://Jornal.Desktop/Assets/Journal.png" Title="Journal — запуск">
+  <Border x:Name="SplashSurface" Background="#0C1624" CornerRadius="16" ClipToBounds="True">
+    <Grid>
+      <Image x:Name="ArtworkImage" Stretch="UniformToFill" IsHitTestVisible="False" />
+      <Border IsHitTestVisible="False">
+        <Border.Background>
+          <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+            <GradientStop Color="#50081220" Offset="0" />
+            <GradientStop Color="#00081220" Offset="0.8" />
+          </LinearGradientBrush>
+        </Border.Background>
+      </Border>
+      <Border VerticalAlignment="Bottom" Height="84" IsHitTestVisible="False">
+        <Border.Background>
+          <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Color="#00081220" Offset="0" />
+            <GradientStop Color="#E6081220" Offset="1" />
+          </LinearGradientBrush>
+        </Border.Background>
+      </Border>
+      <StackPanel Margin="32,28,0,0" HorizontalAlignment="Left" Spacing="0">
+        <Border Width="156" Height="102" Background="White" CornerRadius="8" HorizontalAlignment="Left">
+          <Grid>
+            <TextBlock x:Name="LogoFallback" Text="БЛОК" FontSize="28" FontWeight="Bold" Foreground="#004B83"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <Image x:Name="CompanyLogoImage" Width="136" Height="82" Stretch="Uniform"
+                   AutomationProperties.Name="Логотип компании БЛОК" />
+          </Grid>
+        </Border>
+        <TextBlock x:Name="ApplicationName" Text="Журнал заявок" FontSize="28" FontWeight="SemiBold" Margin="0,24,0,0" />
+      </StackPanel>
+      <Button x:Name="CloseSplashButton" Content="×" Width="32" Height="32" Margin="0,12,12,0"
+              HorizontalAlignment="Right" VerticalAlignment="Top" HorizontalContentAlignment="Center"
+              VerticalContentAlignment="Center" Padding="0" FontSize="22" Background="#A60C1624"
+              Foreground="White" BorderThickness="0" CornerRadius="6" Click="OnCloseClick"
+              ToolTip.Tip="Закрыть Journal" AutomationProperties.Name="Закрыть Journal" />
+      <Grid Margin="32,0,32,24" VerticalAlignment="Bottom" ColumnDefinitions="*,Auto">
+        <TextBlock x:Name="LaunchStatus" Text="Открываем журнал…" FontSize="13" Foreground="#D4DFED" />
+        <TextBlock x:Name="VersionLabel" Grid.Column="1" FontSize="12" Foreground="#D4DFED" />
+      </Grid>
+      <Border x:Name="StartupErrorPanel" IsVisible="False" Margin="20,0,20,54" Padding="16"
+              VerticalAlignment="Bottom" Background="#F50C1624" CornerRadius="8">
+        <StackPanel Spacing="6">
+          <TextBlock Text="Не удалось открыть журнал" FontWeight="SemiBold" FontSize="15" />
+          <ScrollViewer MaxHeight="64" HorizontalScrollBarVisibility="Disabled">
+            <TextBlock x:Name="StartupErrorMessage" TextWrapping="Wrap" FontSize="13" Foreground="#D4DFED" />
+          </ScrollViewer>
+          <Button Content="Закрыть" Click="OnCloseClick" HorizontalAlignment="Left" Margin="0,4,0,0" />
+        </StackPanel>
+      </Border>
+    </Grid>
+  </Border>
+</Window>

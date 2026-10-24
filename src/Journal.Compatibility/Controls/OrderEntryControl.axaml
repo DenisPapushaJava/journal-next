@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:ui="using:Jornal.Desktop.Controls"
+             x:Class="Jornal.Desktop.Controls.OrderEntryControl" x:DataType="vm:OrderEntryField"
+             IsEnabled="{Binding IsInputEnabled}">
+  <Grid ColumnDefinitions="144,8,*" RowDefinitions="Auto,Auto,Auto">
+    <TextBlock Text="{Binding Label}" Foreground="{DynamicResource JournalMuted}" FontWeight="Medium" FontSize="13"
+               VerticalAlignment="Center" TextWrapping="Wrap" />
+    <TextBox x:Name="Input" Grid.Column="2" Text="{Binding Value, Mode=TwoWay}"
+             IsVisible="{Binding HasPlainInput}" MinHeight="36" FontSize="14"
+             AutomationProperties.Name="{Binding Label}" Classes.invalid="{Binding HasError}" Classes.needs-review="{Binding NeedsReview}" ToolTip.Tip="{Binding InputHint}">
+      <TextBox.InnerRightContent>
+        <ui:JournalButton Label="Подтвердить материал" Icon="check" IconOnly="True" Width="28" Height="28" Padding="0" Margin="2,0"
+                          IsVisible="{Binding NeedsReview}" Command="{Binding ConfirmReviewCommand}" ToolTip.Tip="Проверьте материал и подтвердите значение" />
+      </TextBox.InnerRightContent>
+    </TextBox>
+    <ui:EntrySuggestionComboBox x:Name="SuggestionsInput" Grid.Column="2" Value="{Binding SuggestionText, Mode=TwoWay}"
+                     Suggestions="{Binding Suggestions}" IsVisible="{Binding HasSuggestions}" MinHeight="36" FontSize="14"
+                     MaxDropDownHeight="240" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                     Classes.editable-entry="True" Classes.invalid="{Binding HasError}"
+                     ToolTip.Tip="{Binding InputHint}" AutomationProperties.Name="{Binding Label}">
+      <ui:EntrySuggestionComboBox.Styles>
+        <Style Selector="ComboBoxItem.suggestion-preview /template/ ContentPresenter">
+          <Setter Property="Background" Value="{DynamicResource ComboBoxItemBackgroundSelected}" />
+          <Setter Property="Foreground" Value="{DynamicResource ComboBoxItemForegroundSelected}" />
+        </Style>
+      </ui:EntrySuggestionComboBox.Styles>
+    </ui:EntrySuggestionComboBox>
+    <ui:EntrySuggestionComboBox x:Name="EditableSuggestionsInput" Grid.Column="2"
+              Value="{Binding SuggestionText, Mode=TwoWay}" Suggestions="{Binding EditableSuggestions}" IsVisible="{Binding HasEditableSuggestions}"
+              MinHeight="36" FontSize="14" MaxDropDownHeight="240" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+              Classes.editable-entry="True" Classes.invalid="{Binding HasError}" Classes.needs-review="{Binding NeedsReview}"
+              ToolTip.Tip="{Binding InputHint}" AutomationProperties.Name="{Binding Label}">
+      <ui:EntrySuggestionComboBox.Styles>
+        <Style Selector="ComboBoxItem.suggestion-preview /template/ ContentPresenter">
+          <Setter Property="Background" Value="{DynamicResource ComboBoxItemBackgroundSelected}" />
+          <Setter Property="Foreground" Value="{DynamicResource ComboBoxItemForegroundSelected}" />
+        </Style>
+        <Style Selector="ComboBox /template/ TextBox#PART_EditableTextBox">
+          <Setter Property="InnerRightContent">
+            <Template>
+              <ui:JournalButton Label="Подтвердить материал" Icon="check" IconOnly="True" Width="28" Height="28" Padding="0" Margin="2,0"
+                                IsVisible="{Binding NeedsReview}" Command="{Binding ConfirmReviewCommand}" ToolTip.Tip="Проверьте материал и подтвердите значение" />
+            </Template>
+          </Setter>
+        </Style>
+      </ui:EntrySuggestionComboBox.Styles>
+    </ui:EntrySuggestionComboBox>
+    <Grid Grid.Column="2" ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding HasChoices}">
+    <Grid>
+    <ComboBox x:Name="Choice" ItemsSource="{Binding Choices}" SelectedItem="{Binding SelectedChoice, Mode=TwoWay}"
+              IsVisible="{Binding HasChoices}" MinHeight="36" FontSize="14" HorizontalAlignment="Stretch"
+              IsEnabled="{Binding !IsChoiceLoading}"
+              Classes.invalid="{Binding HasDisplayError}" ToolTip.Tip="{Binding InputHint}" AutomationProperties.Name="{Binding Label}" AutomationProperties.HelpText="{Binding DisplayError}" />
+    <TextBlock Text="{Binding UnlistedChoice}" Margin="12,0,36,0" VerticalAlignment="Center" IsHitTestVisible="False"
+               TextTrimming="CharacterEllipsis" Foreground="{DynamicResource JournalText}" />
+    </Grid>
+    <ProgressBar Height="2" VerticalAlignment="Bottom" IsIndeterminate="True" IsVisible="{Binding IsChoiceLoading}" />
+    <ui:JournalButton Grid.Column="1" Label="Прайсы" Icon="columns-3" IconOnly="True" Width="28" Height="28" Padding="0" Margin="4,0,0,0"
+                      IsVisible="{Binding HasThicknessOptions}" IsEnabled="{Binding ThicknessOptions.CanOpenPrices}"
+                      Click="OnPricesClick" ToolTip.Tip="Открыть прайс станка" />
+    <ui:JournalButton Grid.Column="2" Label="Обновить тарифы" Icon="refresh-cw" IconOnly="True" Width="28" Height="28" Padding="0" Margin="2,0,0,0"
+                      IsVisible="{Binding HasThicknessOptions}" Command="{Binding ThicknessOptions.ReloadCommand}" ToolTip.Tip="Обновить тарифы" />
+    </Grid>
+    <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding DisplayError}" IsVisible="{Binding HasDisplayError}" TextWrapping="Wrap" Margin="0,4,0,0"
+               Foreground="{DynamicResource JournalDangerForeground}" FontSize="12" />
+    <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding ImportHint}" IsVisible="{Binding HasImportHint}" ToolTip.Tip="{Binding ImportEvidence}"
+               Classes="muted" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
+  </Grid>
+</UserControl>

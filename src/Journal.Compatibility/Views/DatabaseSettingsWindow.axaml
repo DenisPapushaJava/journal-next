@@ -1,0 +1,12 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:settings="using:Jornal.Desktop.Controls.Settings" xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Desktop.Views.DatabaseSettingsWindow" x:DataType="vm:DatabaseSettingsViewModel"
+        Title="База данных · Journal" Width="660" Height="480" MinWidth="600" MinHeight="460"
+        WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="*,Auto">
+    <settings:DatabaseSettingsPanel x:Name="Page" />
+    <Border Grid.Row="1" Background="{DynamicResource JournalSurface}" Padding="24,12">
+      <ui:JournalButton x:Name="CancelDatabaseButton" Label="Закрыть" HorizontalAlignment="Right" Click="OnCloseClick" />
+    </Border>
+  </Grid>
+</Window>

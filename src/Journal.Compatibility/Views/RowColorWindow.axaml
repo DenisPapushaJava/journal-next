@@ -1,0 +1,64 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Desktop.Views.RowColorWindow" x:DataType="vm:RowColorViewModel"
+        Title="{Binding Title}" Width="540" Height="490" MinWidth="500" MinHeight="440" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <StackPanel Margin="24,20,24,12" Spacing="8">
+      <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Text="{Binding Summary}" Classes="muted" />
+    </StackPanel>
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="24,0" Spacing="14" IsEnabled="{Binding !IsBusy}">
+        <ItemsControl ItemsSource="{Binding Colors}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="10" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:TechnologistColorOption">
+              <Button Classes="command" Width="34" Height="34" MinHeight="34" MinWidth="34" Padding="3" Margin="2" CornerRadius="4"
+                      ToolTip.Tip="{Binding Description}" AutomationProperties.Name="{Binding Description}" Click="OnSelectColor">
+                <Border Background="{Binding Brush}" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="1" CornerRadius="2" Width="26" Height="26">
+                  <TextBlock Text="✓" IsVisible="{Binding IsSelected}" Foreground="{Binding CheckBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Grid ColumnDefinitions="Auto,12,*,8,Auto">
+          <TextBlock Text="Цвет" VerticalAlignment="Center" />
+          <TextBox x:Name="RowColorInput" Grid.Column="2" Text="{Binding Code, Mode=TwoWay}" MaxLength="11" MinHeight="36" AutomationProperties.Name="Цвет HEX или ARGB" />
+          <Button x:Name="MoreRowColors" Grid.Column="4" Classes="command" Content="Больше цветов" AutomationProperties.Name="Точный выбор цвета">
+            <Button.Flyout>
+              <Flyout Placement="TopEdgeAlignedRight" Opened="OnColorWheelOpened">
+                <StackPanel Spacing="10" Width="244" IsEnabled="{Binding !IsBusy}">
+                  <ui:ColorWheel x:Name="RowColorWheel" Width="244" Height="244" HsvColor="{Binding SpectrumColor, Mode=TwoWay}"
+                                 AutomationProperties.Name="Цветовой круг"
+                                 AutomationProperties.HelpText="Стрелки влево и вправо — оттенок, вверх и вниз — яркость. Shift и стрелки влево и вправо — насыщенность."
+                                 ToolTip.Tip="←/→ — оттенок · ↑/↓ — яркость · Shift+←/→ — насыщенность" />
+                  <Grid ColumnDefinitions="28,10,*">
+                    <Border CornerRadius="4" Background="{Binding PreviewBrush}" Height="24" />
+                    <TextBlock Grid.Column="2" Text="{Binding Hex}" VerticalAlignment="Center" />
+                  </Grid>
+                </StackPanel>
+              </Flyout>
+            </Button.Flyout>
+          </Button>
+        </Grid>
+        <TextBlock Text="{Binding ValidationError}" IsVisible="{Binding HasValidationError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
+        <Border x:Name="RowColorPreview" CornerRadius="4" BorderThickness="1" BorderBrush="{DynamicResource JournalBorder}" Padding="12,10">
+          <Border.Background><MultiBinding Converter="{StaticResource OrderRowBackground}"><Binding Path="Argb" /><Binding Source="False" /><Binding Source="False" /><Binding Source="False" /><Binding Path="ActualThemeVariant" ElementName="RowColorPreview" /></MultiBinding></Border.Background>
+          <TextBlock Text="Пример строки">
+            <TextBlock.Foreground><MultiBinding Converter="{StaticResource OrderRowForeground}"><Binding Path="Argb" /><Binding Source="False" /><Binding Source="False" /><Binding Source="False" /><Binding Path="ActualThemeVariant" ElementName="RowColorPreview" /></MultiBinding></TextBlock.Foreground>
+          </TextBlock>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+    <Border Grid.Row="2" Padding="24,16" Margin="0,14,0,0" Background="{DynamicResource JournalSurface}">
+      <StackPanel Spacing="12">
+        <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+          <ui:JournalButton x:Name="ConfirmRowColorButton" Label="{Binding ConfirmLabel}" Classes="primary" Command="{Binding ConfirmCommand}" />
+          <ui:JournalButton Label="Отмена" IsEnabled="{Binding !IsBusy}" Click="OnCancelClick" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+  </Grid>
+</Window>

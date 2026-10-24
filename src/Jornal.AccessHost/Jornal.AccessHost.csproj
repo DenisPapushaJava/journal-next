@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RuntimeIdentifiers>win-x86</RuntimeIdentifiers>
+    <!-- Не наследовать DOTNET_ROOT x64 от UI/SDK: использовать установленную среду x86. -->
+    <AppHostDotNetSearch>Global</AppHostDotNetSearch>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Jornal.Infrastructure/Jornal.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

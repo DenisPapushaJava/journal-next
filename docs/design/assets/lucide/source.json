@@ -1,0 +1,32 @@
+{
+  "repository": "https://github.com/lucide-icons/lucide",
+  "commit": "7b0196e249ca09ca27c584c497aca9a8cab8a7f5",
+  "icons": [
+    "plus",
+    "refresh-cw",
+    "pencil",
+    "trash",
+    "list-plus",
+    "clipboard-copy",
+    "copy",
+    "folder-plus",
+    "palette",
+    "sun-moon",
+    "settings-2",
+    "settings",
+    "message-square",
+    "hash",
+    "columns-3",
+    "calendar-days",
+    "x",
+    "sun",
+    "moon",
+    "monitor-cog",
+    "panels-top-left",
+    "grip-vertical",
+    "check",
+    "rotate-ccw",
+    "ban",
+    "funnel"
+  ]
+}

@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:Jornal.Desktop.Controls" xmlns:vm="using:Jornal.Desktop.ViewModels"
+             x:Class="Jornal.Desktop.Controls.ColumnFilterHeader" x:DataType="vm:OrderColumnFilterViewModel">
+  <Grid ColumnDefinitions="*,2,24" VerticalAlignment="Center">
+    <TextBlock Text="{Binding Header}" VerticalAlignment="Center" TextWrapping="NoWrap" />
+    <ui:JournalButton x:Name="ColumnFilterButton" Grid.Column="2" Label="{Binding FilterLabel}" Icon="funnel" IconOnly="True"
+                      Classes="status-filter-trigger" Classes.active="{Binding HasFilter}" Width="24" Height="26" MinHeight="26" Padding="0"
+                      IsEnabled="{Binding CanUseJournal}" AutomationProperties.HelpText="{Binding Description}">
+      <ToolTip.Tip><TextBlock Text="{Binding Description}" MaxWidth="360" TextWrapping="Wrap" MaxLines="8" TextTrimming="CharacterEllipsis" /></ToolTip.Tip>
+      <Button.Flyout>
+        <Flyout Placement="BottomEdgeAlignedRight" Opened="OnFilterOpened" Closed="OnFilterClosed">
+          <!-- До подключения модели popup не наследует контекст заголовка. -->
+          <Grid x:Name="PopupRoot" DataContext="{x:Null}" IsEnabled="{Binding CanUseJournal}">
+            <StackPanel x:Name="PopupPanel" DataContext="{Binding Editor}" Width="300" Spacing="10">
+              <TextBox x:Name="FilterSearch" Text="{Binding SearchText}" MinHeight="32" PlaceholderText="Найти значение"
+                       AutomationProperties.Name="Поиск в фильтре" />
+              <CheckBox x:Name="AllValuesCheckBox" Content="Все" FontWeight="Normal" Classes="status-filter-option" IsThreeState="True" MinHeight="32"
+                        IsChecked="{Binding AllChecked, Mode=OneWay}" Command="{Binding ToggleAllCommand}" />
+              <Border Height="1" Background="{DynamicResource JournalBorder}" />
+              <ScrollViewer x:Name="FilterScroll" MaxHeight="272" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl x:Name="ColumnFilterOptions" ItemsSource="{Binding VisibleOptions}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ColumnFilterOption">
+                      <CheckBox Classes="status-filter-option" FontWeight="Normal" MinHeight="34" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                IsChecked="{Binding IsChecked, Mode=TwoWay}" AutomationProperties.Name="{Binding Label}">
+                        <CheckBox.Content>
+                          <Grid ColumnDefinitions="*,12,Auto">
+                            <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center">
+                              <ToolTip.Tip><TextBlock Text="{Binding Label}" MaxWidth="360" TextWrapping="Wrap" /></ToolTip.Tip>
+                            </TextBlock>
+                            <TextBlock Grid.Column="2" Text="{Binding Count}" Foreground="{DynamicResource JournalMuted}" VerticalAlignment="Center" />
+                          </Grid>
+                        </CheckBox.Content>
+                      </CheckBox>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+              <TextBlock Text="Нет значений" IsVisible="{Binding HasNoMatches}" Foreground="{DynamicResource JournalMuted}" />
+              <Border Height="1" Background="{DynamicResource JournalBorder}" />
+              <Grid ColumnDefinitions="*,8,*">
+                <ui:JournalButton x:Name="ClearColumnFilterButton" Label="Очистить фильтр" Click="OnClearFilter" />
+                <ui:JournalButton x:Name="ApplyColumnFilterButton" Grid.Column="2" Label="Применить" Classes="primary"
+                                  IsEnabled="{Binding CanApply}" Click="OnApplyFilter" />
+              </Grid>
+            </StackPanel>
+          </Grid>
+        </Flyout>
+      </Button.Flyout>
+    </ui:JournalButton>
+  </Grid>
+</UserControl>

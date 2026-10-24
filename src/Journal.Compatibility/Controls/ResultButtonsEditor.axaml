@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:Jornal.Desktop.Controls" x:Class="Jornal.Desktop.Controls.ResultButtonsEditor">
+  <ui:JournalButton x:Name="ResultButtonsSettingsButton" Label="Кнопки" Icon="settings-2" Classes="outline"
+                    MinHeight="28" Height="28" Padding="8,0" ToolTip.Tip="Кнопки результата">
+    <Button.Flyout>
+      <Flyout Placement="BottomEdgeAlignedLeft">
+        <StackPanel Width="280" Spacing="12">
+          <TextBlock Text="Кнопки результата" FontSize="15" FontWeight="SemiBold" />
+          <Grid ColumnDefinitions="*,32,6,48,6,32">
+            <TextBlock Text="Размер" VerticalAlignment="Center" />
+            <Button x:Name="DecreaseResultButtonsButton" Grid.Column="1" Classes="command outline" Content="−"
+                    Width="32" Height="32" Padding="0" FontSize="18" Click="OnDecrease"
+                    AutomationProperties.Name="Уменьшить размер кнопок результата" />
+            <TextBlock x:Name="ResultButtonsSizeValue" Grid.Column="3" Text="40 px" TextAlignment="Center" VerticalAlignment="Center" />
+            <Button x:Name="IncreaseResultButtonsButton" Grid.Column="5" Classes="command outline" Content="+"
+                    Width="32" Height="32" Padding="0" FontSize="18" Click="OnIncrease"
+                    AutomationProperties.Name="Увеличить размер кнопок результата" />
+          </Grid>
+          <Grid ColumnDefinitions="*,44">
+            <TextBlock Text="Результат" VerticalAlignment="Center" />
+            <Button x:Name="ResultActionColorButton" Grid.Column="1" Classes="command outline" Height="32" Padding="4"
+                    Click="OnResultColor" ToolTip.Tip="Цвет кнопки «Результат»" AutomationProperties.Name="Цвет кнопки Результат">
+              <Border x:Name="ResultActionColorSample" Width="28" Height="20" CornerRadius="4" BorderThickness="1" BorderBrush="#647F9D" />
+            </Button>
+          </Grid>
+          <Grid ColumnDefinitions="*,44">
+            <TextBlock Text="Копировать" VerticalAlignment="Center" />
+            <Button x:Name="CopyActionColorButton" Grid.Column="1" Classes="command outline" Height="32" Padding="4"
+                    Click="OnCopyColor" ToolTip.Tip="Цвет кнопки «Копировать»" AutomationProperties.Name="Цвет кнопки Копировать">
+              <Border x:Name="CopyActionColorSample" Width="28" Height="20" CornerRadius="4" BorderThickness="1" BorderBrush="#647F9D" />
+            </Button>
+          </Grid>
+          <Grid ColumnDefinitions="*,44">
+            <TextBlock Text="Очистить" VerticalAlignment="Center" />
+            <Button x:Name="ClearActionColorButton" Grid.Column="1" Classes="command outline" Height="32" Padding="4"
+                    Click="OnClearColor" ToolTip.Tip="Цвет кнопки «Очистить»" AutomationProperties.Name="Цвет кнопки Очистить">
+              <Border x:Name="ClearActionColorSample" Width="28" Height="20" CornerRadius="4" BorderThickness="1" BorderBrush="#647F9D" />
+            </Button>
+          </Grid>
+          <Button x:Name="ResetResultButtonsButton" Classes="command outline" Content="По умолчанию" HorizontalAlignment="Right"
+                  Click="OnReset" />
+        </StackPanel>
+      </Flyout>
+    </Button.Flyout>
+  </ui:JournalButton>
+</UserControl>

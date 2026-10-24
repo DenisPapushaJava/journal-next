@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:ui="using:Jornal.Desktop.Controls"
+             x:Class="Jornal.Desktop.Controls.Settings.DatabaseSettingsPanel" x:DataType="vm:DatabaseSettingsViewModel">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <Border Classes="settings-page-header">
+      <StackPanel Spacing="4">
+        <TextBlock Text="База данных" Classes="settings-page-title" />
+        <TextBlock x:Name="CurrentSourceLabel" Text="{Binding CurrentSource}" Classes="muted" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding CurrentSource}" />
+        <TextBlock Text="Подключено" IsVisible="{Binding IsConnected}" Classes="muted" />
+      </StackPanel>
+    </Border>
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="24,16" Spacing="12" IsEnabled="{Binding CanChangeSource}">
+        <RadioButton x:Name="DatabaseModeButton" GroupName="Source" Content="Существующая база OrderDB.mdb"
+                     IsChecked="{Binding UseDatabase, Mode=TwoWay}" />
+        <StackPanel Spacing="12" IsVisible="{Binding UseDatabase}">
+        <Grid ColumnDefinitions="*,8,Auto" IsEnabled="{Binding UseDatabase}">
+          <TextBox x:Name="DatabasePathInput" Text="{Binding DatabasePath, Mode=TwoWay}" MinHeight="36"
+                   PlaceholderText="Файл .mdb" AutomationProperties.Name="Путь к базе данных"
+                   ToolTip.Tip="{Binding DatabasePath}" />
+          <ui:JournalButton x:Name="BrowseDatabaseButton" Grid.Column="2" Label="Обзор…" Icon="folder-plus" Click="OnBrowseClick" />
+        </Grid>
+        <Border Classes="panel" Padding="12">
+          <TextBlock Text="{Binding DatabaseCapabilities}"
+                     TextWrapping="Wrap" />
+        </Border>
+        </StackPanel>
+        <RadioButton x:Name="DemoModeButton" GroupName="Source" Content="Демонстрационный журнал"
+                     IsChecked="{Binding UseDemo, Mode=TwoWay}" />
+        <StackPanel Spacing="8" IsVisible="{Binding CanUseLocalCopy}">
+          <Grid ColumnDefinitions="*,8,Auto">
+          <RadioButton x:Name="LocalCopyModeButton" GroupName="Source" Content="Локальная тестовая копия"
+                       IsChecked="{Binding UseLocalCopy, Mode=TwoWay}" />
+          <ui:JournalButton x:Name="ImportLocalCopyButton" Grid.Column="2" Label="Создать из MDB…" Icon="plus" Click="OnImportLocalCopyClick"
+                            ToolTip.Tip="Создать тестовую копию" />
+          </Grid>
+          <StackPanel Spacing="8" IsVisible="{Binding UseLocalCopy}">
+          <Grid ColumnDefinitions="*,8,Auto">
+            <TextBox x:Name="LocalCopyPathInput" Text="{Binding LocalCopyPath, Mode=TwoWay}" MinHeight="36"
+                     PlaceholderText="Файл .journal-test.json" AutomationProperties.Name="Путь к локальной тестовой копии" />
+            <ui:JournalButton x:Name="BrowseLocalCopyButton" Grid.Column="2" Label="Обзор…" Icon="folder-plus" Click="OnBrowseLocalCopyClick" />
+          </Grid>
+          <TextBlock Text="Изменения остаются в копии и не переносятся в MDB."
+                     Classes="muted" TextWrapping="Wrap" />
+          </StackPanel>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+    <Border Grid.Row="2" Background="{DynamicResource JournalSurface}" BorderBrush="{DynamicResource JournalBorder}"
+            BorderThickness="0,1,0,0" Padding="24,12">
+      <StackPanel Spacing="8">
+        <TextBlock Text="Смена источника очистит результат, выбор строк и фильтры."
+                   Classes="muted" TextWrapping="Wrap" />
+        <TextBlock x:Name="DatabaseConnectionError" Text="{Binding Error}" IsVisible="{Binding HasError}"
+                   Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+        <ui:WindowsSecurityHelp DataContext="{Binding AccessHostHelp}" />
+        <Grid ColumnDefinitions="*,12,Auto,8,Auto">
+        <TextBlock Text="Подключение…" IsVisible="{Binding ConnectCommand.IsRunning}" Classes="muted" VerticalAlignment="Center" />
+        <TextBlock Text="Создание копии…" IsVisible="{Binding IsImporting}" Classes="muted" VerticalAlignment="Center" />
+        <ui:JournalButton x:Name="ConnectDatabaseButton" Grid.Column="4" Label="Подключить" Icon="check" Classes="primary"
+                          Command="{Binding ConnectCommand}" />
+        </Grid>
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

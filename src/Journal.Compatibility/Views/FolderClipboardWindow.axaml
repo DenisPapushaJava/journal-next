@@ -1,0 +1,28 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:result="using:Jornal.Core.Results" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Desktop.Views.FolderClipboardWindow" x:DataType="vm:FolderClipboardViewModel"
+        Title="Создать папки" Width="840" Height="520" MinWidth="620" MinHeight="400" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <StackPanel Margin="24,20,24,16" Spacing="8">
+      <TextBlock Text="Создать папки" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Text="{Binding Summary}" />
+      <TextBlock Text="{Binding RenamedSummary}" Classes="muted" IsVisible="{Binding HasRenamed}" />
+    </StackPanel>
+    <ListBox Grid.Row="1" Margin="24,0" Background="{DynamicResource JournalSurface}" ItemsSource="{Binding Items}" IsEnabled="{Binding !IsBusy}">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="result:OrderFolderItem">
+          <TextBlock Text="{Binding Name}" TextWrapping="Wrap" ToolTip.Tip="{Binding OriginalName}" Margin="8" />
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+    <Border Grid.Row="2" Padding="24,16" Margin="0,16,0,0" Background="{DynamicResource JournalSurface}">
+      <StackPanel Spacing="12">
+        <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+        <Grid ColumnDefinitions="*,Auto,8,Auto">
+          <ui:JournalButton x:Name="CopyFoldersButton" Grid.Column="1" Label="Скопировать папки" Icon="folder-plus" Classes="primary" Command="{Binding CopyCommand}" />
+          <ui:JournalButton Grid.Column="3" Label="Отмена" Click="OnCancelClick" IsEnabled="{Binding !IsBusy}" />
+        </Grid>
+      </StackPanel>
+    </Border>
+  </Grid>
+</Window>

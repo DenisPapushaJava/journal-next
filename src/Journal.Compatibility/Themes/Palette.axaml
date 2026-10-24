@@ -1,0 +1,69 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Спокойные серо-синие темы UX-45; декоративные и рабочие границы разделены. -->
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <SolidColorBrush x:Key="JournalBackground" Color="#E7EDF4" />
+      <SolidColorBrush x:Key="JournalSurface" Color="#F0F4F8" />
+      <SolidColorBrush x:Key="JournalRaised" Color="#E4EBF3" />
+      <SolidColorBrush x:Key="JournalInput" Color="#F5F7FA" />
+      <SolidColorBrush x:Key="JournalControlBorder" Color="#7A899D" />
+      <SolidColorBrush x:Key="JournalText" Color="#253141" />
+      <SolidColorBrush x:Key="JournalMuted" Color="#536276" />
+      <SolidColorBrush x:Key="JournalSubtle" Color="#55657A" />
+      <SolidColorBrush x:Key="JournalBorder" Color="#CCD6E2" />
+      <SolidColorBrush x:Key="JournalAccent" Color="#42668F" />
+      <SolidColorBrush x:Key="JournalOnAccent" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="JournalAccentHover" Color="#365878" />
+      <SolidColorBrush x:Key="JournalAccentPressed" Color="#2E4B69" />
+      <SolidColorBrush x:Key="JournalControlPressed" Color="#DCE6F2" />
+      <SolidColorBrush x:Key="JournalAccentSoft" Color="#DCE7F3" />
+      <SolidColorBrush x:Key="JournalSelection" Color="#D8E5F4" />
+      <SolidColorBrush x:Key="JournalRowSelection" Color="#008B8B" />
+      <SolidColorBrush x:Key="JournalRowHover" Color="#E2EBF5" />
+      <SolidColorBrush x:Key="JournalRowOutline" Color="#739ACAF2" />
+      <SolidColorBrush x:Key="WorkBackground" Color="#F3EFE4" />
+      <SolidColorBrush x:Key="WorkForeground" Color="#75613C" />
+      <SolidColorBrush x:Key="ReadyBackground" Color="#E8F0EB" />
+      <SolidColorBrush x:Key="ReadyForeground" Color="#466851" />
+      <SolidColorBrush x:Key="ShippedBackground" Color="#E9EDF5" />
+      <SolidColorBrush x:Key="ShippedForeground" Color="#4F6687" />
+      <SolidColorBrush x:Key="JournalDangerBackground" Color="#F8ECEB" />
+      <SolidColorBrush x:Key="JournalImportRejectionOverlay" Color="#507D3338" />
+      <SolidColorBrush x:Key="JournalDangerForeground" Color="#9C4F4D" />
+      <SolidColorBrush x:Key="NeutralBackground" Color="#E4EBF3" />
+      <SolidColorBrush x:Key="NeutralForeground" Color="#536276" />
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="Dark">
+      <SolidColorBrush x:Key="JournalBackground" Color="#181C22" />
+      <SolidColorBrush x:Key="JournalSurface" Color="#20252D" />
+      <SolidColorBrush x:Key="JournalRaised" Color="#282E37" />
+      <SolidColorBrush x:Key="JournalInput" Color="#1C222B" />
+      <SolidColorBrush x:Key="JournalControlBorder" Color="#78889D" />
+      <SolidColorBrush x:Key="JournalText" Color="#E5E9EF" />
+      <SolidColorBrush x:Key="JournalMuted" Color="#B6C2D0" />
+      <SolidColorBrush x:Key="JournalSubtle" Color="#A8B6C8" />
+      <SolidColorBrush x:Key="JournalBorder" Color="#3B4553" />
+      <SolidColorBrush x:Key="JournalAccent" Color="#99B5D3" />
+      <SolidColorBrush x:Key="JournalOnAccent" Color="#172435" />
+      <SolidColorBrush x:Key="JournalAccentHover" Color="#B0C5DD" />
+      <SolidColorBrush x:Key="JournalAccentPressed" Color="#8DA8C7" />
+      <SolidColorBrush x:Key="JournalControlPressed" Color="#35485F" />
+      <SolidColorBrush x:Key="JournalAccentSoft" Color="#2A394C" />
+      <SolidColorBrush x:Key="JournalSelection" Color="#2C3E54" />
+      <SolidColorBrush x:Key="JournalRowSelection" Color="#008B8B" />
+      <SolidColorBrush x:Key="JournalRowHover" Color="#2B3542" />
+      <SolidColorBrush x:Key="JournalRowOutline" Color="#809ACAF2" />
+      <SolidColorBrush x:Key="WorkBackground" Color="#39342A" />
+      <SolidColorBrush x:Key="WorkForeground" Color="#DAC89F" />
+      <SolidColorBrush x:Key="ReadyBackground" Color="#293930" />
+      <SolidColorBrush x:Key="ReadyForeground" Color="#A8C7B2" />
+      <SolidColorBrush x:Key="ShippedBackground" Color="#2C3747" />
+      <SolidColorBrush x:Key="ShippedForeground" Color="#B3C6E1" />
+      <SolidColorBrush x:Key="JournalDangerBackground" Color="#422F33" />
+      <SolidColorBrush x:Key="JournalImportRejectionOverlay" Color="#603C1F26" />
+      <SolidColorBrush x:Key="JournalDangerForeground" Color="#E8B3B0" />
+      <SolidColorBrush x:Key="NeutralBackground" Color="#282E37" />
+      <SolidColorBrush x:Key="NeutralForeground" Color="#B6C2D0" />
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

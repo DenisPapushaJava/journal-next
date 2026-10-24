@@ -1,0 +1,189 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:ui="using:Jornal.Desktop.Controls" xmlns:pricing="using:Jornal.Core.Pricing"
+        x:Class="Jornal.Desktop.Views.PriceEditorWindow" x:DataType="vm:PriceEditorViewModel"
+        Title="Прайсы" Width="960" Height="700" MinWidth="840" MinHeight="560" WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <Style Selector="TextBox.price-changed">
+      <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBox.price-invalid">
+      <Setter Property="BorderBrush" Value="{DynamicResource JournalDangerForeground}" />
+    </Style>
+    <Style Selector="DataGrid#PriceGrid DataGridCell">
+      <Setter Property="FocusAdorner" Value="{x:Null}" />
+    </Style>
+    <Style Selector="DataGrid#PriceGrid DataGridColumnHeader">
+      <Setter Property="HorizontalContentAlignment" Value="Right" />
+    </Style>
+  </Window.Styles>
+  <Window.KeyBindings>
+    <KeyBinding Gesture="F5" Command="{Binding RefreshCommand}" />
+    <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveCommand}" />
+  </Window.KeyBindings>
+  <Grid>
+  <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="208,*" IsEnabled="{Binding !IsConfirmingThickness}">
+    <Border Grid.ColumnSpan="2" Background="{DynamicResource JournalSurface}" BorderBrush="{DynamicResource JournalBorder}"
+            BorderThickness="0,0,0,1" Padding="24,18">
+      <Grid ColumnDefinitions="*,16,Auto">
+      <StackPanel Spacing="5">
+        <TextBlock Text="Прайсы" FontSize="20" FontWeight="SemiBold" />
+        <TextBlock Text="{Binding Source}" ToolTip.Tip="{Binding SourceDetails}" Classes="muted" TextTrimming="CharacterEllipsis" />
+      </StackPanel>
+      <ui:JournalButton Grid.Column="2" x:Name="ExportPricesButton" Label="Экспорт в Excel" Icon="file-spreadsheet" VerticalAlignment="Center"
+                        Click="OnExportPricesClick" IsEnabled="{Binding CanExport}" ToolTip.Tip="Экспортировать сохранённые прайсы" />
+      </Grid>
+    </Border>
+    <Border Grid.Row="1" Background="{DynamicResource JournalSurface}" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="0,0,1,0" Padding="12,16">
+      <ListBox x:Name="PriceGroups" ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup, Mode=TwoWay}"
+               IsEnabled="{Binding CanNavigate}" Background="Transparent" BorderThickness="0" AutomationProperties.Name="Вид резки">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="pricing:PriceGroup">
+            <TextBlock Text="{Binding Name}" Margin="4,6" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
+    <Grid Grid.Row="1" Grid.Column="1" Margin="24,18,24,12" RowDefinitions="Auto,Auto,*,Auto">
+      <Grid ColumnDefinitions="*,12,Auto,8,Auto" Margin="0,0,0,12">
+        <ComboBox x:Name="PriceProfiles" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile, Mode=TwoWay}"
+                  IsVisible="{Binding HasProfiles}" IsEnabled="{Binding CanNavigate}" HorizontalAlignment="Stretch"
+                  AutomationProperties.Name="Группа тарифа">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="pricing:PriceProfile">
+              <TextBlock Text="{Binding Name}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <TextBlock Text="{Binding Usage}" IsVisible="{Binding !HasProfiles}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Usage}" />
+        <ui:JournalButton Grid.Column="2" x:Name="EditMachineImportButton" Label="Импорт спецификаций" Icon="settings-2" IsVisible="{Binding IsCustomMachine}" IsEnabled="{Binding CanEditMachineImport}" Click="OnMachineImportClick" />
+        <ui:JournalButton Grid.Column="4" x:Name="RefreshPricesButton" Label="Обновить" Icon="refresh-cw" Command="{Binding RefreshCommand}" ToolTip.Tip="Обновить прайс · F5" />
+      </Grid>
+      <StackPanel Grid.Row="1" Margin="0,0,0,12" Spacing="4">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="{Binding Usage}" IsVisible="{Binding HasProfiles}" Classes="muted" TextWrapping="Wrap" />
+          <TextBlock Grid.Column="1" Text="{Binding TableName}" IsVisible="{Binding ShowTableName}" Classes="muted" Margin="12,0,0,0" />
+        </Grid>
+        <TextBlock Text="{Binding ReadOnlyReason}" IsVisible="{Binding IsReadOnly}" Classes="muted" />
+        <TextBlock Text="{Binding EditScope}" IsVisible="{Binding IsEditing}" Classes="muted" TextWrapping="Wrap" />
+        <TextBlock Text="Перед изменением толщин закройте журнал на остальных ПК. Будет создана резервная копия."
+                   IsVisible="{Binding ShowExpansionNotice}" Classes="muted" TextWrapping="Wrap" />
+        <StackPanel IsVisible="{Binding ShowAddRate}" Spacing="6" Margin="0,8,0,0">
+          <Grid ColumnDefinitions="*,12,*,12,Auto,8,Auto">
+            <StackPanel Spacing="4">
+              <TextBlock Text="Толщина, мм" />
+              <TextBox x:Name="NewThicknessInput" Text="{Binding NewThickness, Mode=TwoWay}" AutomationProperties.Name="Новая толщина, мм" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Spacing="4">
+              <TextBlock Text="Цена, ₽/м" />
+              <TextBox x:Name="NewPriceRateInput" Text="{Binding NewRate, Mode=TwoWay}" AutomationProperties.Name="Цена новой толщины, рублей за метр" />
+            </StackPanel>
+            <ui:JournalButton Grid.Column="4" x:Name="StagePriceRateButton" Label="Добавить" Click="OnStageRateClick" IsEnabled="{Binding CanStageRate}" VerticalAlignment="Bottom" />
+            <ui:JournalButton Grid.Column="6" Label="Отмена" Command="{Binding CancelAddRateCommand}" VerticalAlignment="Bottom" />
+          </Grid>
+          <TextBlock Text="{Binding AdditionError}" IsVisible="{Binding HasAdditionError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
+        </StackPanel>
+        <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" Height="3" Margin="0,4,0,0" />
+      </StackPanel>
+      <DataGrid x:Name="PriceGrid" Grid.Row="2" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRate, Mode=TwoWay}" AutoGenerateColumns="False" IsReadOnly="True"
+                CanUserSortColumns="False" CanUserReorderColumns="False" SelectionMode="Single" HeadersVisibility="Column"
+                RowHeight="40" IsEnabled="{Binding CanBrowse}" ScrollViewer.VerticalScrollBarVisibility="Auto">
+        <DataGrid.Columns>
+          <DataGridTemplateColumn Header="Толщина, мм" Width="100">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate x:DataType="vm:PriceRowViewModel"><TextBlock Text="{Binding CurrentThickness}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="8,0,16,0" /></DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTemplateColumn Header="Новая толщина, мм" Width="138" IsVisible="{Binding IsEditing}">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate x:DataType="vm:PriceRowViewModel">
+                <TextBox Text="{Binding ThicknessValue, Mode=TwoWay}" Classes="tariff-thickness" TextAlignment="Right" MinHeight="30" Height="32"
+                         Margin="6,3,8,3" Padding="8,4" Classes.price-changed="{Binding IsThicknessChanged}" Classes.price-invalid="{Binding HasThicknessError}"
+                         ToolTip.Tip="{Binding ThicknessError}" AutomationProperties.Name="{Binding Thickness, StringFormat='Толщина вместо {0} мм'}" />
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTemplateColumn Header="Цена, ₽/м" Width="*" MinWidth="90">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate x:DataType="vm:PriceRowViewModel"><TextBlock Text="{Binding CurrentPrice}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="8,0,16,0" /></DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTemplateColumn Header="Новая цена, ₽/м" Width="150" IsVisible="{Binding IsEditing}">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate x:DataType="vm:PriceRowViewModel">
+                <TextBox Text="{Binding Value, Mode=TwoWay}" Classes="tariff-price" TextAlignment="Right" MinHeight="30" Height="32" Margin="6,3,12,3" Padding="8,4"
+                         Classes.price-changed="{Binding IsPriceChanged}" Classes.price-invalid="{Binding HasPriceError}" ToolTip.Tip="Целые рубли. Пустое поле — тариф не задан." AutomationProperties.Name="{Binding Thickness, StringFormat='Тариф для толщины {0} мм'}" />
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTemplateColumn Width="36" IsVisible="{Binding IsEditing}">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate x:DataType="vm:PriceRowViewModel">
+                <ui:JournalButton Label="Убрать из правок" Icon="x" IconOnly="True" Width="28" Height="28" Padding="0"
+                                  IsVisible="{Binding IsNew}" ToolTip.Tip="Убрать из правок" Click="OnRemoveNewRateClick" />
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+        </DataGrid.Columns>
+      </DataGrid>
+      <StackPanel Grid.Row="3" Margin="0,12,0,0" Spacing="6">
+        <TextBlock Text="{Binding ThicknessValidationError}" IsVisible="{Binding HasInvalidThickness}"
+                   Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
+        <TextBlock Text="Укажите целую цену от 0 до 2 147 483 647 ₽." IsVisible="{Binding HasInvalidPrices}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+        <ui:WindowsSecurityHelp DataContext="{Binding AccessHostHelp}" />
+        <TextBlock Text="{Binding Status}" Classes="muted" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+      </StackPanel>
+    </Grid>
+    <Border Grid.Row="2" Grid.ColumnSpan="2" Background="{DynamicResource JournalSurface}" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="0,1,0,0" Padding="24,14">
+      <StackPanel Spacing="12">
+        <Grid IsVisible="{Binding ConfirmDiscard}" ColumnDefinitions="*,12,Auto,8,Auto">
+          <TextBlock Text="Закрыть без сохранения?" VerticalAlignment="Center" />
+          <ui:JournalButton Grid.Column="2" Label="Продолжить" Click="OnKeepEditingClick" />
+          <ui:JournalButton Grid.Column="4" x:Name="DiscardPricesButton" Label="Не сохранять" Click="OnDiscardClick" />
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto,8,Auto,8,Auto,16,Auto">
+          <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding IsEditing}">
+            <TextBlock Text="{Binding ChangesText}" Classes="muted" VerticalAlignment="Center" />
+            <ui:JournalButton x:Name="BeginAddPriceRateButton" Label="Добавить толщину" Icon="plus" Click="OnBeginAddRateClick" IsEnabled="{Binding CanBeginAddRate}" />
+          </StackPanel>
+          <ui:JournalButton x:Name="NewMachineButton" Label="Добавить станок" Icon="plus" HorizontalAlignment="Left" IsVisible="{Binding !IsEditing}" IsEnabled="{Binding CanAddMachine}" Click="OnNewMachineClick" />
+          <ui:JournalButton Grid.Column="1" x:Name="EditPricesButton" Label="Редактировать" Icon="pencil" Command="{Binding BeginEditCommand}" IsVisible="{Binding !IsEditing}" />
+          <ui:JournalButton Grid.Column="3" x:Name="CancelPricesButton" Label="Отмена" Command="{Binding CancelEditCommand}" IsVisible="{Binding IsEditing}" />
+          <ui:JournalButton Grid.Column="5" x:Name="SavePricesButton" Label="Сохранить" Icon="check" Command="{Binding SaveCommand}" IsVisible="{Binding IsEditing}" Classes="primary" ToolTip.Tip="Сохранить прайс · Ctrl+S" />
+          <ui:JournalButton Grid.Column="7" x:Name="ClosePricesButton" Label="Закрыть" Click="OnCloseClick" IsEnabled="{Binding CanClose}" />
+        </Grid>
+      </StackPanel>
+    </Border>
+  </Grid>
+  <Border IsVisible="{Binding IsConfirmingThickness}" Background="#66000000" Padding="24">
+    <Border Background="{DynamicResource JournalSurface}" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="1" CornerRadius="12"
+            MaxWidth="560" MaxHeight="480" Padding="24" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+      <Grid RowDefinitions="Auto,Auto,*,Auto,Auto,Auto">
+        <TextBlock Text="Изменение толщин" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,12" />
+        <TextBlock Grid.Row="1" Text="{Binding Usage}" Classes="muted" TextWrapping="Wrap" Margin="0,0,0,12" />
+        <ScrollViewer Grid.Row="2" MaxHeight="240">
+          <ItemsControl ItemsSource="{Binding ThicknessChanges}" Margin="0,0,12,0">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:PriceThicknessChangePreview">
+                <Border BorderBrush="{DynamicResource JournalBorder}" BorderThickness="0,0,0,1" Padding="0,8">
+                  <StackPanel Spacing="5">
+                    <Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Thickness}" FontWeight="SemiBold" /><TextBlock Grid.Column="1" Text="{Binding Price}" Margin="16,0,0,0" /></Grid>
+                    <TextBlock Text="{Binding Orders}" Classes="muted" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+        <TextBlock Grid.Row="3" Text="Заявки сохранят прежнюю толщину и цену. Для их пересчёта потребуется прежний тариф." IsVisible="{Binding HasAffectedOrders}" TextWrapping="Wrap" Margin="0,12,0,0" />
+        <ui:JournalButton Grid.Row="4" x:Name="KeepOriginalThicknessesButton" Label="Добавить новые, сохранив прежние" Command="{Binding KeepOriginalThicknessesCommand}" HorizontalAlignment="Left" Margin="0,12,0,0" />
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+          <ui:JournalButton x:Name="BackFromThicknessConfirmationButton" Label="Вернуться" Click="OnBackFromThicknessConfirmationClick" />
+          <ui:JournalButton x:Name="ConfirmThicknessChangesButton" Label="Сохранить изменения" Classes="primary" Command="{Binding ConfirmThicknessChangesCommand}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Border>
+  </Grid>
+</Window>

@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Workflow.Desktop" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Workflow.Desktop.WorkflowEntrySuggestionsWindow" x:DataType="vm:WorkflowEntrySuggestionsViewModel"
+        Title="Данные для выпадающих списков" Width="800" Height="560" MinWidth="680" MinHeight="440"
+        Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <StackPanel Margin="24,20,24,16" Spacing="8">
+      <TextBlock Text="Данные для выпадающих списков" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Text="Одно значение на строку. Ваши подсказки сохраняются на этом компьютере; списки можно оставить пустыми." Classes="muted" TextWrapping="Wrap" />
+    </StackPanel>
+    <Grid Grid.Row="1" ColumnDefinitions="*,16,*" Margin="24,0" IsEnabled="{Binding CanEdit}">
+      <Grid RowDefinitions="Auto,8,*">
+        <TextBlock Text="Менеджеры" FontWeight="SemiBold" />
+        <TextBox x:Name="WorkflowManagersList" Grid.Row="2" Text="{Binding ManagersText}" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" MaxLength="16000"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Список менеджеров, по одному на строку" />
+      </Grid>
+      <Grid Grid.Column="2" RowDefinitions="Auto,8,*">
+        <TextBlock Text="Заказчики" FontWeight="SemiBold" />
+        <TextBox x:Name="WorkflowCustomersList" Grid.Row="2" Text="{Binding CustomersText}" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" MaxLength="16000"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Список заказчиков, по одному на строку" />
+      </Grid>
+    </Grid>
+    <Border Grid.Row="2" Padding="24,16" Margin="0,16,0,0" Background="{DynamicResource JournalSurface}">
+      <StackPanel Spacing="12">
+        <TextBlock Text="{Binding Error}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+          <ui:JournalButton x:Name="SaveWorkflowSuggestions" Label="Сохранить" Classes="primary" Command="{Binding SaveCommand}" />
+          <ui:JournalButton x:Name="CancelWorkflowSuggestions" Label="Отмена" Click="OnCancel" IsEnabled="{Binding CanEdit}" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+  </Grid>
+</Window>

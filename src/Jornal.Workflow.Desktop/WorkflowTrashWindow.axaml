@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Workflow.Desktop" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Workflow.Desktop.WorkflowTrashWindow" x:DataType="vm:WorkflowTrashViewModel"
+        Title="{x:Static vm:WorkflowIdentity.TrashTitle}" Width="960" Height="620" MinWidth="800" MinHeight="520"
+        Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <Border Classes="settings-page-header">
+      <Grid ColumnDefinitions="*,12,Auto">
+        <StackPanel Spacing="6"><TextBlock Text="Корзина заявок" Classes="settings-page-title" /><TextBlock Text="{Binding Summary}" Classes="muted" TextWrapping="Wrap" /></StackPanel>
+        <ui:JournalButton x:Name="RefreshWorkflowTrash" Grid.Column="2" Label="Обновить" Icon="refresh-cw" Command="{Binding ReloadCommand}" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+    <Grid Grid.Row="1" Margin="24,16" RowDefinitions="*,12,Auto" IsEnabled="{Binding CanEdit}">
+      <DataGrid x:Name="WorkflowTrashOrders" ItemsSource="{Binding Orders}" SelectedItem="{Binding Selected}" AutoGenerateColumns="False" IsReadOnly="True" RowHeight="NaN">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Заявка" Binding="{Binding Number}" Width="190" />
+          <DataGridTemplateColumn Header="Заказчик" Width="*" MinWidth="140"><DataGridTemplateColumn.CellTemplate>
+            <DataTemplate x:DataType="vm:WorkflowTrashRow"><StackPanel Spacing="4" Margin="4,10">
+              <TextBlock Text="{Binding Customer}" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock Text="{Binding Details}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+            </StackPanel></DataTemplate>
+          </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+          <DataGridTextColumn Header="Когда удалена" Binding="{Binding DeletedAt}" Width="160" />
+          <DataGridTextColumn Header="Кто удалил" Binding="{Binding DeletedBy}" Width="130" />
+        </DataGrid.Columns>
+      </DataGrid>
+      <TextBlock Text="Корзина пуста" IsVisible="{Binding IsEmpty}" Classes="muted" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
+      <TextBlock Grid.Row="2" Text="Восстановление вернёт заявку и все её расчёты. Рабочие папки и файлы остаются на прежних местах." Classes="muted" TextWrapping="Wrap" />
+    </Grid>
+    <Border Grid.Row="2" Padding="24,12" Background="{DynamicResource JournalSurface}" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource JournalBorder}">
+      <Grid RowDefinitions="Auto,6,Auto,6,4">
+        <TextBlock Text="{Binding Error}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
+        <Grid Grid.Row="2" ColumnDefinitions="*,12,Auto,8,Auto">
+          <TextBlock Text="{Binding Status}" TextWrapping="Wrap" VerticalAlignment="Center" />
+          <ui:JournalButton x:Name="RestoreWorkflowOrder" Grid.Column="2" Label="Восстановить" Icon="rotate-ccw" Classes="primary" Command="{Binding RestoreCommand}" />
+          <ui:JournalButton x:Name="CloseWorkflowTrash" Grid.Column="4" Label="Закрыть" Click="OnClose" IsEnabled="{Binding CanEdit}" />
+        </Grid>
+        <ProgressBar Grid.Row="4" Height="4" IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

@@ -1,0 +1,12 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:ui="using:Jornal.Desktop.Controls"
+             x:Class="Jornal.Desktop.Controls.WindowsSecurityHelp" x:DataType="vm:AccessHostHelpViewModel"
+             IsVisible="{Binding IsVisible}">
+  <StackPanel Spacing="6">
+    <ui:JournalButton x:Name="OpenWindowsSecurityButton" Label="Открыть параметры Windows" Icon="settings-2"
+                      Click="OnOpenClick" HorizontalAlignment="Left"
+                      ToolTip.Tip="Безопасность Windows" />
+    <TextBlock Text="{Binding OpenError}" IsVisible="{Binding HasOpenError}" TextWrapping="Wrap"
+               Foreground="{DynamicResource JournalDangerForeground}" AutomationProperties.LiveSetting="Polite" />
+  </StackPanel>
+</UserControl>

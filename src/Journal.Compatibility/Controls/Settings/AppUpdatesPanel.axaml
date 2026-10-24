@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:ui="using:Jornal.Desktop.Controls"
+             x:Class="Jornal.Desktop.Controls.Settings.AppUpdatesPanel" x:DataType="vm:AppUpdatesViewModel">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <Border Classes="settings-page-header">
+      <StackPanel Spacing="4">
+        <TextBlock Text="Обновления" Classes="settings-page-title" />
+        <TextBlock Text="{Binding CurrentVersion, StringFormat='Текущая версия: {0}'}" Classes="muted" />
+      </StackPanel>
+    </Border>
+    <Grid Grid.Row="1" Margin="24,16" RowDefinitions="Auto,12,Auto,12,Auto,12,*">
+      <StackPanel Spacing="4">
+        <CheckBox x:Name="AutomaticUpdatesCheckBox" Content="Проверять обновления автоматически"
+                  ToolTip.Tip="При запуске и каждые 6 часов"
+                  IsChecked="{Binding CheckAutomatically, Mode=TwoWay}" IsEnabled="{Binding !IsApplying}" />
+        <CheckBox x:Name="PreviewUpdatesCheckBox" Content="Получать тестовые версии"
+                  ToolTip.Tip="Alpha, beta и rc"
+                  IsChecked="{Binding IncludePreview, Mode=TwoWay}" IsEnabled="{Binding !IsBusy}" />
+        <TextBlock x:Name="UpdatePreferencesWarning" Text="{Binding PreferencesWarning}" IsVisible="{Binding HasPreferencesWarning}"
+                   TextWrapping="Wrap" Foreground="{DynamicResource JournalDangerForeground}" AutomationProperties.LiveSetting="Polite" />
+      </StackPanel>
+      <StackPanel Grid.Row="2" Spacing="6">
+        <TextBlock x:Name="UpdateStatus" Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+        <ProgressBar x:Name="UpdateProgress" IsVisible="{Binding IsDownloading}" Value="{Binding DownloadProgress}" Minimum="0" Maximum="100" Height="6"
+                     AutomationProperties.Name="Загрузка обновления" />
+      </StackPanel>
+      <StackPanel Grid.Row="4" IsVisible="{Binding !IsInstalled}" Spacing="8">
+        <TextBlock Text="{Binding InstallationHint}" TextWrapping="Wrap" Classes="muted" />
+        <ui:JournalButton Label="Открыть выпуски на GitHub" Click="OnOpenReleasesClick" HorizontalAlignment="Left" />
+      </StackPanel>
+      <Border Grid.Row="6" Classes="panel" Padding="12" IsVisible="{Binding HasUpdate}">
+        <Grid RowDefinitions="Auto,8,*">
+          <TextBlock Text="{Binding AvailableVersion, StringFormat='Что нового в {0}'}" FontWeight="SemiBold" />
+          <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <TextBlock x:Name="UpdateReleaseNotes" Text="{Binding ReleaseNotes}" TextWrapping="Wrap" />
+          </ScrollViewer>
+        </Grid>
+      </Border>
+    </Grid>
+    <Border Grid.Row="2" Background="{DynamicResource JournalSurface}" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="0,1,0,0" Padding="24,12">
+      <StackPanel Spacing="12">
+        <TextBlock x:Name="UpdateError" Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap"
+                   Foreground="{DynamicResource JournalDangerForeground}" AutomationProperties.LiveSetting="Polite" />
+        <WrapPanel Orientation="Horizontal">
+          <ui:JournalButton x:Name="CheckUpdatesButton" Label="Проверить обновления" Command="{Binding CheckCommand}" Margin="0,0,8,8" />
+          <ui:JournalButton x:Name="DownloadUpdateButton" Label="Скачать" Classes="primary" Command="{Binding DownloadCommand}" IsVisible="{Binding !IsDownloaded}" Margin="0,0,8,8" />
+          <ui:JournalButton x:Name="InstallUpdateButton" Label="Установить и перезапустить" Classes="primary" Command="{Binding InstallCommand}" IsVisible="{Binding IsDownloaded}" Margin="0,0,8,8" />
+          <ui:JournalButton x:Name="CancelUpdateDownloadButton" Label="Отменить загрузку" Command="{Binding DownloadCancelCommand}" IsVisible="{Binding IsDownloading}" Margin="0,0,8,8" />
+        </WrapPanel>
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

@@ -1,0 +1,12 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Style Selector="Border.settings-page-header">
+    <Setter Property="Background" Value="{DynamicResource JournalSurface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalBorder}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+    <Setter Property="Padding" Value="24,16" />
+  </Style>
+  <Style Selector="TextBlock.settings-page-title">
+    <Setter Property="FontSize" Value="20" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+</Styles>

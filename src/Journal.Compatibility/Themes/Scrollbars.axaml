@@ -1,0 +1,50 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Styles.Resources>
+    <!-- Общая ширина дорожки, включая прозрачную область захвата бегунка. -->
+    <x:Double x:Key="ScrollBarSize">12</x:Double>
+  </Styles.Resources>
+  <!-- Поля и списки передают AllowAutoHide своему viewer через TemplateBinding,
+       поэтому задаём правило и на контейнерах, а не только на самом viewer. -->
+  <Style Selector="ScrollViewer, DataGrid, TextBox, :is(ItemsControl)">
+    <Setter Property="ScrollViewer.AllowAutoHide" Value="False" />
+  </Style>
+  <!-- Полоса занимает место только при переполнении; наведение не расширяет её
+       поверх данных. Узкий рисунок не уменьшает область захвата в 12 px. -->
+  <Style Selector="ScrollBar:vertical /template/ Thumb, ScrollBar:horizontal /template/ Thumb">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Panel Background="Transparent">
+          <Border Background="{TemplateBinding Background}" CornerRadius="3" />
+        </Panel>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="ScrollBar:vertical /template/ Thumb">
+    <Setter Property="MinHeight" Value="24" />
+    <Setter Property="RenderTransform" Value="none" />
+  </Style>
+  <Style Selector="ScrollBar:horizontal /template/ Thumb">
+    <Setter Property="MinWidth" Value="24" />
+    <Setter Property="RenderTransform" Value="none" />
+  </Style>
+  <Style Selector="ScrollBar:vertical /template/ Thumb /template/ Border">
+    <Setter Property="Margin" Value="3,0" />
+    <Setter Property="CornerRadius" Value="3" />
+  </Style>
+  <Style Selector="ScrollBar:horizontal /template/ Thumb /template/ Border">
+    <Setter Property="Margin" Value="0,3" />
+    <Setter Property="CornerRadius" Value="3" />
+  </Style>
+  <!-- Fluent DataGrid 12.1.2 растягивает presenters под полосы по умолчанию.
+       Условный селектор при наличии колонок переопределяет template-local spans;
+       они также участвуют в расчёте viewport самой таблицей. -->
+  <Style Selector="DataGrid:not(:empty-columns) /template/ DataGridColumnHeadersPresenter#PART_ColumnHeadersPresenter">
+    <Setter Property="Grid.ColumnSpan" Value="1" />
+    <Setter Property="ClipToBounds" Value="True" />
+  </Style>
+  <Style Selector="DataGrid:not(:empty-columns) /template/ DataGridRowsPresenter#PART_RowsPresenter">
+    <Setter Property="Grid.ColumnSpan" Value="2" />
+    <Setter Property="Grid.RowSpan" Value="1" />
+    <Setter Property="ClipToBounds" Value="True" />
+  </Style>
+</Styles>

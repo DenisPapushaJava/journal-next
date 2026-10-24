@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <InternalsVisibleTo Include="Jornal.Tests" />
+    <PackageReference Include="System.Data.OleDb" />
+    <ProjectReference Include="../Jornal.Core/Jornal.Core.csproj" />
+  </ItemGroup>
+</Project>

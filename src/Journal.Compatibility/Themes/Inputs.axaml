@@ -1,0 +1,151 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Style Selector="AutoCompleteBox">
+    <Setter Property="Background" Value="{DynamicResource JournalInput}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalControlBorder}" />
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+  <Style Selector="AutoCompleteBox /template/ TextBox#PART_TextBox">
+    <Setter Property="Background" Value="{DynamicResource JournalInput}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalControlBorder}" />
+    <Setter Property="MinHeight" Value="36" />
+    <Setter Property="FontSize" Value="14" />
+  </Style>
+  <Style Selector="AutoCompleteBox:not(:disabled) /template/ Border#PART_SuggestionsContainer">
+    <Setter Property="Background" Value="{DynamicResource JournalSurface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalControlBorder}" />
+  </Style>
+  <Style Selector="AutoCompleteBox /template/ TextBox#PART_TextBox:pointerover /template/ Border#PART_BorderElement, AutoCompleteBox /template/ TextBox#PART_TextBox:focus /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="{DynamicResource JournalInput}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="AutoCompleteBox.invalid /template/ TextBox#PART_TextBox /template/ Border#PART_BorderElement">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalDangerForeground}" />
+  </Style>
+  <!-- Fluent меняет кисти внутри шаблонов при наведении/фокусе. Редактор письма
+       и внутренний ввод составного поиска оформлены отдельно: их фон не заменять. -->
+  <Style Selector="TextBox:not(.result-editor)">
+    <Setter Property="CaretBrush" Value="{DynamicResource JournalText}" />
+    <Setter Property="SelectionBrush" Value="{DynamicResource JournalAccent}" />
+    <Setter Property="SelectionForegroundBrush" Value="{DynamicResource JournalOnAccent}" />
+  </Style>
+  <Style Selector="TextBox:not(:disabled) /template/ TextBlock#PART_Placeholder">
+    <Setter Property="Opacity" Value="1" />
+  </Style>
+  <Style Selector="TextBox:not(.result-editor):pointerover:not(:disabled), TextBox:not(.result-editor):focus:not(:disabled)">
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+  </Style>
+  <Style Selector="TextBox:not(.result-editor):not(.search-input):not(#PART_TextBox):not(#PART_EditableTextBox):pointerover:not(:disabled) /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="{DynamicResource JournalInput}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="TextBox:not(.result-editor):not(.search-input):not(#PART_TextBox):not(#PART_EditableTextBox):focus:not(:disabled) /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="{DynamicResource JournalInput}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="TextBox:not(.result-editor):not(.search-input):disabled /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="{DynamicResource JournalRaised}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalBorder}" />
+  </Style>
+  <Style Selector="TextBox:not(.result-editor):disabled">
+    <Setter Property="Foreground" Value="{DynamicResource JournalMuted}" />
+  </Style>
+  <Style Selector="TextBox.invalid /template/ Border#PART_BorderElement, TextBox.invalid:focus /template/ Border#PART_BorderElement, TextBox.invalid:pointerover /template/ Border#PART_BorderElement">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalDangerForeground}" />
+  </Style>
+  <Style Selector="TextBox.needs-review /template/ Border#PART_BorderElement, TextBox.needs-review:focus /template/ Border#PART_BorderElement, TextBox.needs-review:pointerover /template/ Border#PART_BorderElement">
+    <Setter Property="BorderBrush" Value="{DynamicResource WorkForeground}" />
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+  <Style Selector="AutoCompleteBox.needs-review /template/ TextBox#PART_TextBox /template/ Border#PART_BorderElement">
+    <Setter Property="BorderBrush" Value="{DynamicResource WorkForeground}" />
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+  <Style Selector="ComboBox:pointerover:not(:disabled) /template/ Border#Background, CalendarDatePicker:pointerover:not(:disabled) /template/ Border#Background">
+    <Setter Property="Background" Value="{DynamicResource JournalInput}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="ComboBox:pressed:not(:disabled) /template/ Border#Background">
+    <Setter Property="Background" Value="{DynamicResource JournalAccentSoft}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+  </Style>
+  <Style Selector="ComboBox.editable-entry /template/ TextBox#PART_EditableTextBox">
+    <Setter Property="FontSize" Value="14" />
+  </Style>
+  <!-- Рамку и фон рисует ComboBox: внутренняя заливка TextBox перекрывает левый край. -->
+  <Style Selector="ComboBox.editable-entry /template/ TextBox#PART_EditableTextBox /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="ComboBox.editable-entry:focus-within:not(.invalid):not(.needs-review) /template/ Border#Background">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+  <Style Selector="ComboBox.editable-entry.needs-review /template/ Border#Background">
+    <Setter Property="BorderBrush" Value="{DynamicResource WorkForeground}" />
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+  <Style Selector="ComboBox.invalid /template/ Border#Background, ComboBox.invalid:pointerover /template/ Border#Background, ComboBox.invalid:focus /template/ Border#Background">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalDangerForeground}" />
+  </Style>
+  <Style Selector="ComboBox:focus-visible /template/ Border#HighlightBackground">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+  <Style Selector="ComboBox:not(:disabled) /template/ ContentControl#ContentPresenter, ComboBox:focus-visible:not(:disabled) /template/ ContentControl#ContentPresenter, ComboBox:focus:pressed:not(:disabled) /template/ ContentControl#ContentPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+  </Style>
+  <Style Selector="ComboBox:not(:disabled) /template/ PathIcon#DropDownGlyph, ComboBox:focus-visible:not(:disabled) /template/ PathIcon#DropDownGlyph, ComboBox:focus:pressed:not(:disabled) /template/ PathIcon#DropDownGlyph">
+    <Setter Property="Foreground" Value="{DynamicResource JournalMuted}" />
+  </Style>
+  <Style Selector="ComboBox:not(:disabled) /template/ Border#PopupBorder">
+    <Setter Property="Background" Value="{DynamicResource JournalSurface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalControlBorder}" />
+  </Style>
+  <Style Selector="CalendarDatePicker:focus-within:not(:disabled) /template/ Border#Background">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+  <Style Selector="CalendarDatePicker /template/ TextBox#PART_TextBox:pointerover /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="CheckBox:not(:disabled), RadioButton:not(.filter):not(:disabled)">
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+  </Style>
+  <Style Selector="CheckBox:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter, RadioButton:not(.filter):not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+  </Style>
+  <Style Selector="CheckBox:unchecked:not(.row-selection):not(:disabled) /template/ Border#NormalRectangle">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalControlBorder}" />
+    <Setter Property="Background" Value="{DynamicResource JournalInput}" />
+  </Style>
+  <Style Selector="CheckBox:unchecked:not(.row-selection):pointerover:not(:disabled) /template/ Border#NormalRectangle">
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
+    <Setter Property="Background" Value="{DynamicResource JournalAccentSoft}" />
+  </Style>
+  <Style Selector="FlyoutPresenter, MenuFlyoutPresenter, ToolTip">
+    <Setter Property="Background" Value="{DynamicResource JournalSurface}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalControlBorder}" />
+  </Style>
+  <Style Selector="ListBoxItem, ComboBoxItem">
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+  </Style>
+  <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter, ComboBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource JournalRowHover}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+  </Style>
+  <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter, ListBoxItem:selected:not(:focus) /template/ ContentPresenter#PART_ContentPresenter, ComboBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource JournalSelection}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+  </Style>
+  <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter, ComboBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource JournalControlPressed}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+  </Style>
+</Styles>

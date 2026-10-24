@@ -1,0 +1,34 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Desktop.Views.PriceExportWindow" x:DataType="vm:PriceExportViewModel"
+        Title="Экспорт прайсов" Width="520" Height="430" MinWidth="440" MinHeight="340" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <StackPanel Margin="24,20,24,12" Spacing="6">
+      <TextBlock Text="Экспорт в Excel" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Text="Станки" Classes="muted" />
+    </StackPanel>
+    <ScrollViewer Grid.Row="1" Margin="24,0,24,12" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+      <ItemsControl x:Name="ExportMachines" ItemsSource="{Binding Items}" IsEnabled="{Binding !IsExporting}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:PriceExportChoice">
+            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" MinHeight="38" HorizontalAlignment="Stretch" Padding="0,4"
+                      AutomationProperties.Name="{Binding Name}">
+              <TextBlock Text="{Binding Name}" TextWrapping="Wrap" Margin="8,0,0,0" />
+            </CheckBox>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+    <Border Grid.Row="2" Padding="24,14" Background="{DynamicResource JournalSurface}" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="0,1,0,0">
+      <StackPanel Spacing="10">
+        <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+        <ui:WindowsSecurityHelp DataContext="{Binding AccessHostHelp}" />
+        <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsExporting}" Height="3" />
+        <Grid ColumnDefinitions="*,Auto,8,Auto">
+          <ui:JournalButton x:Name="SaveExportButton" Grid.Column="1" Label="Экспортировать…" Click="OnExportClick" IsEnabled="{Binding CanExport}" Classes="primary" />
+          <ui:JournalButton x:Name="CancelExportButton" Grid.Column="3" Label="Отмена" Click="OnCancelClick" />
+        </Grid>
+      </StackPanel>
+    </Border>
+  </Grid>
+</Window>

@@ -1,0 +1,54 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Desktop.Views.NewMachineWindow" x:DataType="vm:NewMachineViewModel"
+        Title="Новый станок" Width="680" Height="600" MinWidth="620" MinHeight="520" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <StackPanel Margin="24,20,24,16" Spacing="12">
+      <TextBlock Text="Новый станок" FontSize="20" FontWeight="SemiBold" />
+      <Grid ColumnDefinitions="*,16,*" RowDefinitions="Auto,6,Auto" IsEnabled="{Binding CanEdit}">
+        <TextBlock Text="Название" /><TextBlock Grid.Column="2" Text="Импорт спецификаций" />
+        <TextBox Grid.Row="2" x:Name="MachineNameInput" Text="{Binding Name, Mode=TwoWay}" MaxLength="255" AutomationProperties.Name="Название станка" />
+        <ComboBox Grid.Row="2" Grid.Column="2" ItemsSource="{Binding Profiles}" SelectedItem="{Binding Profile, Mode=TwoWay}" HorizontalAlignment="Stretch" AutomationProperties.Name="Импорт спецификаций">
+          <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:MachineProfileChoice"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+      </Grid>
+      <TextBlock Text="Тарифы, ₽/м" FontWeight="SemiBold" />
+      <Grid ColumnDefinitions="*,12,*,12,Auto" RowDefinitions="Auto,6,Auto" IsEnabled="{Binding CanEdit}">
+        <TextBlock Text="Толщина, мм" /><TextBlock Grid.Column="2" Text="Цена, ₽/м" />
+        <TextBox Grid.Row="2" Text="{Binding Thickness, Mode=TwoWay}" AutomationProperties.Name="Новая толщина" />
+        <TextBox Grid.Row="2" Grid.Column="2" Text="{Binding Rate, Mode=TwoWay}" AutomationProperties.Name="Новый тариф" />
+        <ui:JournalButton x:Name="AddMachineRateButton" Grid.Row="2" Grid.Column="4" Label="Добавить" Icon="plus" Command="{Binding AddRateCommand}" />
+      </Grid>
+    </StackPanel>
+    <DataGrid x:Name="MachineRatesGrid" Grid.Row="1" Margin="24,0" ItemsSource="{Binding Rates}" AutoGenerateColumns="False" IsReadOnly="True"
+              HeadersVisibility="Column" RowHeight="38" CanUserSortColumns="False" IsEnabled="{Binding CanEdit}">
+      <DataGrid.Columns>
+        <DataGridTemplateColumn Header="Толщина, мм" Width="*"><DataGridTemplateColumn.CellTemplate>
+          <DataTemplate x:DataType="vm:PriceRowViewModel"><TextBlock Text="{Binding Thickness}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="8,0,16,0" /></DataTemplate>
+        </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+        <DataGridTemplateColumn Header="Цена, ₽/м" Width="*"><DataGridTemplateColumn.CellTemplate>
+          <DataTemplate x:DataType="vm:PriceRowViewModel"><TextBox Text="{Binding Value, Mode=TwoWay}" TextAlignment="Right" Height="30" MinHeight="30" Margin="6,3,12,3" Padding="8,4" Classes.invalid="{Binding HasError}" AutomationProperties.Name="Цена тарифа" /></DataTemplate>
+        </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+        <DataGridTemplateColumn Width="36"><DataGridTemplateColumn.CellTemplate>
+          <DataTemplate x:DataType="vm:PriceRowViewModel"><ui:JournalButton Label="Убрать толщину" Icon="x" IconOnly="True" Width="28" Height="28" Padding="0" Click="OnRemoveRateClick" ToolTip.Tip="Убрать толщину" /></DataTemplate>
+        </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+      </DataGrid.Columns>
+    </DataGrid>
+    <Border Grid.Row="2" Padding="24,14" Background="{DynamicResource JournalSurface}" Margin="0,12,0,0">
+      <StackPanel Spacing="10">
+        <TextBlock Text="Закройте подключения к MDB на остальных ПК. Перед добавлением будет создана резервная копия." IsVisible="{Binding ShowDatabaseNotice}" Classes="muted" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+        <Grid IsVisible="{Binding ConfirmDiscard}" ColumnDefinitions="*,Auto,8,Auto">
+          <TextBlock Text="Закрыть без сохранения?" VerticalAlignment="Center" />
+          <ui:JournalButton Grid.Column="1" Label="Продолжить" Click="OnKeepEditingClick" />
+          <ui:JournalButton Grid.Column="3" Label="Не сохранять" Click="OnDiscardClick" />
+        </Grid>
+        <Grid ColumnDefinitions="Auto,*,Auto,8,Auto">
+          <ui:JournalButton Label="Обновить каталог" Icon="refresh-cw" Command="{Binding ReloadCommand}" IsVisible="{Binding RequiresReload}" />
+          <ui:JournalButton x:Name="CreateMachineButton" Grid.Column="2" Label="Добавить станок" Icon="check" Classes="primary" Command="{Binding SaveCommand}" />
+          <ui:JournalButton Grid.Column="4" Label="Отмена" Click="OnCancelClick" IsEnabled="{Binding !IsSaving}" />
+        </Grid>
+      </StackPanel>
+    </Border>
+  </Grid>
+</Window>

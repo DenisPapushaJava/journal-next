@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Jornal.Core/Jornal.Core.csproj" />
+    <Project Path="src/Jornal.Infrastructure/Jornal.Infrastructure.csproj" />
+    <Project Path="src/Jornal.Parsing/Jornal.Parsing.csproj" />
+    <Project Path="src/Journal.Compatibility/Jornal.Desktop.csproj" />
+    <Project Path="src/Jornal.AccessHost/Jornal.AccessHost.csproj" />
+    <Project Path="src/Jornal.Workflow.Core/Jornal.Workflow.Core.csproj" />
+    <Project Path="src/Jornal.Workflow.Infrastructure/Jornal.Workflow.Infrastructure.csproj" />
+    <Project Path="src/Jornal.Workflow.Desktop/Jornal.Workflow.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/"><Project Path="tests/Jornal.Workflow.Tests/Jornal.Workflow.Tests.csproj" /></Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Jornal.Workflow.Tools/Jornal.Workflow.Tools.csproj" />
+    <Project Path="tools/Journal.Next.InstallProbe/Journal.Next.InstallProbe.csproj" />
+  </Folder>
+</Solution>

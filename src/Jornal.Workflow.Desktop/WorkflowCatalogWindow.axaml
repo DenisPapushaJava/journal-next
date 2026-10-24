@@ -1,0 +1,72 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Workflow.Desktop" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Workflow.Desktop.WorkflowCatalogWindow" x:DataType="vm:WorkflowCatalogViewModel"
+        Title="Станки и цены" Width="1120" Height="760" MinWidth="900" MinHeight="650"
+        Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <Border Classes="settings-page-header">
+      <Grid ColumnDefinitions="*,16,Auto">
+        <StackPanel Spacing="6"><TextBlock Text="Станки и цены" Classes="settings-page-title" />
+          <TextBlock Text="Название и формат импорта станка, толщины и тарифы нового журнала" Classes="muted" />
+        </StackPanel>
+        <ui:JournalButton Grid.Column="2" x:Name="ImportLegacyWorkflowPrices" Label="Импорт цен из прежней БД…" Click="OnImport" VerticalAlignment="Center" IsEnabled="{Binding CanEdit}" />
+      </Grid>
+    </Border>
+    <Grid Grid.Row="1" Margin="24,16" ColumnDefinitions="230,16,*" IsEnabled="{Binding CanEdit}">
+      <Grid RowDefinitions="*,12,Auto,8,Auto,8,Auto">
+        <ListBox x:Name="WorkflowMachinesList" ItemsSource="{Binding Machines}" SelectedItem="{Binding SelectedMachine}" Background="{DynamicResource JournalSurface}" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="1">
+          <ListBox.ItemTemplate><DataTemplate x:DataType="vm:WorkflowMachineEditor"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" /></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+        <ui:JournalButton Grid.Row="2" Label="Добавить станок" Icon="plus" Command="{Binding AddMachineCommand}" />
+        <ui:JournalButton x:Name="RemoveWorkflowMachine" Grid.Row="4" Label="Удалить станок" Command="{Binding RemoveMachineCommand}" />
+        <TextBlock Grid.Row="6" Text="{Binding RemovalReason}" IsVisible="{Binding HasRemovalReason}" Classes="muted" TextWrapping="Wrap" FontSize="12" />
+      </Grid>
+      <Grid Grid.Column="2" RowDefinitions="Auto,12,Auto,8,*,12,Auto,8,Auto">
+        <Border Classes="panel" Padding="12" DataContext="{Binding SelectedMachine}" x:DataType="vm:WorkflowMachineEditor">
+          <Grid ColumnDefinitions="*,12,*,12,110" RowDefinitions="Auto,4,Auto">
+            <TextBlock Text="Название станка" Classes="muted" /><TextBlock Grid.Column="2" Text="Импорт спецификаций" Classes="muted" />
+            <TextBox x:Name="WorkflowMachineName" Grid.Row="2" Text="{Binding Name}" MaxLength="255" />
+            <ComboBox Grid.Row="2" Grid.Column="2" ItemsSource="{x:Static vm:WorkflowImportOption.All}" SelectedItem="{Binding Import}" HorizontalAlignment="Stretch">
+              <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:WorkflowImportOption"><TextBlock Text="{Binding Title}" /></DataTemplate></ComboBox.ItemTemplate>
+            </ComboBox>
+            <TextBlock Grid.Column="4" Text="Файл проекта" Classes="muted" />
+            <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding ProjectExtension}" MaxLength="12" />
+          </Grid>
+        </Border>
+        <Grid Grid.Row="2" ColumnDefinitions="*,8,Auto,8,Auto">
+          <TextBlock Text="Тарифы" FontWeight="SemiBold" VerticalAlignment="Center" />
+          <ui:JournalButton Grid.Column="2" Label="Добавить толщину" Icon="plus" Command="{Binding AddRateCommand}" />
+          <ui:JournalButton Grid.Column="4" Label="Убрать тариф" Command="{Binding RemoveRateCommand}" />
+        </Grid>
+        <DataGrid x:Name="WorkflowMachineRates" Grid.Row="4" ItemsSource="{Binding Rates}" SelectedItem="{Binding SelectedRate}" AutoGenerateColumns="False" IsReadOnly="True">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="Категория материала" Binding="{Binding MaterialGroup}" Width="*" />
+            <DataGridTextColumn Header="Толщина, мм" Binding="{Binding Thickness}" Width="120" />
+            <DataGridTextColumn Header="Цена, ₽/м" Binding="{Binding PricePerMeter}" Width="130" />
+            <DataGridTextColumn Header="Пробивка, ₽/шт." Binding="{Binding PricePerPierce}" Width="140" />
+          </DataGrid.Columns>
+        </DataGrid>
+        <Border Grid.Row="6" Classes="panel" Padding="12" DataContext="{Binding SelectedRate}" x:DataType="vm:WorkflowRateEditor">
+          <Grid ColumnDefinitions="*,12,120,12,130,12,140" RowDefinitions="Auto,4,Auto">
+            <TextBlock Text="Категория материала" Classes="muted" /><TextBlock Grid.Column="2" Text="Толщина, мм" Classes="muted" />
+            <TextBlock Grid.Column="4" Text="Цена, ₽/м" Classes="muted" /><TextBlock Grid.Column="6" Text="Пробивка, ₽/шт." Classes="muted" />
+            <TextBox Grid.Row="2" Text="{Binding MaterialGroup}" MaxLength="255" IsReadOnly="{Binding !UsesMaterialCategories}" /><TextBox Grid.Row="2" Grid.Column="2" Text="{Binding Thickness}" />
+            <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding PricePerMeter}" /><TextBox Grid.Row="2" Grid.Column="6" Text="{Binding PricePerPierce}" />
+          </Grid>
+        </Border>
+        <TextBlock Grid.Row="8" Text="Выберите тариф для редактирования. Изменения применяются кнопкой «Сохранить». Прежние расчёты сохраняют свои названия и цены." Classes="muted" TextWrapping="Wrap" />
+      </Grid>
+    </Grid>
+    <Border Grid.Row="2" Padding="24,12" Background="{DynamicResource JournalSurface}" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource JournalBorder}">
+      <Grid RowDefinitions="Auto,6,Auto,6,4">
+        <TextBlock Text="{Binding Error}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
+        <Grid Grid.Row="2" ColumnDefinitions="*,12,Auto,8,Auto">
+          <TextBlock Text="{Binding Status}" TextWrapping="Wrap" VerticalAlignment="Center" />
+          <ui:JournalButton x:Name="SaveWorkflowCatalog" Grid.Column="2" Label="Сохранить" Classes="primary" Command="{Binding SaveCommand}" />
+          <ui:JournalButton Grid.Column="4" Label="{Binding CloseLabel}" Click="OnClose" IsEnabled="{Binding CanEdit}" />
+        </Grid>
+        <ProgressBar Grid.Row="4" Height="4" IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

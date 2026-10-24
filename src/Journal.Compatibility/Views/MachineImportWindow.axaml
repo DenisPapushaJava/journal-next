@@ -1,0 +1,32 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Desktop.Views.MachineImportWindow" x:DataType="vm:MachineImportViewModel"
+        Title="Импорт спецификаций" Width="500" Height="350" MinWidth="460" MinHeight="350" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="*,Auto">
+    <ScrollViewer Margin="24,20" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Spacing="12">
+      <TextBlock Text="Импорт спецификаций" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <ComboBox x:Name="MachineImportProfileInput" ItemsSource="{Binding Profiles}" SelectedItem="{Binding Profile, Mode=TwoWay}"
+                HorizontalAlignment="Stretch" IsEnabled="{Binding CanEdit}" AutomationProperties.Name="Импорт спецификаций">
+        <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:MachineProfileChoice"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+      </ComboBox>
+      <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" Foreground="{DynamicResource JournalDangerForeground}" AutomationProperties.LiveSetting="Polite" />
+    </StackPanel>
+    </ScrollViewer>
+    <Border Grid.Row="1" Padding="24,14" Background="{DynamicResource JournalSurface}">
+      <StackPanel Spacing="10">
+        <Grid IsVisible="{Binding ConfirmDiscard}" ColumnDefinitions="*,Auto,8,Auto">
+          <TextBlock Text="Закрыть без сохранения?" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <ui:JournalButton Grid.Column="1" Label="Продолжить" Click="OnKeepEditingClick" />
+          <ui:JournalButton Grid.Column="3" Label="Не сохранять" Click="OnDiscardClick" />
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto,8,Auto">
+          <ui:JournalButton Label="Обновить" Icon="refresh-cw" Command="{Binding ReloadCommand}" IsVisible="{Binding RequiresReload}" HorizontalAlignment="Left" />
+          <ui:JournalButton Grid.Column="1" x:Name="SaveMachineImportButton" Label="Сохранить" Icon="check" Classes="primary" Command="{Binding SaveCommand}" />
+          <ui:JournalButton Grid.Column="3" Label="Отмена" Click="OnCancelClick" IsEnabled="{Binding !IsSaving}" />
+        </Grid>
+      </StackPanel>
+    </Border>
+  </Grid>
+</Window>

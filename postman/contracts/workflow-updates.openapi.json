@@ -1,0 +1,136 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Workflow update feed fixture",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/own/releases.workflow-win-x64.json": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Velopack full-package feed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "Assets"
+                  ],
+                  "properties": {
+                    "Assets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "PackageId",
+                          "Version",
+                          "Type",
+                          "FileName",
+                          "SHA256",
+                          "Size"
+                        ],
+                        "properties": {
+                          "PackageId": {
+                            "type": "string"
+                          },
+                          "Version": {
+                            "type": "string"
+                          },
+                          "Type": {
+                            "type": "string"
+                          },
+                          "FileName": {
+                            "type": "string"
+                          },
+                          "SHA256": {
+                            "type": "string"
+                          },
+                          "Size": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/foreign/releases.workflow-win-x64.json": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Velopack full-package feed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "Assets"
+                  ],
+                  "properties": {
+                    "Assets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "PackageId",
+                          "Version",
+                          "Type",
+                          "FileName",
+                          "SHA256",
+                          "Size"
+                        ],
+                        "properties": {
+                          "PackageId": {
+                            "type": "string"
+                          },
+                          "Version": {
+                            "type": "string"
+                          },
+                          "Type": {
+                            "type": "string"
+                          },
+                          "FileName": {
+                            "type": "string"
+                          },
+                          "SHA256": {
+                            "type": "string"
+                          },
+                          "Size": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/own/DenisPapusha.JournalWorkflow-2026.1.0-alpha.2-full.nupkg": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Artificial test bytes, not an installable package",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+<Application xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Jornal.Workflow.Desktop.App" RequestedThemeVariant="Light">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries><ResourceInclude Source="avares://Jornal.Desktop/Themes/Palette.axaml" /></ResourceDictionary.MergedDictionaries>
+      <FontFamily x:Key="JournalFont">avares://Avalonia.Fonts.Inter/Assets#Inter</FontFamily>
+    </ResourceDictionary>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme><FluentTheme.Palettes><ColorPaletteResources x:Key="Light" Accent="#42668F" /><ColorPaletteResources x:Key="Dark" Accent="#99B5D3" /></FluentTheme.Palettes></FluentTheme>
+    <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+    <StyleInclude Source="avares://Jornal.Desktop/Themes/Journal.axaml" />
+    <StyleInclude Source="avares://Jornal.Desktop/Themes/Inputs.axaml" />
+    <StyleInclude Source="avares://Jornal.Desktop/Themes/Settings.axaml" />
+    <StyleInclude Source="avares://Jornal.Desktop/Themes/Scrollbars.axaml" />
+    <Style Selector="DataGrid"><Setter Property="Background" Value="{DynamicResource JournalSurface}" /><Setter Property="RowHeight" Value="32" /></Style>
+    <Style Selector="DataGridRow"><Setter Property="Background" Value="{DynamicResource JournalSurface}" /><Setter Property="Foreground" Value="{DynamicResource JournalText}" /></Style>
+    <Style Selector="DataGridRow:pointerover"><Setter Property="Background" Value="{DynamicResource JournalRaised}" /></Style>
+    <Style Selector="DataGridRow:selected, DataGridRow:selected:pointerover"><Setter Property="Background" Value="{DynamicResource JournalSelection}" /><Setter Property="Foreground" Value="{DynamicResource JournalText}" /></Style>
+    <Style Selector="TabItem"><Setter Property="FontSize" Value="14" /><Setter Property="Padding" Value="12,8" /></Style>
+    <Style Selector="TextBox.field"><Setter Property="MinHeight" Value="32" /></Style>
+  </Application.Styles>
+</Application>

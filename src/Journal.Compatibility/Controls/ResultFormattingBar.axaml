@@ -1,0 +1,50 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Jornal.Desktop.ViewModels"
+             x:Class="Jornal.Desktop.Controls.ResultFormattingBar" x:DataType="vm:MainWindowViewModel">
+  <StackPanel Orientation="Horizontal" Spacing="4" IsEnabled="{Binding CanEditResult}">
+    <ThemeVariantScope RequestedThemeVariant="Light">
+      <ComboBox x:Name="ResultFontSize" ItemsSource="{Binding ResultFontSizes}" SelectedItem="{Binding ResultFontSizePoints, Mode=TwoWay}"
+                Width="64" Height="28" MinHeight="28" Padding="6,2" FontSize="12"
+                Background="#CCDEE4EC" Foreground="#455166" BorderBrush="#99BFC7D2" CornerRadius="4"
+                ToolTip.Tip="Размер шрифта"
+                AutomationProperties.Name="Размер шрифта результата, pt" />
+    </ThemeVariantScope>
+    <TextBlock Text="pt" Foreground="#5D6777" FontSize="11" VerticalAlignment="Center" />
+    <Button x:Name="ResultColorButton" Classes="command result-tool" Width="28" Height="28" MinHeight="28" Padding="4,2" CornerRadius="14"
+            ToolTip.Tip="{Binding ResultColorDescription}" AutomationProperties.Name="Цвет текста результата">
+      <Grid RowDefinitions="*,3" Width="16">
+        <TextBlock Text="A" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        <Border Grid.Row="1" Background="{Binding ResultTextBrush}" CornerRadius="1" />
+      </Grid>
+      <Button.Flyout>
+        <Flyout Placement="BottomEdgeAlignedLeft">
+          <StackPanel Width="240" Spacing="10">
+            <TextBlock Text="Цвет текста" FontWeight="SemiBold" />
+            <ItemsControl ItemsSource="{Binding ResultColors}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><UniformGrid Columns="8" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ResultColorOption">
+                  <Button Classes="command" Width="28" Height="28" MinWidth="28" MinHeight="28" Margin="1" Padding="2" CornerRadius="4"
+                          ToolTip.Tip="{Binding Description}" AutomationProperties.Name="{Binding Description}" Click="OnChooseColor">
+                    <Border Width="22" Height="22" Background="{Binding Brush}" BorderBrush="{DynamicResource JournalBorder}"
+                            BorderThickness="1" CornerRadius="2">
+                      <TextBlock Text="✓" IsVisible="{Binding IsSelected}" Foreground="{Binding CheckBrush}" FontSize="14"
+                                 FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="{Binding ResultTextColor}" Classes="muted" VerticalAlignment="Center" />
+              <Button Classes="command outline" Grid.Column="1" Content="По умолчанию" Padding="8,4" MinHeight="28" FontSize="12"
+                      Click="OnDefaultColor" ToolTip.Tip="Светло-красный цвет текста" />
+            </Grid>
+          </StackPanel>
+        </Flyout>
+      </Button.Flyout>
+    </Button>
+  </StackPanel>
+</UserControl>

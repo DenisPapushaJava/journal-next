@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <Product>Journal Next</Product>
+    <VersionSuffix>workflow.dev</VersionSuffix>
+    <ApplicationIcon>../../docs/design/assets/journal-icon.ico</ApplicationIcon>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <AppHostDotNetSearch>Global</AppHostDotNetSearch>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Jornal.Workflow.Tests" />
+    <AssemblyMetadata Include="Journal.ProductId" Value="DenisPapusha.JournalWorkflow" />
+    <PackageReference Include="Avalonia" /><PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" /><PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" /><PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Velopack" />
+    <ProjectReference Include="../Journal.Compatibility/Jornal.Desktop.csproj" />
+    <ProjectReference Include="../Jornal.Workflow.Infrastructure/Jornal.Workflow.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

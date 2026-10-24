@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:ui="using:Jornal.Desktop.Controls"
+             x:Class="Jornal.Desktop.Controls.OrderAnnotationsControl" x:DataType="vm:OrderAnnotationsEditor">
+  <Grid ColumnDefinitions="144,8,*" RowDefinitions="Auto,Auto,Auto">
+    <CheckBox x:Name="HasBendingCheckBox" Grid.Column="2" Content="Гибка" IsChecked="{Binding HasBending, Mode=TwoWay}"
+              MinHeight="28" Margin="0,0,0,4" />
+    <TextBlock Grid.Row="1" Text="Комментарий" Foreground="{DynamicResource JournalMuted}" FontWeight="Medium" FontSize="13" VerticalAlignment="Center" />
+    <TextBox x:Name="OrderCommentInput" Grid.Row="1" Grid.Column="2" Text="{Binding Comment, Mode=TwoWay}" MaxLength="255" AcceptsReturn="True" TextWrapping="Wrap" Height="52" VerticalContentAlignment="Top" Classes.invalid="{Binding HasCommentError}" AutomationProperties.Name="Комментарий заявки">
+      <TextBox.InnerRightContent>
+        <StackPanel Orientation="Horizontal" Spacing="6" Margin="6,0,8,0" VerticalAlignment="Center">
+          <TextBlock Text="{Binding CommentLengthText}" Classes="muted" FontSize="10" MinWidth="40" TextAlignment="Right" VerticalAlignment="Center" />
+          <ui:JournalButton x:Name="ClearCommentButton" Label="Очистить комментарий" Icon="x" IconOnly="True" Width="28" Height="28" Padding="0"
+                            IsVisible="{Binding HasComment}" Command="{Binding ClearCommentCommand}" Click="OnClearCommentClick" ToolTip.Tip="Очистить комментарий" />
+        </StackPanel>
+      </TextBox.InnerRightContent>
+    </TextBox>
+    <StackPanel Grid.Row="2" Grid.Column="2" Spacing="4">
+      <TextBlock Text="{Binding CommentError}" IsVisible="{Binding HasCommentError}" Foreground="{DynamicResource JournalDangerForeground}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" />
+      <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding NeedsReview}" Margin="0,4,0,0">
+        <TextBlock Text="Проверьте гибку и комментарий" Foreground="{DynamicResource WorkForeground}" FontSize="12" VerticalAlignment="Center" />
+        <ui:JournalButton Label="Подтвердить пометки" Icon="check" IconOnly="True" Width="28" Height="28" Padding="0" Command="{Binding ConfirmReviewCommand}" ToolTip.Tip="Подтвердить пометки для этой заявки" />
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</UserControl>

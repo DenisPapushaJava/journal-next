@@ -1,0 +1,27 @@
+{
+  "runtime_version": "10.0.13",
+  "runtime_patch": 13,
+  "files": {
+    "runtime_x64": {
+      "name": "dotnet-runtime-10.0.13-win-x64.exe",
+      "url": "https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.13/dotnet-runtime-10.0.13-win-x64.exe",
+      "algorithm": "sha512",
+      "hash": "44da78e619ae23e352e81fbc3a5803d78b1375dff89c176dd17a884d4e42e17850bb7adb78c799ca15b2127b67529395df1143976e33f6c8157f53bfc5a42e62",
+      "publisher": "Microsoft Corporation"
+    },
+    "runtime_x86": {
+      "name": "dotnet-runtime-10.0.13-win-x86.exe",
+      "url": "https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.13/dotnet-runtime-10.0.13-win-x86.exe",
+      "algorithm": "sha512",
+      "hash": "0506ee21f48691900f437537a7254e022525f489c1ee127faecf7bb25574ac887c0c16b882eb6f731661cbea970f469f80bd0220b517a9e22d605ef0878d1c99",
+      "publisher": "Microsoft Corporation"
+    },
+    "inno": {
+      "name": "innosetup-6.7.3.exe",
+      "url": "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe",
+      "algorithm": "sha256",
+      "hash": "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732",
+      "publisher": "Pyrsys B.V."
+    }
+  }
+}

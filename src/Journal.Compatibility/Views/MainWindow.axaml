@@ -1,0 +1,479 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Desktop.ViewModels"
+        xmlns:orders="using:Jornal.Core.Orders"
+        xmlns:ui="using:Jornal.Desktop.Controls"
+        xmlns:svg="clr-namespace:Avalonia.Svg;assembly=Svg.Controls.Avalonia"
+        x:Class="Jornal.Desktop.Views.MainWindow" x:DataType="vm:MainWindowViewModel"
+        Title="Journal · Журнал заявок" Width="1366" Height="800" MinWidth="1280" MinHeight="680"
+        WindowStartupLocation="CenterScreen" TransparencyLevelHint="None"
+        TransparencyBackgroundFallback="{DynamicResource JournalBackground}">
+  <Window.Styles>
+    <Style Selector="DataGrid#OrdersGrid DataGridColumnHeader, DataGrid#OrdersGrid DataGridCell">
+      <Setter Property="Padding" Value="6,0" />
+    </Style>
+    <Style Selector="DataGrid#OrdersGrid DataGridCell.selection-column">
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="DataGrid#OrdersGrid DataGridColumnHeader.selection-column">
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="Border#SpecificationOverlay">
+      <Setter Property="Background" Value="#66000000" />
+    </Style>
+    <Style Selector="Border#SpecificationOverlay.rejected">
+      <Setter Property="Background" Value="{DynamicResource JournalImportRejectionOverlay}" />
+    </Style>
+  </Window.Styles>
+  <Grid RowDefinitions="52,Auto,Auto,*,24" Background="{DynamicResource JournalBackground}">
+    <Border Background="{DynamicResource JournalSurface}" BorderBrush="{DynamicResource JournalBorder}"
+            BorderThickness="0,0,0,1" Padding="24,0">
+      <Grid x:Name="HeaderBar" ColumnDefinitions="*,20,Auto,20,*">
+        <Grid ColumnDefinitions="Auto,24,*">
+          <TextBlock Text="Журнал заявок" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
+          <TextBlock x:Name="SourceDescriptionText" Grid.Column="2" Text="{Binding SourceDescription}" ToolTip.Tip="{Binding SourceDetails}"
+                     Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </Grid>
+        <ui:HeaderClock x:Name="CurrentDateTime" Grid.Column="2" MinWidth="200" FontSize="14" FontFeatures="tnum"
+                        TextAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
+        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+          <ui:JournalButton x:Name="PricesButton" Label="Прайсы" Icon="columns-3" Height="32"
+                            Click="OnPricesClick" IsEnabled="{Binding CanOpenPrices}" ToolTip.Tip="Прайсы на резку" VerticalAlignment="Center" />
+          <Grid VerticalAlignment="Center">
+            <ui:JournalButton x:Name="UpdatesButton" Label="{Binding Updates.NotificationText}" Icon="bell" IconOnly="True" Width="32" Height="32" Padding="0"
+                              Click="OnUpdatesClick" IsEnabled="{Binding CanCheckUpdates}" ToolTip.Tip="{Binding Updates.NotificationText}" />
+            <Ellipse x:Name="UpdateBadge" Width="7" Height="7" Fill="{DynamicResource JournalAccent}" IsVisible="{Binding Updates.HasUpdate}"
+                     HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False" />
+          </Grid>
+          <ToggleButton x:Name="ThemeButton" Theme="{StaticResource JournalThemeSwitch}"
+                        IsChecked="{Binding IsDarkTheme, Mode=TwoWay}" VerticalAlignment="Center"
+                        ToolTip.Tip="{Binding ThemeActionLabel}" AutomationProperties.Name="{Binding ThemeActionLabel}" />
+          <ui:JournalButton x:Name="PersonalizeButton" Label="Настроить экран" Icon="panels-top-left"
+                            IconOnly="True" Width="32" Height="32" Padding="0" Click="OnCustomizeClick" IsEnabled="{Binding CanConfigureScreen}"
+                            ToolTip.Tip="Настроить экран" VerticalAlignment="Center" />
+          <Grid VerticalAlignment="Center">
+            <ui:JournalButton x:Name="SettingsButton" Label="Настройки" Icon="settings" IconOnly="True" Width="32" Height="32" Padding="0"
+                              ToolTip.Tip="{ReflectionBinding Label, ElementName=SettingsButton}" Click="OnSettingsClick" />
+            <Ellipse x:Name="DiagnosticsBadge" Width="7" Height="7" Fill="{DynamicResource JournalDangerForeground}" IsVisible="False"
+                     HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False" />
+          </Grid>
+          <Grid Width="40" Height="36" VerticalAlignment="Center">
+            <ui:JournalButton x:Name="TrashButton" Label="Корзина" Icon="trash" IconOnly="True" Width="32" Height="32" Padding="0"
+                              IsEnabled="{Binding CanOpenTrash}" Click="OnTrashClick" ToolTip.Tip="{Binding TrashHint}" AutomationProperties.Name="{Binding TrashHint}" VerticalAlignment="Center" HorizontalAlignment="Left" />
+            <Border x:Name="TrashBadge" Background="{DynamicResource JournalAccent}" CornerRadius="8" Padding="3,0" MinWidth="16" MaxWidth="28" Height="16"
+                    IsVisible="{Binding HasTrashItems}" HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False">
+              <TextBlock Text="{Binding TrashBadgeText}" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource JournalOnAccent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+          </Grid>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Border Grid.Row="1" IsVisible="{Binding IsCustomizing}" Background="{DynamicResource JournalAccentSoft}" Padding="24,6">
+      <Grid ColumnDefinitions="*,12,Auto,8,Auto,8,Auto">
+        <TextBlock Text="К краю панели — разместить рядом · в центр — поменять местами" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <ui:JournalButton x:Name="ResetLayoutButton" Grid.Column="2" Label="Сбросить к макету" Icon="rotate-ccw"
+                          Click="OnResetLayoutClick" ToolTip.Tip="Стандартная компоновка" />
+        <ui:JournalButton x:Name="CancelLayoutButton" Grid.Column="4" Label="Отмена" Icon="x"
+                          Click="OnCancelLayoutClick" ToolTip.Tip="Отмена · Esc" />
+        <ui:JournalButton x:Name="SaveLayoutButton" Grid.Column="6" Label="Готово" Icon="check" Classes="primary"
+                          Click="OnSaveLayoutClick" ToolTip.Tip="Сохранить компоновку · Ctrl+Enter" />
+      </Grid>
+    </Border>
+    <Border Grid.Row="2" IsVisible="{Binding HasPreferencesError}" Background="{DynamicResource JournalDangerBackground}" Padding="24,6">
+      <Grid ColumnDefinitions="*,8,Auto">
+        <TextBlock Text="{Binding PreferencesError}" Foreground="{DynamicResource JournalDangerForeground}" VerticalAlignment="Center" TextWrapping="Wrap" />
+        <ui:JournalButton Grid.Column="2" Label="Закрыть сообщение" Icon="x" IconOnly="True" Width="32" Padding="0"
+                          Click="OnDismissPreferencesError" ToolTip.Tip="Закрыть сообщение" />
+      </Grid>
+    </Border>
+    <Grid x:Name="BodyGrid" Grid.Row="3" Margin="24,12,24,0" RowDefinitions="Auto,12,*">
+      <Grid x:Name="TopArea" RowDefinitions="138,12,120">
+        <Grid x:Name="ResultSlot">
+          <Border x:Name="ResultPanel" Classes="panel result-editor" Background="#F1F2F4" Margin="0,0,0,4">
+            <Grid ColumnDefinitions="*,190">
+              <Grid RowDefinitions="*,22">
+                <TextBox x:Name="ResultTextBox" Classes="result-editor" Text="{Binding ResultText, Mode=TwoWay}"
+                         IsReadOnly="{Binding !CanEditResult}" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Arial"
+                         FontSize="{Binding ResultFontSizePixels}" Background="Transparent" BorderThickness="0"
+                         Foreground="{Binding ResultTextBrush}" CaretBrush="#202124" SelectionBrush="#466991" SelectionForegroundBrush="White"
+                         PlaceholderForeground="#6A7482" PlaceholderText="Текст для письма"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         AutomationProperties.Name="Результат для письма" />
+                <TextBlock x:Name="ResultFeedback" Grid.Row="1" Text="{Binding ResultMessage}" IsVisible="{Binding ShowResultFeedback}"
+                           Foreground="{Binding ResultFeedbackBrush}" FontSize="11" Margin="14,0,12,6" TextTrimming="CharacterEllipsis"
+                           ToolTip.Tip="{Binding ResultMessage}" AutomationProperties.LiveSetting="Polite" />
+              </Grid>
+              <Grid Grid.Column="1" Margin="8,4" ColumnDefinitions="*,10,50">
+                <ui:ResultFormattingBar x:Name="ResultFormatting" Margin="0,4,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                <StackPanel x:Name="ResultActions" Grid.Column="2" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <ui:JournalButton x:Name="AddResultButton" Label="Сформировать результат по выбранным заявкам" Icon="list-checks" IconOnly="True"
+                                    Classes="result-tool result-action" Width="40" Height="40" MinHeight="40" IconSize="22" Padding="0" CornerRadius="20"
+                                    IsEnabled="{Binding CanAddResult}" Click="OnAddResultClick"
+                                    ToolTip.Tip="Сформировать результат по выбранным заявкам" />
+                  <ui:JournalButton x:Name="CopyResultButton" Label="Копировать результат" Icon="copy" IconOnly="True"
+                                    Classes="result-tool result-action copy-tool" Width="40" Height="40" MinHeight="40" IconSize="22" Padding="0" CornerRadius="20"
+                                    IsEnabled="{Binding CanCopyResult}" Click="OnCopyResultClick"
+                                    ToolTip.Tip="Копировать для письма" />
+                  <ui:JournalButton x:Name="ClearResultButton" Label="Очистить результат" Icon="x" IconOnly="True"
+                                    Classes="result-tool result-action" Width="40" Height="40" MinHeight="40" IconSize="22" Padding="0" CornerRadius="20"
+                                    Command="{Binding ClearResultCommand}" IsEnabled="{Binding CanClearResult}"
+                                    ToolTip.Tip="Очистить результат" />
+                </StackPanel>
+              </Grid>
+              <StackPanel Orientation="Horizontal" Spacing="8" Margin="8" HorizontalAlignment="Left" VerticalAlignment="Top"
+                          IsVisible="{Binding IsCustomizing}">
+                <ui:LayoutHandle x:Name="ResultMoveHandle" AutomationProperties.Name="Переместить панель: Результат"
+                                 Title="Результат" PanelId="result" Height="24" VerticalAlignment="Center" IsVisible="{Binding IsCustomizing}"
+                                 ToolTip.Tip="К краю — разместить рядом · в центр — обмен · Shift+стрелки — разместить" />
+                <ui:ResultButtonsEditor x:Name="ResultButtonsCustomization" />
+              </StackPanel>
+            </Grid>
+          </Border>
+          <ui:LayoutHandle x:Name="ResultResizeHandle" PanelId="result-size" Classes="result-resizer" Height="8"
+                           VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Focusable="True"
+                           ToolTip.Tip="Изменить высоту результата · ↑ ↓ с клавиатуры"
+                           AutomationProperties.Name="Изменить высоту результата" />
+        </Grid>
+        <Grid x:Name="CommandGroups" Grid.Row="2" ColumnDefinitions="380*,16,548*">
+          <Border x:Name="OrdersCommands" Classes="panel command-panel">
+            <Grid RowDefinitions="24,2,*">
+              <TextBlock Text="ЗАЯВКИ" Classes="muted" IsVisible="{Binding !IsCustomizing}" VerticalAlignment="Center" />
+              <ui:LayoutHandle x:Name="OrdersMoveHandle" AutomationProperties.Name="Переместить панель: Заявки" Title="ЗАЯВКИ" PanelId="orders" IsVisible="{Binding IsCustomizing}"
+                               ToolTip.Tip="К краю — разместить рядом · в центр — обмен · Shift+стрелки — разместить" />
+              <ui:AdaptiveCommandPanel Grid.Row="2" WideColumns="2" CompactColumns="2">
+                <ui:JournalButton x:Name="NewOrderButton" Label="Новая заявка" Icon="plus" Classes="primary"
+                                  IsEnabled="{Binding CanCreateOrder}" Click="OnNewOrderClick"
+                                  ToolTip.Tip="{Binding NewOrderHint}" />
+                <ui:JournalButton x:Name="ReloadButton" Label="Обновить" Icon="refresh-cw" Command="{Binding ReloadCommand}" />
+                <ui:JournalButton x:Name="EditOrderButton" Label="Редактировать" Icon="pencil" IsEnabled="{Binding CanEditOrder}"
+                                  Click="OnEditOrderClick" ToolTip.Tip="{Binding EditOrderHint}" ToolTip.ShowOnDisabled="True" />
+                <ui:JournalButton x:Name="TrashOrderButton" Label="В корзину" Icon="trash" Classes="danger" IsEnabled="{Binding CanTrashOrder}" Click="OnTrashOrderClick" ToolTip.Tip="{Binding TrashOrderHint}" />
+                <ui:JournalButton x:Name="SetCustomColorButton" Label="Цвет…" Icon="palette" Classes="outline" IsEnabled="{Binding CanUpdateSelectedOrders}" Click="OnSetCustomColorClick" ToolTip.Tip="Цвет выбранных заявок" />
+                <ui:JournalButton x:Name="ClearColorButton" Label="Снять цвет" Command="{Binding SetOrderColorCommand}"
+                                  CommandParameter="{x:Static orders:OrderColors.None}" />
+              </ui:AdaptiveCommandPanel>
+            </Grid>
+          </Border>
+          <Border Grid.Column="2" x:Name="ClipboardCommands" Classes="panel command-panel">
+            <Grid RowDefinitions="24,2,*">
+              <Grid ColumnDefinitions="*,Auto,4,24" IsVisible="{Binding !IsCustomizing}">
+                <TextBlock Text="БУФЕР ОБМЕНА И БЛЦБ" Classes="muted" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" x:Name="SelectionCountText" Text="{Binding SelectionText}" Classes="muted"
+                           Foreground="{DynamicResource JournalAccent}" VerticalAlignment="Center" />
+                <ui:JournalButton Grid.Column="3" x:Name="ClearSelectionButton" Label="Снять выбор" Icon="x" IconOnly="True"
+                                  Width="24" Height="24" MinHeight="24" Padding="0" Click="OnClearSelection"
+                                  IsEnabled="{Binding CanClearSelection}" ToolTip.Tip="Снять выбор" />
+              </Grid>
+              <ui:LayoutHandle x:Name="ClipboardMoveHandle" AutomationProperties.Name="Переместить панель: Буфер обмена и БЛЦБ" Title="БУФЕР ОБМЕНА И БЛЦБ" PanelId="clipboard" IsVisible="{Binding IsCustomizing}"
+                               ToolTip.Tip="К краю — разместить рядом · в центр — обмен · Shift+стрелки — разместить" />
+              <ui:AdaptiveCommandPanel Grid.Row="2" WideColumns="2" CompactColumns="1">
+                <ui:JournalButton x:Name="DeliveryNumberButton" Label="Добавить БЛЦБ" Icon="hash" IsEnabled="{Binding CanUpdateSelectedOrders}"
+                                  Click="OnDeliveryNumberClick" ToolTip.Tip="Изменить номер БЛЦБ у выбранных заявок" />
+                <ui:JournalButton x:Name="CreateFoldersButton" Label="Создать папки" Icon="folder-plus" IsEnabled="{Binding CanPrepareFolders}" Click="OnCreateFoldersClick" ToolTip.Tip="Подготовить папки для вставки" />
+                <ui:JournalButton x:Name="CopyRowCommentButton" Label="Комментарий строки" Icon="message-square" IsEnabled="{Binding CanCopyRowComment}" Click="OnCopyRowCommentClick" ToolTip.Tip="{Binding RowCommentHint}" />
+                <ui:JournalButton x:Name="CopyTelegramCommentButton" Label="Задание на резку" Icon="clipboard-copy" IsEnabled="{Binding CanCopyTelegramComment}" Click="OnCopyTelegramCommentClick" ToolTip.Tip="Скопировать задание на резку" />
+              </ui:AdaptiveCommandPanel>
+            </Grid>
+          </Border>
+          <GridSplitter x:Name="FirstPanelSplitter" Grid.Column="1" Width="6" HorizontalAlignment="Center"
+                        ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" IsVisible="{Binding IsCustomizing}"
+                        Background="{DynamicResource JournalBorder}" KeyboardIncrement="8"
+                        ToolTip.Tip="Изменить ширину панелей · ← → с клавиатуры" AutomationProperties.Name="Ширина левой панели" />
+        </Grid>
+        <Grid x:Name="DockArea" Grid.RowSpan="3" IsVisible="False" RowDefinitions="*,8">
+          <Grid x:Name="DockBoard" Classes="docked" ColumnDefinitions="2*,12,*,12,*" RowDefinitions="*,12,*">
+            <GridSplitter x:Name="WorkspaceFirstSplitter" Classes="workspace-splitter" Grid.Column="1" Grid.RowSpan="3" Width="6" HorizontalAlignment="Center"
+                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                          Background="{DynamicResource JournalBorder}" KeyboardIncrement="8"
+                          ToolTip.Tip="Ширина панелей · ← →" AutomationProperties.Name="Ширина левой области" />
+            <GridSplitter x:Name="WorkspaceSecondSplitter" Classes="workspace-splitter" Grid.Column="3" Grid.RowSpan="3" Width="6" HorizontalAlignment="Center"
+                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                          Background="{DynamicResource JournalBorder}" KeyboardIncrement="8"
+                          ToolTip.Tip="Ширина панелей · ← →" AutomationProperties.Name="Ширина правой области" />
+            <GridSplitter x:Name="WorkspaceRowsSplitter" Classes="workspace-splitter" Grid.Column="2" Grid.Row="1" Height="6" VerticalAlignment="Center"
+                          ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                          Background="{DynamicResource JournalBorder}" KeyboardIncrement="8"
+                          ToolTip.Tip="Высота панелей · ↑ ↓" AutomationProperties.Name="Высота центральных панелей" />
+          </Grid>
+          <Grid x:Name="DockResizeSlot" Grid.Row="1" />
+        </Grid>
+      </Grid>
+      <Grid x:Name="Workspace" Grid.Row="2" RowDefinitions="Auto,40,Auto,*">
+        <Grid x:Name="FiltersPanel" Grid.Row="0" IsEnabled="{Binding CanEnterSearch}" ColumnDefinitions="Auto,12,*">
+          <StackPanel x:Name="DateFilters" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" IsEnabled="{Binding CanChoosePeriod}">
+            <RadioButton x:Name="TodayFilterButton" Classes="filter" Content="Сегодня" GroupName="JournalPeriod"
+                         IsChecked="{Binding IsTodaySelected, Mode=TwoWay}" Command="{Binding TodayCommand}" />
+            <ui:JournalDatePicker x:Name="DateFilter" SelectedDate="{Binding FilterDate}" PlaceholderText="Все даты" Width="146" MinHeight="32"
+                                AutomationProperties.Name="Дата заявки" />
+            <RadioButton x:Name="AllDatesFilterButton" Classes="filter" Content="Все даты" GroupName="JournalPeriod"
+                         IsChecked="{Binding IsAllDatesSelected, Mode=TwoWay}" Command="{Binding AllDatesCommand}" />
+          </StackPanel>
+          <Grid x:Name="SearchControls" Grid.Column="2" ColumnDefinitions="*,8,Auto" VerticalAlignment="Center">
+            <Border x:Name="SearchField" Classes="search-field" Classes.popup-open="{ReflectionBinding IsDropDownOpen, ElementName=SearchScopeSelector}"
+                    AutomationProperties.Name="Поиск по журналу">
+              <Grid ColumnDefinitions="32,132,1,*,Auto,Auto">
+                <svg:Svg Path="avares://Jornal.Desktop/Assets/Icons/search.svg" Width="16" Height="16" Margin="6,0,0,0"
+                         VerticalAlignment="Center" IsHitTestVisible="False" CurrentColor="{ReflectionBinding Foreground.Color, ElementName=SearchScopeSelector}" />
+                <ComboBox x:Name="SearchScopeSelector" Grid.Column="1" Classes="search-scope"
+                          ItemsSource="{Binding SearchScopes}" SelectedIndex="{Binding SearchScopeIndex}"
+                          HorizontalAlignment="Stretch" VerticalAlignment="Center" AutomationProperties.Name="Поле поиска" />
+                <Border Grid.Column="2" Background="{DynamicResource JournalBorder}" Margin="0,7" />
+                <ui:JournalSearchBox x:Name="SearchBox" Grid.Column="3" Classes="search-input" Query="{Binding SearchText, Mode=TwoWay}"
+                                     MinHeight="34" MinWidth="160" Padding="10,6,8,6"
+                                     PendingChanged="OnSearchPendingChanged" ClearRequested="OnSearchClearRequested"
+                                     PlaceholderText="Поиск по журналу" AutomationProperties.Name="Поиск по журналу" />
+                <ToggleButton x:Name="ExactSearchButton" Grid.Column="4" Classes="search-mode" IsChecked="{Binding SearchExactMatch}"
+                              IsVisible="{Binding HasSpecificSearchField}" Width="82" Height="28" Margin="4,0,2,0"
+                              VerticalAlignment="Center" ToolTip.Tip="Полное совпадение" AutomationProperties.Name="Полное совпадение">
+                  <Grid ColumnDefinitions="14,4,Auto" IsHitTestVisible="False">
+                    <svg:Svg x:Name="ExactSearchGlyph" Path="avares://Jornal.Desktop/Assets/Icons/check.svg" Width="12" Height="12"
+                             IsVisible="{Binding SearchExactMatch}" CurrentColor="{ReflectionBinding Foreground.Color, ElementName=ExactSearchButton}" />
+                    <TextBlock Grid.Column="2" Text="Точно" VerticalAlignment="Center" />
+                  </Grid>
+                </ToggleButton>
+                <ui:JournalButton Grid.Column="5" x:Name="ClearSearchButton" Classes="search-clear" Label="Очистить поиск" Icon="x"
+                                  IconOnly="True" Width="28" Height="28" MinHeight="28" Padding="0" Margin="2,0,4,0"
+                                  VerticalAlignment="Center" Click="OnClearSearchClick" ToolTip.Tip="Очистить поиск · Esc"
+                                  IsVisible="{ReflectionBinding HasInput, ElementName=SearchBox}" />
+              </Grid>
+            </Border>
+            <ui:JournalButton x:Name="ResetJournalButton" Grid.Column="2" Label="Сбросить" Icon="x" Command="{Binding ResetFiltersCommand}"
+                              ToolTip.Tip="Сбросить поиск, фильтры и сортировку" />
+          </Grid>
+        </Grid>
+        <Grid x:Name="TableViewBar" Grid.Row="1" ColumnDefinitions="Auto,16,*,12,1,12,280" Height="32" VerticalAlignment="Center">
+          <TextBlock x:Name="TableCountText" Text="{Binding CountText}" Classes="muted" FontSize="12" VerticalAlignment="Center"
+                     MaxWidth="200" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding CountText}" />
+          <ui:AppliedFilterStrip x:Name="ActiveColumnFilters" Grid.Column="2" Filters="{Binding ActiveTableFilters}"
+                                 MinWidth="90" VerticalAlignment="Center" IsEnabled="{Binding CanBrowseJournal}" />
+          <Border Grid.Column="4" Background="{DynamicResource JournalBorder}" Margin="0,6" />
+          <Grid Grid.Column="6">
+            <TextBlock x:Name="DefaultSortText" Text="{Binding DefaultSortingSummary}" IsVisible="{Binding !HasCustomSort}" Classes="muted"
+                       FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="8,0"
+                       ToolTip.Tip="По дате и номеру спецификации" />
+            <Button x:Name="ActiveSortButton" Height="26" MinHeight="24" Padding="8,0" FontSize="12"
+                    VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="280" Classes="command status-filter-chip"
+                    IsVisible="{Binding HasCustomSort}" Command="{Binding ResetSortingCommand}" IsEnabled="{Binding CanBrowseJournal}"
+                    AutomationProperties.Name="{Binding SortingSummary}" AutomationProperties.HelpText="Вернуть порядок по дате и номеру спецификации">
+              <ToolTip.Tip><TextBlock Text="{Binding SortingDescription}" MaxWidth="360" TextWrapping="Wrap" /></ToolTip.Tip>
+              <Grid ColumnDefinitions="*,8,14">
+                <TextBlock Text="{Binding SortingSummary}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <Path Grid.Column="2" Data="M18 6 6 18 M6 6 18 18" Width="14" Height="14" Stretch="Uniform" StrokeThickness="2"
+                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+          </Grid>
+        </Grid>
+        <Border x:Name="LoadErrorPanel" Grid.Row="2" IsVisible="{Binding HasError}" Background="{DynamicResource JournalDangerBackground}" CornerRadius="6" Padding="12" Margin="0,0,0,12">
+          <Grid ColumnDefinitions="*,8,Auto">
+            <StackPanel Spacing="8">
+              <TextBlock x:Name="JournalErrorText" Text="{Binding ErrorMessage}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+              <ui:WindowsSecurityHelp DataContext="{Binding AccessHostHelp}" />
+            </StackPanel>
+            <ui:JournalButton x:Name="DismissSelectionNoticeButton" Grid.Column="2" Label="Закрыть сообщение" Icon="x" IconOnly="True" Width="28" Height="28" Padding="0"
+                              VerticalAlignment="Top" IsVisible="{Binding HasSelectionNotice}" Command="{Binding DismissSelectionNoticeCommand}" ToolTip.Tip="Закрыть сообщение" />
+          </Grid>
+        </Border>
+        <Border x:Name="TablePanel" Grid.Row="3" Classes="panel" ClipToBounds="True">
+          <Grid>
+            <DataGrid DoubleTapped="OnOrdersDoubleTapped" x:Name="OrdersGrid" Theme="{StaticResource JournalOrdersGrid}" IsEnabled="{Binding CanInteractWithTable}" ItemsSource="{Binding Orders}" AutoGenerateColumns="False" IsReadOnly="True"
+                      SelectionMode="Extended" GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                      RowHeight="32" ColumnHeaderHeight="44" FontSize="13" BorderThickness="0"
+                      CanUserResizeColumns="True" CanUserReorderColumns="True" CanUserSortColumns="{Binding CanBrowseJournal}"
+                      FrozenColumnCount="1"
+                      SelectionChanged="OnSelectionChanged" CurrentCellChanged="OnCurrentCellChanged"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+              <DataGrid.Columns>
+                <DataGridTemplateColumn CellStyleClasses="selection-column" CellTheme="{StaticResource JournalSelectionCell}" Width="24" MinWidth="24" MaxWidth="24" CanUserSort="False"
+                                        CanUserReorder="False" CanUserResize="False">
+                  <DataGridTemplateColumn.Header>
+                    <ui:JournalButton x:Name="ColumnsButton" Label="Настроить таблицу" Icon="columns-3" IconOnly="True"
+                                      Width="24" Height="32" Padding="0" ToolTip.Tip="Настроить таблицу">
+                      <Button.Flyout>
+                        <Flyout>
+                          <StackPanel Spacing="12" Width="300">
+                            <TextBlock Text="Вид таблицы" FontSize="16" FontWeight="SemiBold" />
+                            <Grid ColumnDefinitions="*,28,4,48,4,28,8,28">
+                              <TextBlock Text="Высота строки" VerticalAlignment="Center" />
+                              <ui:JournalButton x:Name="DecreaseRowHeightButton" Grid.Column="1" Label="−" Width="28" Height="28" MinHeight="28" Padding="0"
+                                                FontSize="18" Click="OnDecreaseRowHeight" ToolTip.Tip="Уменьшить высоту строки" AutomationProperties.Name="Уменьшить высоту строки" />
+                              <TextBox x:Name="RowHeightInput" Grid.Column="3" Text="32" MinHeight="28" Padding="4,2" TextAlignment="Center"
+                                       VerticalContentAlignment="Center" TextChanged="OnRowHeightTextChanged" LostFocus="OnRowHeightLostFocus" KeyDown="OnRowHeightKeyDown"
+                                       ToolTip.Tip="От 24 до 48" AutomationProperties.Name="Высота строки" />
+                              <ui:JournalButton x:Name="IncreaseRowHeightButton" Grid.Column="5" Label="+" Width="28" Height="28" MinHeight="28" Padding="0"
+                                                FontSize="18" Click="OnIncreaseRowHeight" ToolTip.Tip="Увеличить высоту строки" AutomationProperties.Name="Увеличить высоту строки" />
+                              <ui:JournalButton x:Name="ResetRowHeightButton" Grid.Column="7" Label="Стандартная высота строки" Icon="refresh-cw" IconOnly="True"
+                                                Width="28" Height="28" MinHeight="28" Padding="0" Click="OnResetRowHeight" ToolTip.Tip="Вернуть высоту 32" />
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource JournalBorder}" />
+                            <TextBlock Text="Видимые столбцы" FontSize="16" FontWeight="SemiBold" />
+                            <ui:JournalButton x:Name="ShowAllColumnsButton" Label="Показать все" Click="OnShowAllColumns" HorizontalAlignment="Left" />
+                            <ScrollViewer MaxHeight="360"><StackPanel x:Name="ColumnChoices" Spacing="4" /></ScrollViewer>
+                          </StackPanel>
+                        </Flyout>
+                      </Button.Flyout>
+                    </ui:JournalButton>
+                  </DataGridTemplateColumn.Header>
+                  <DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate x:DataType="vm:OrderRowViewModel">
+                      <Grid HorizontalAlignment="Left">
+                        <CheckBox IsEnabled="{ReflectionBinding DataContext.CanBrowseJournal, RelativeSource={RelativeSource AncestorType=Window}}" Classes="row-selection" Width="24" HorizontalAlignment="Left" MinHeight="24"
+                                  Height="{ReflectionBinding $parent[DataGrid].RowHeight}"
+                                  IsChecked="{Binding $parent[DataGridRow].IsSelected, Mode=TwoWay}"
+                                  AutomationProperties.Name="{Binding SpecificationNumber, StringFormat='Выбрать заявку {0}'}" />
+                      </Grid>
+                    </DataTemplate>
+                  </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Дата" Binding="{ReflectionBinding DateText}" SortMemberPath="OrderDateSortKey" Width="90*" MinWidth="88" />
+                <DataGridTextColumn Header="Спецификация" Binding="{ReflectionBinding SpecificationNumber}" SortMemberPath="SpecificationSortKey" Width="112*" MinWidth="106" />
+                <DataGridTextColumn Header="Менеджер" Binding="{ReflectionBinding ManagerName}" Width="124*" MinWidth="118">
+                  <DataGridTextColumn.HeaderTemplate>
+                    <DataTemplate>
+                      <ui:ColumnFilterHeader DataContext="{ReflectionBinding $parent[DataGrid].DataContext.ManagerFilter}"
+                                             AttachedToVisualTree="OnJournalFilterAttached" DetachedFromVisualTree="OnJournalFilterDetached" />
+                    </DataTemplate>
+                  </DataGridTextColumn.HeaderTemplate>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Заказчик" Binding="{ReflectionBinding CustomerName}" Width="180*" MinWidth="140" />
+                <DataGridTextColumn Header="Вид резки" Binding="{ReflectionBinding CuttingType}" Width="122*" MinWidth="116">
+                  <DataGridTextColumn.HeaderTemplate>
+                    <DataTemplate>
+                      <ui:ColumnFilterHeader DataContext="{ReflectionBinding $parent[DataGrid].DataContext.CuttingTypeFilter}"
+                                             AttachedToVisualTree="OnJournalFilterAttached" DetachedFromVisualTree="OnJournalFilterDetached" />
+                    </DataTemplate>
+                  </DataGridTextColumn.HeaderTemplate>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Материал" Binding="{ReflectionBinding MaterialName}" Width="116*" MinWidth="114">
+                  <DataGridTextColumn.HeaderTemplate>
+                    <DataTemplate>
+                      <ui:ColumnFilterHeader DataContext="{ReflectionBinding $parent[DataGrid].DataContext.MaterialFilter}"
+                                             AttachedToVisualTree="OnJournalFilterAttached" DetachedFromVisualTree="OnJournalFilterDetached" />
+                    </DataTemplate>
+                  </DataGridTextColumn.HeaderTemplate>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Толщ., мм" Binding="{ReflectionBinding ThicknessText}" SortMemberPath="ThicknessMillimeters" Width="118*" MinWidth="116" ui:TableCellPresentation.IsNumeric="True">
+                  <DataGridTextColumn.HeaderTemplate>
+                    <DataTemplate>
+                      <ui:ColumnFilterHeader DataContext="{ReflectionBinding $parent[DataGrid].DataContext.ThicknessFilter}"
+                                             AttachedToVisualTree="OnJournalFilterAttached" DetachedFromVisualTree="OnJournalFilterDetached" />
+                    </DataTemplate>
+                  </DataGridTextColumn.HeaderTemplate>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Размер листа" Binding="{ReflectionBinding SheetSize}" Width="112*" MinWidth="104" />
+                <DataGridTextColumn Header="Листы" Binding="{ReflectionBinding SheetCount}" SortMemberPath="SheetCountSortKey" Width="66*" MinWidth="64" ui:TableCellPresentation.IsNumeric="True" />
+                <DataGridTextColumn Header="Рез, м" Binding="{ReflectionBinding CutLengthText}" SortMemberPath="CutLengthMeters" Width="68*" MinWidth="64" ui:TableCellPresentation.IsNumeric="True" />
+                <DataGridTextColumn Header="Вес, кг" Binding="{ReflectionBinding WeightText}" SortMemberPath="WeightSortKey" Width="76*" MinWidth="68" ui:TableCellPresentation.IsNumeric="True" />
+                <DataGridTextColumn Header="Стоимость" Binding="{ReflectionBinding StoredPriceText}" SortMemberPath="StoredCuttingPrice" Width="104*" MinWidth="96" ui:TableCellPresentation.IsNumeric="True" />
+                <DataGridTemplateColumn Header="Время резки" SortMemberPath="CuttingDurationMinutes" Width="96*" MinWidth="88" ui:TableCellPresentation.IsNumeric="True">
+                  <DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate x:DataType="vm:OrderRowViewModel">
+                      <TextBlock Text="{Binding CuttingTimeText}" ui:TableCellPresentation.Hint="{Binding CuttingTimeHint}"
+                                 VerticalAlignment="Center" />
+                    </DataTemplate>
+                  </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Гибка" SortMemberPath="HasBending" Width="96*" MinWidth="94" IsReadOnly="True">
+                  <DataGridTemplateColumn.HeaderTemplate>
+                    <DataTemplate>
+                      <ui:ColumnFilterHeader DataContext="{ReflectionBinding $parent[DataGrid].DataContext.BendingFilter}"
+                                             AttachedToVisualTree="OnJournalFilterAttached" DetachedFromVisualTree="OnJournalFilterDetached" />
+                    </DataTemplate>
+                  </DataGridTemplateColumn.HeaderTemplate>
+                  <DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate x:DataType="vm:OrderRowViewModel">
+                      <TextBlock Text="{Binding BendingText}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="SemiBold"
+                                 ui:TableCellPresentation.Hint="{Binding AnnotationHint}" AutomationProperties.Name="{Binding BendingDescription}" />
+                    </DataTemplate>
+                  </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Комментарий" SortMemberPath="Comment" Width="140*" MinWidth="100" IsReadOnly="True">
+                  <DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate x:DataType="vm:OrderRowViewModel">
+                      <TextBlock Text="{Binding CommentText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                 ui:TableCellPresentation.Hint="{Binding AnnotationHint}" />
+                    </DataTemplate>
+                  </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="БЛЦБ" Binding="{ReflectionBinding DeliveryNumber}" Width="120*" MinWidth="112" />
+                <DataGridTemplateColumn Header="Статус" Width="110*" MinWidth="100" SortMemberPath="StatusText">
+                  <DataGridTemplateColumn.HeaderTemplate>
+                    <DataTemplate>
+                      <ui:StatusFilterHeader DataContext="{ReflectionBinding $parent[DataGrid].DataContext}"
+                                             AttachedToVisualTree="OnJournalFilterAttached" DetachedFromVisualTree="OnJournalFilterDetached" />
+                    </DataTemplate>
+                  </DataGridTemplateColumn.HeaderTemplate>
+                  <DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate x:DataType="vm:OrderRowViewModel">
+                      <ui:StatusBadge IsVisible="{Binding HasStandardStatus}" Status="{Binding StatusKey}" Text="{Binding StatusText}"
+                                      RowHeight="{ReflectionBinding $parent[DataGrid].RowHeight}" />
+                    </DataTemplate>
+                  </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+              </DataGrid.Columns>
+            </DataGrid>
+            <StackPanel x:Name="EmptyState" IsEnabled="{Binding CanUseJournal}" IsVisible="{Binding ShowEmptyState}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+              <TextBlock Text="{Binding EmptyOrdersText}" HorizontalAlignment="Center" FontSize="16" FontWeight="SemiBold" />
+              <ui:JournalButton Label="Сбросить" Command="{Binding ResetFiltersCommand}" HorizontalAlignment="Center" />
+            </StackPanel>
+            <Border x:Name="LoadingState" IsVisible="{Binding IsLoadingOrders}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="{DynamicResource JournalRaised}" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="1" CornerRadius="6" Padding="20,16">
+              <StackPanel Spacing="12">
+                <TextBlock Text="Загрузка заявок…" HorizontalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+                <ProgressBar IsIndeterminate="True" Width="180" Height="4" />
+              </StackPanel>
+            </Border>
+          </Grid>
+        </Border>
+      </Grid>
+    </Grid>
+    <Grid x:Name="TableStatusBar" Grid.Row="4" Height="24" Margin="24,0" VerticalAlignment="Center">
+      <TextBlock x:Name="UpdatedStatusText" Text="{Binding UpdatedText}" FontSize="12" Classes="muted"
+                 TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip.Tip="{Binding UpdatedText}" />
+    </Grid>
+    <Border x:Name="SpecificationOverlay" Grid.RowSpan="5" ZIndex="100" IsVisible="{Binding ShowSpecificationOverlay}"
+            Classes.rejected="{Binding ShowSpecificationRejection}" Padding="40" AutomationProperties.LiveSetting="Polite">
+      <Grid>
+        <Border IsVisible="{Binding ShowSpecificationReading}" Background="{DynamicResource JournalSurface}" BorderBrush="{DynamicResource JournalAccent}" BorderThickness="2"
+                CornerRadius="16" Padding="40" MaxWidth="700" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+          <StackPanel Spacing="20">
+            <TextBlock Text="{Binding SpecificationOverlayTitle}" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap" HorizontalAlignment="Center" />
+            <TextBlock Text="{Binding SpecificationOverlayDescription}" Classes="muted" TextWrapping="Wrap" TextAlignment="Center" />
+            <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsImportingSpecification}" Height="4" />
+            <ui:JournalButton x:Name="CancelSpecificationImportButton" Label="Отменить разбор" Icon="x" Click="OnCancelSpecificationImport" IsVisible="{Binding IsImportingSpecification}" HorizontalAlignment="Center" />
+          </StackPanel>
+        </Border>
+        <Border x:Name="SpecificationRejectionPanel" IsVisible="{Binding ShowSpecificationRejection}"
+                Background="{DynamicResource JournalDangerBackground}" BorderBrush="{DynamicResource JournalDangerForeground}"
+                BorderThickness="1" CornerRadius="12" Padding="24" MaxWidth="560" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+          <Grid ColumnDefinitions="36,16,*" RowDefinitions="Auto,8,Auto,16,Auto">
+            <svg:Svg Path="avares://Jornal.Desktop/Assets/Icons/ban.svg" Width="32" Height="32" Grid.RowSpan="3" VerticalAlignment="Top"
+                     CurrentColor="{ReflectionBinding BorderBrush.Color, ElementName=SpecificationRejectionPanel}" />
+            <TextBlock Grid.Column="2" Text="Импорт недоступен" FontSize="18" FontWeight="SemiBold"
+                       Foreground="{DynamicResource JournalDangerForeground}" />
+            <TextBlock x:Name="SpecificationRejectionMessage" Grid.Column="2" Grid.Row="2" Text="{Binding SpecificationRejectionText}"
+                       TextWrapping="Wrap" Foreground="{DynamicResource JournalDangerForeground}" AutomationProperties.LiveSetting="Assertive" />
+            <ui:JournalButton x:Name="DismissSpecificationImportErrorButton" Grid.Column="2" Grid.Row="4" Label="Закрыть" Icon="x"
+                              HorizontalAlignment="Right" IsVisible="{Binding !IsDraggingSpecification}"
+                              Command="{Binding DismissSpecificationImportErrorCommand}" />
+          </Grid>
+        </Border>
+      </Grid>
+    </Border>
+    <Canvas x:Name="LayoutOverlay" Grid.RowSpan="5" IsHitTestVisible="False" ClipToBounds="True">
+      <Border x:Name="DropGuide" IsVisible="False" CornerRadius="10" BorderThickness="2"
+              Classes="layout-drop-guide">
+        <TextBlock x:Name="DropGuideText" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Classes="layout-drop-label" />
+      </Border>
+      <Border x:Name="DragPreview" IsVisible="False" Padding="6" CornerRadius="8" BorderThickness="1"
+              BorderBrush="{DynamicResource JournalAccent}" Background="{DynamicResource JournalSurface}" Opacity="0.96"
+              BoxShadow="0 4 16 0 #40000000">
+        <StackPanel Spacing="4">
+          <TextBlock x:Name="DragPreviewText" FontSize="12" Foreground="{DynamicResource JournalAccent}" />
+          <Image x:Name="DragPreviewImage" Stretch="Uniform" MaxWidth="320" MaxHeight="180" />
+        </StackPanel>
+      </Border>
+    </Canvas>
+  </Grid>
+</Window>

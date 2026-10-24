@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-16",
+  "asset": "laser-cutting.jpg",
+  "generator": "Встроенный image_gen (без CLI/API-ключа)",
+  "use": "Фон заставки Journal; логотип и текст рисует интерфейс отдельными слоями",
+  "referenceDescription": "Пользователь предоставил lazer.jpg, lazer_loa.jpg и logo.png. Новая сцена по описанию лазерной резки; исходный logo.png переиспользуется без генерации.",
+  "prompt": "Use case: photorealistic-natural\nAsset type: a lightweight desktop application startup splash background for a laser-cutting order journal.\nPrimary request: Create a polished photographic close-up of an industrial fiber laser cutting a flat steel sheet. Inspired by the supplied conversation photos of a laser cutting head with sparks, but make a new original image.\nComposition: wide landscape 16:9, designed for a 640 by 360 logical pixel splash. Laser head and focal point sit in the right half, with a controlled spray of fine warm orange sparks toward the far right. The left 45 percent is naturally dark, uncluttered navy charcoal negative space for a company logo and two lines of application text which the application will render separately. The lower edge is calm and dark for a status line. Show a plausible metal cutting head, steel sheet, and slatted laser bed, close-up workshop setting. Sharp equipment details, subtle depth of field, restrained industrial photography.\nLighting: cool navy and slate ambient tones, warm realistic cutting sparks. Bright focus localized on the right, avoid a huge white blown-out flash. Modern, quiet and professional.\nConstraints: no lettering, no logos, no watermark, no frame, no fake progress bar, no interface. No people. Image only, edge to edge. Output landscape at 1280x720 if supported.",
+  "sourcePixelSize": [
+    1672,
+    941
+  ],
+  "deliveredPixelSize": [
+    1280,
+    720
+  ],
+  "encoding": "JPEG, quality 82, chroma 4:2:0, metadata stripped",
+  "deliveredBytes": 88926,
+  "logo": "../../../../logo.png",
+  "developerControlled": true,
+  "sha256": "a3a5a1ef6c4801e5137de1615bc24b1539e2a2fa73b1e8a0d73257c27faaa23e"
+}

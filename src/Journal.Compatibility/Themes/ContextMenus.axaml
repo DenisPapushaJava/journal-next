@@ -1,0 +1,18 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Style Selector="ContextMenu">
+    <Setter Property="Background" Value="{DynamicResource JournalSurface}" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalControlBorder}" />
+    <Setter Property="MinWidth" Value="220" />
+    <Setter Property="FontSize" Value="13" />
+  </Style>
+  <Style Selector="ContextMenu MenuItem">
+    <Setter Property="MinHeight" Value="28" />
+  </Style>
+  <Style Selector="MenuItem.context-heading">
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+  <Style Selector="MenuItem.danger:not(:disabled)">
+    <Setter Property="Foreground" Value="{DynamicResource JournalDangerForeground}" />
+  </Style>
+</Styles>

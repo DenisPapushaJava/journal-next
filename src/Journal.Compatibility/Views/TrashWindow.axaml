@@ -1,0 +1,44 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Desktop.ViewModels" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Desktop.Views.TrashWindow" x:DataType="vm:TrashViewModel" Title="Корзина заявок"
+        Width="1040" Height="680" MinWidth="860" MinHeight="540" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,*,Auto,Auto">
+    <StackPanel Margin="24,18,24,12" Spacing="6">
+      <Grid ColumnDefinitions="*,16,Auto">
+        <TextBlock Text="Корзина заявок" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <ui:JournalButton x:Name="ClearTrashButton" Grid.Column="2" Label="Очистить корзину" Icon="trash" Classes="danger"
+                          IsEnabled="{Binding CanClear}" Click="OnClearClick" />
+      </Grid>
+      <TextBlock Text="Копии хранятся на этом компьютере 30 дней."
+                 Classes="muted" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding SourceDescription}" Classes="muted" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SourceDescription}" />
+    </StackPanel>
+    <DataGrid x:Name="TrashGrid" Grid.Row="1" Margin="24,0" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected, Mode=TwoWay}"
+              AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single" RowHeight="32" HeadersVisibility="Column"
+              IsEnabled="{Binding !IsBusy}">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Спецификация" Binding="{Binding Specification}" Width="140" />
+        <DataGridTextColumn Header="Заказчик" Binding="{Binding Customer}" Width="*" MinWidth="140" />
+        <DataGridTextColumn Header="Удалена" Binding="{Binding DeletedAt}" Width="150" />
+        <DataGridTextColumn Header="Состояние" Binding="{Binding State}" Width="170" />
+        <DataGridTextColumn Header="Хранение" Binding="{Binding Retention}" Width="170" />
+      </DataGrid.Columns>
+    </DataGrid>
+    <StackPanel Grid.Row="2" Margin="24,12" Spacing="6">
+      <TextBox x:Name="ArchivedDetails" Text="{Binding SelectedDetails}" IsReadOnly="True" AcceptsReturn="True"
+               TextWrapping="Wrap" Height="104" ScrollViewer.VerticalScrollBarVisibility="Auto"
+               AutomationProperties.Name="Подробности архивной заявки" />
+      <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
+      <ui:WindowsSecurityHelp DataContext="{Binding AccessHostHelp}" />
+    </StackPanel>
+    <Border Grid.Row="3" Padding="24,16" Background="{DynamicResource JournalSurface}">
+      <Grid ColumnDefinitions="*,Auto,12,Auto,12,Auto,12,Auto">
+        <TextBlock Text="{Binding CountText}" Classes="muted" VerticalAlignment="Center" />
+        <ui:JournalButton Grid.Column="1" Label="Обновить" Icon="refresh-cw" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsWriting}" />
+        <ui:JournalButton x:Name="RestoreButton" Grid.Column="3" Label="Восстановить" Icon="rotate-ccw" Classes="primary" IsEnabled="{Binding CanAct}" Click="OnRestoreClick" />
+        <ui:JournalButton x:Name="PurgeButton" Grid.Column="5" Label="Удалить окончательно" Icon="trash" Classes="danger" IsEnabled="{Binding CanAct}" Click="OnPurgeClick" />
+        <ui:JournalButton Grid.Column="7" Label="Закрыть" Click="OnCloseClick" Classes="outline" IsEnabled="{Binding !IsWriting}" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>
