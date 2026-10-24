@@ -5,10 +5,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Версия для проверки Windows-установщика без публикации'
+        description: 'Версия Windows-выпуска'
         required: true
         default: '2026.1.0-alpha.1'
         type: string
+      create_draft:
+        description: 'После проверок создать тег и черновик выпуска'
+        required: true
+        default: false
+        type: boolean
 permissions:
   contents: read
 concurrency:
@@ -77,7 +82,7 @@ jobs:
           if-no-files-found: ignore
   draft:
     name: Draft after verified Windows installation
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/workflow-v')
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/workflow-v')) || (github.event_name == 'workflow_dispatch' && inputs.create_draft)
     needs: package
     runs-on: windows-latest
     timeout-minutes: 10
@@ -101,6 +106,13 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $existing = & gh release view $env:NEXT_TAG --json isDraft 2>$null
           if ($LASTEXITCODE -eq 0) { throw 'A release with this tag already exists; never replace published assets automatically.' }
+          $tagSha = & gh api "repos/$env:GH_REPO/git/ref/tags/$env:NEXT_TAG" --jq '.object.sha' 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if ($tagSha -ne $env:GITHUB_SHA) { throw 'Existing tag belongs to another commit.' }
+          } else {
+            & gh api --method POST "repos/$env:GH_REPO/git/refs" -f "ref=refs/tags/$env:NEXT_TAG" -f "sha=$env:GITHUB_SHA"
+            if ($LASTEXITCODE -ne 0) { throw 'Creating the verified release tag failed.' }
+          }
           [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'next-notes.txt'), '')
           $assets = @(Get-ChildItem artifacts/release -File | Select-Object -ExpandProperty FullName)
           & gh release create $env:NEXT_TAG @assets --draft --verify-tag --prerelease --title "Journal Next $env:NEXT_VERSION" --notes-file (Join-Path $env:RUNNER_TEMP 'next-notes.txt')
