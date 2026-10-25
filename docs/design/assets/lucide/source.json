@@ -27,6 +27,8 @@
     "check",
     "rotate-ccw",
     "ban",
-    "funnel"
+    "funnel",
+    "chevron-left",
+    "chevron-right"
   ]
 }

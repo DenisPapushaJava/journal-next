@@ -4,6 +4,9 @@ using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using System.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace Jornal.Workflow.Desktop;
 
@@ -11,27 +14,47 @@ public partial class WorkflowSettingsWindow : Window
 {
     private bool _discard;
     private WorkflowSettingsViewModel? _observed;
+    private readonly AsyncRelayCommand<string> _removeTechnologist;
     private WorkflowSettingsViewModel? Model => DataContext as WorkflowSettingsViewModel;
     public bool CanRestart => OwnedWindows.Count == 0 && Model is { CanRestart: true };
-    public WorkflowSettingsWindow() => InitializeComponent();
+    public WorkflowSettingsWindow()
+    {
+        InitializeComponent();
+        _removeTechnologist = new(OnRemoveTechnologistAsync, name => Model?.CanRemoveTechnologist(name) == true);
+        WorkflowProfileName.RemoveSuggestionCommand = _removeTechnologist;
+    }
     public void SelectSection(int section)
     { if (Model is { CanEdit: true } model) model.SelectedSectionIndex = section; }
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e); _observed = Model;
-        if (_observed is not null) _observed.Journal.PropertyChanged += OnJournalChanged;
+        if (_observed is not null)
+        { _observed.Journal.PropertyChanged += OnJournalChanged; _observed.PropertyChanged += OnSettingsChanged; }
         UpdateTheme();
     }
     private void OnJournalChanged(object? sender, PropertyChangedEventArgs e)
-    { if (e.PropertyName == nameof(WorkflowViewModel.IsDarkTheme)) UpdateTheme(); }
+    { if (e.PropertyName == nameof(WorkflowViewModel.IsDarkTheme)) UpdateTheme(); _removeTechnologist.NotifyCanExecuteChanged(); }
+    private void OnSettingsChanged(object? sender, PropertyChangedEventArgs e) => _removeTechnologist.NotifyCanExecuteChanged();
+    private async Task OnRemoveTechnologistAsync(string? name)
+    {
+        if (Model is not { } model || OwnedWindows.Count > 0 || !model.CanRemoveTechnologist(name) || model.FindTechnologist(name) is not { } employee) return;
+        var dialog = new WorkflowProjectActionWindow("Убрать технолога из списка?",
+            "Технолог исчезнет из списка выбора. Заявки, расчёты и авторство сохранятся. Чтобы вернуть его, введите эту фамилию в настройках и сохраните профиль.",
+            employee.Name, "Убрать из списка") { RequestedThemeVariant = ActualThemeVariant };
+        if (await dialog.ShowDialog<bool>(this)) await model.RemoveTechnologistAsync(employee);
+        if (IsVisible) Dispatcher.UIThread.Post(() =>
+        { if (IsVisible) WorkflowProfileName.GetVisualDescendants().OfType<TextBox>().FirstOrDefault()?.Focus(); });
+    }
     private void UpdateTheme() => RequestedThemeVariant = Model?.Journal.IsDarkTheme == true ? ThemeVariant.Dark : ThemeVariant.Light;
     protected override void OnClosing(WindowClosingEventArgs e)
     {
+        Model?.NormalizeResultPriceInput();
         if (OwnedWindows.Count > 0 || Model is { CanClose: false }) e.Cancel = true;
         else if (!_discard && Model is { HasChanges: true } model)
         { e.Cancel = true; model.Error = "Сохраните изменения или нажмите «Отмена»."; }
         base.OnClosing(e);
     }
+    private void OnResultMinimumLostFocus(object? sender, RoutedEventArgs e) => Model?.NormalizeResultPriceInput();
     private void OnClose(object? sender, RoutedEventArgs e)
     { if (OwnedWindows.Count == 0 && Model is { CanClose: true }) { _discard = true; Close(); } }
     private async void OnEntrySuggestions(object? sender, RoutedEventArgs e)
@@ -45,7 +68,8 @@ public partial class WorkflowSettingsWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         ChangeWorkflowProfileColor.Flyout?.Hide();
-        if (_observed is not null) { _observed.Journal.PropertyChanged -= OnJournalChanged; _observed.Dispose(); _observed = null; }
+        if (_observed is not null)
+        { _observed.Journal.PropertyChanged -= OnJournalChanged; _observed.PropertyChanged -= OnSettingsChanged; _observed.Dispose(); _observed = null; }
         base.OnClosed(e);
     }
     private async void OnOpenWorkflowReleases(object? sender, RoutedEventArgs e)
@@ -115,5 +139,34 @@ public partial class WorkflowSettingsWindow : Window
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is not OutOfMemoryException) { model.Error = "Не удалось открыть выбор папки."; }
+    }
+    private async void OnConnectDatabase(object? sender, RoutedEventArgs e) => await ChooseDatabaseAsync(false);
+    private async void OnCreateDatabase(object? sender, RoutedEventArgs e) => await ChooseDatabaseAsync(true);
+    private async Task ChooseDatabaseAsync(bool create)
+    {
+        if (Model is not { CanChooseDatabase: true } model || OwnedWindows.Count > 0) return;
+        if (model.HasChanges) { model.Error = "Сначала сохраните изменения настроек или закройте их кнопкой «Отмена»."; return; }
+        try
+        {
+            string? path;
+            var type = new FilePickerFileType("База Journal Next (*.mdb)") { Patterns = ["*.mdb"] };
+            if (create)
+            {
+                if (!StorageProvider.CanSave) return;
+                var file = await StorageProvider.SaveFilePickerAsync(new()
+                { Title = "Создать базу Journal Next", SuggestedFileName = "JournalNext.mdb", DefaultExtension = "mdb", FileTypeChoices = [type], ShowOverwritePrompt = true });
+                path = file?.TryGetLocalPath();
+            }
+            else
+            {
+                if (!StorageProvider.CanOpen) return;
+                var files = await StorageProvider.OpenFilePickerAsync(new()
+                { Title = "Подключить базу Journal Next", AllowMultiple = false, FileTypeFilter = [type] });
+                path = files.FirstOrDefault()?.TryGetLocalPath();
+            }
+            if (IsVisible && path is not null) await model.ChooseDatabaseAsync(path, create);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { model.Error = "Не удалось выбрать файл MDB. Прежнее подключение сохранено."; }
     }
 }

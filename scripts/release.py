@@ -18,6 +18,7 @@ REPOSITORY = "https://github.com/DenisPapushaJava/journal-next"
 CHANNEL = "workflow-win-x64"
 EXECUTABLE = "Jornal.Workflow.Desktop.exe"
 TAG_PREFIX = "workflow-v"
+FIRST_VERSION = "2026.1.0-alpha.1"
 
 
 def product(root=ROOT):
@@ -55,6 +56,17 @@ def plan(value, runtime="win-x64", root=ROOT):
 def sha(path):
     with Path(path).open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def release_notes(value, root=ROOT):
+    if version(value) == FIRST_VERSION:
+        return ""  # The published first release intentionally has no notes.
+    text = (root / 'docs/release-notes.md').read_text(encoding='utf-8')
+    # The desktop bell displays plain text. Keep the approved wording and numbering.
+    text = '\n'.join(line for line in text.splitlines() if not line.startswith('#')).strip().replace('**', '')
+    if not text:
+        raise ValueError("Release notes must be provided for the next release")
+    return text + '\n'
 
 
 def verify_publish(path):
@@ -97,6 +109,8 @@ def verify_release(path, value):
                           Size=package.stat().st_size)
     if any(asset.get(k) != v for k, v in expected_asset.items()) or str(asset.get('SHA256', '')).lower() != sha(package):
         raise ValueError("Feed identity, channel content or package hash differs")
+    if (asset.get('NotesMarkdown') or '').replace('\r\n', '\n').strip() != release_notes(value).strip():
+        raise ValueError("Feed release notes differ from the approved text")
     hashes = {}
     for line in (path / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
         digest, name = line.split('  ', 1)
@@ -129,13 +143,18 @@ def package(value):
         subprocess.run(['dotnet', 'publish', 'src/Jornal.AccessHost/Jornal.AccessHost.csproj',
                         '-r', 'win-x86', *common, '-o', str(staging / 'AccessHost')], cwd=ROOT, check=True)
         verify_publish(staging)
-        # The first release intentionally has no release notes, including in the bell.
+        notes = release_notes(value)
+        notes_args = []
+        if notes:
+            notes_path = temp / 'release-notes.md'
+            notes_path.write_text(notes, encoding='utf-8', newline='\n')
+            notes_args = ['--releaseNotes', str(notes_path)]
         subprocess.run(['dotnet', 'tool', 'run', 'vpk', 'pack', '--packId', PACKAGE,
                         '--packTitle', p['displayName'], '--packAuthors', 'DenisPapusha',
                         '--packVersion', p['version'], '--packDir', str(staging), '--mainExe', EXECUTABLE,
                         '--runtime', 'win-x64', '--channel', CHANNEL, '--outputDir', str(updates),
                         '--noPortable', '--framework', 'net10.0-x64-runtime,net10.0-x86-runtime',
-                        '--icon', str(ROOT / 'docs/design/assets/journal-icon.ico')], cwd=ROOT, check=True)
+                        '--icon', str(ROOT / 'docs/design/assets/journal-next-icon.ico'), *notes_args], cwd=ROOT, check=True)
         from windows_installer import build_offline_installer
         package_path = updates / f"{PACKAGE}-{p['version']}-{CHANNEL}-full.nupkg"
         feed_path = updates / p['feed']
@@ -156,15 +175,19 @@ def package(value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['plan', 'package', 'verify'])
+    parser.add_argument('command', choices=['plan', 'package', 'verify', 'notes'])
     parser.add_argument('--version', required=True)
     parser.add_argument('--directory', default=str(ROOT / 'artifacts/release'))
     parser.add_argument('--github-output')
+    parser.add_argument('--notes-output')
     args = parser.parse_args()
     try:
         p = plan(args.version)
         if args.command == 'package': package(args.version)
         if args.command == 'verify': verify_release(args.directory, args.version)
+        if args.command == 'notes':
+            if not args.notes_output: raise ValueError("--notes-output is required")
+            Path(args.notes_output).write_text(release_notes(args.version), encoding='utf-8', newline='\n')
         if args.github_output:
             with open(args.github_output, 'a', encoding='utf-8') as stream:
                 stream.write(f"version={p['version']}\ntag={p['tag']}\n")

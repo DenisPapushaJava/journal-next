@@ -6,7 +6,6 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using Jornal.Desktop.Clipboard;
 using Jornal.Core.Results;
-using Jornal.Parsing.Specifications;
 using Jornal.Workflow.Infrastructure;
 using Jornal.Workflow.Core;
 
@@ -27,9 +26,6 @@ public partial class WorkflowWindow : Window
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException)
         { RequestedThemeVariant = ThemeVariant.Light; }
         _loadingTheme = false;
-        DragDrop.SetAllowDrop(this, true);
-        AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Bubble, handledEventsToo: true);
-        AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Bubble, handledEventsToo: true);
     }
     protected override async void OnOpened(EventArgs e)
     {
@@ -40,21 +36,42 @@ public partial class WorkflowWindow : Window
         await model.ReloadCommand.ExecuteAsync(null);
         if (model.Error is null)
         {
-            try { if (_restart.Take() is { } draft) model.RestoreRestartDraft(draft); }
+            try
+            {
+                if (_restart.Take(model.DatabaseId, remove: false) is { } draft && await model.RestoreRestartDraftAsync(draft, _lifetime.Token))
+                    _restart.Take(model.DatabaseId, expected: draft);
+            }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
             { model.Error = "Не удалось восстановить результат после обновления. Сохранённые заявки доступны."; }
         }
         await model.Updates.RunAutomaticChecksAsync(_lifetime.Token);
     }
     protected override void OnClosing(WindowClosingEventArgs e)
-    { if (Model?.IsBusy == true || Model?.Updates is { IsApplying: true, RestartScheduled: false }) e.Cancel = true; base.OnClosing(e); }
+    { if (Model?.IsBusy == true || OwnedWindows.OfType<WorkflowProjectEditorWindow>().Any() || Model?.Updates is { IsApplying: true, RestartScheduled: false }) e.Cancel = true; base.OnClosing(e); }
     protected override void OnClosed(EventArgs e)
     {
         _lifetime.Cancel(); Model?.Updates.ClearRestart(); Model?.Updates.CheckCommand.Cancel(); Model?.Updates.DownloadCommand.Cancel();
         Model?.Detach(); _lifetime.Dispose(); base.OnClosed(e);
     }
     protected override void OnKeyDown(KeyEventArgs e)
-    { base.OnKeyDown(e); if (e.Key == Key.F5 && Model is { CanUse: true } model) { model.ReloadCommand.Execute(null); e.Handled = true; } }
+    {
+        base.OnKeyDown(e);
+        if (e.Handled || Model is not { CanUse: true } model) return;
+        if (e.Key == Key.F5) { model.ReloadCommand.Execute(null); e.Handled = true; }
+        else if (e.Key == Key.F && e.KeyModifiers == KeyModifiers.Control && OwnedWindows.Count == 0)
+        { WorkflowSearchInput.Focus(); WorkflowSearchInput.SelectAll(); e.Handled = true; }
+    }
+    private void OnClearSearch(object? sender, RoutedEventArgs e)
+    {
+        Model?.ClearSearchCommand.Execute(null);
+        WorkflowSearchInput.Focus();
+    }
+    private void OnSearchKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && Model is { } searching) { _ = searching.SearchDatabaseNowAsync(); e.Handled = true; return; }
+        if (e.Key != Key.Escape || Model is not { HasSearchText: true } model) return;
+        model.ClearSearchCommand.Execute(null); e.Handled = true;
+    }
     private void OnThemeChanged(object? sender, RoutedEventArgs e)
     {
         if (_loadingTheme) return;
@@ -90,6 +107,16 @@ public partial class WorkflowWindow : Window
         var window = new WorkflowTrashConfirmationWindow { DataContext = confirmation, RequestedThemeVariant = ActualThemeVariant };
         await window.ShowDialog(this);
     }
+    private async void OnChangeResponsible(object? sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (Model is not { CanUse: true } model || OwnedWindows.Count > 0 || model.CreateResponsibleChange() is not { } request) return;
+        var window = new WorkflowResponsibleWindow(request) { RequestedThemeVariant = ActualThemeVariant };
+        var employeeId = await window.ShowDialog<Guid?>(this);
+        if (employeeId is { } selected && IsVisible && !_lifetime.IsCancellationRequested)
+            await model.ChangeResponsibleAsync(request, selected);
+        if (IsVisible) WorkflowOrderActions.Focus();
+    }
     private async void OnTrash(object? sender, RoutedEventArgs e)
     {
         if (Model is not { CanUse: true } model || OwnedWindows.Count > 0) return;
@@ -103,27 +130,6 @@ public partial class WorkflowWindow : Window
         await window.ShowDialog(this);
     }
     private async void OnUpdates(object? sender, RoutedEventArgs e) => await ShowSettingsAsync(2);
-    private async void OnImportFiles(object? sender, RoutedEventArgs e)
-    {
-        if (Model is not { CanUse: true, IsOrderOpen: true } model || !StorageProvider.CanOpen) return;
-        try
-        {
-            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { AllowMultiple = true, Title = "Добавить спецификации",
-                FileTypeFilter = [new FilePickerFileType("Спецификации") { Patterns = SpecificationProfileCatalog.Default.SupportedExtensions.Select(s => "*" + s).ToArray() }] });
-            if (IsVisible && !_lifetime.IsCancellationRequested) await model.ImportFilesAsync(files.Select(f => f.TryGetLocalPath() ?? "").ToArray(), _lifetime.Token);
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { if (IsVisible) model.Error = "Не удалось открыть выбор файлов."; }
-    }
-    private void OnDragOver(object? sender, DragEventArgs e)
-    { e.Handled = true; e.DragEffects = Model is { CanUse: true, IsOrderOpen: true } && e.DataTransfer.Contains(DataFormat.File) ? DragDropEffects.Copy : DragDropEffects.None; }
-    private async void OnDrop(object? sender, DragEventArgs e)
-    {
-        e.Handled = true;
-        if (Model is not { CanUse: true, IsOrderOpen: true } model || OwnedWindows.Count > 0) return;
-        var files = e.DataTransfer.TryGetFiles()?.OfType<IStorageFile>().Select(f => f.TryGetLocalPath() ?? "").ToArray() ?? [];
-        if (files.Length > 0) { Activate(); await model.ImportFilesAsync(files, _lifetime.Token); }
-    }
     private async void OnCopyResult(object? sender, RoutedEventArgs e)
     {
         if (Model is not { CanUse: true } model || string.IsNullOrWhiteSpace(model.ResultText)) return;
@@ -163,17 +169,18 @@ public partial class WorkflowWindow : Window
         var window = new WorkflowReportReviewWindow { DataContext = review, RequestedThemeVariant = ActualThemeVariant };
         await window.ShowDialog(this);
     }
-    private async void OnOpenArchivedReport(object? sender, RoutedEventArgs e)
+    private async void OnOpenAcceptedReport(object? sender, RoutedEventArgs e)
     {
-        if (Model is not { CanUse: true, SelectedRevision.Revision.Report: { } report } model) return;
+        if (Model is not { CanUse: true, SelectedDraft.Saved.Report: { } report } model) return;
         try
         {
             await Task.Run(() => WorkflowReportFiles.VerifyArchiveAsync(report, _lifetime.Token), _lifetime.Token);
-            if (IsVisible && !await Launcher.LaunchFileInfoAsync(new FileInfo(report.ArchivePath)))
+            if (IsVisible && !await LaunchAcceptedReportAsync(report.ArchivePath))
                 model.Error = "Не удалось открыть принятую спецификацию.";
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         { if (IsVisible) model.Error = ex is WorkflowValidationException ? ex.Message : "Принятая копия отчёта недоступна."; }
     }
+    protected virtual Task<bool> LaunchAcceptedReportAsync(string path) => Launcher.LaunchFileInfoAsync(new FileInfo(path));
 }

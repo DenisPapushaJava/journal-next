@@ -34,7 +34,7 @@ public sealed class LegacyPricesTests
     [Fact]
     public void ImportUpdatesMeterPricesPreservesPiercePricesAndHistoryAndRemovesUnavailableImportedRates()
     {
-        var book = WorkflowWorkspace.Empty; var actor = book.Employees[0].Id;
+        var book = WorkflowTestData.CreateWorkspace(); var actor = book.Employees[0].Id;
         book = WorkflowChanges.CreateOrder(book, "ООО «Пример»", actor, actor, actor, DateTimeOffset.UtcNow, out var orderId);
         var rate = new CuttingRate(Guid.NewGuid(), "Лазер", "Базовая", 2.5m, 100, 7);
         book = WorkflowChanges.SetRate(book, rate);

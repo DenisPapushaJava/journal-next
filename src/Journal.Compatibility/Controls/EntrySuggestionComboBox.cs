@@ -9,7 +9,7 @@ using Avalonia.VisualTree;
 namespace Jornal.Desktop.Controls;
 
 // Keeps the native editable ComboBox template; previewing a suggestion does not commit it.
-public sealed class EntrySuggestionComboBox : ComboBox
+public sealed partial class EntrySuggestionComboBox : ComboBox
 {
     public static readonly StyledProperty<IReadOnlyList<string>?> SuggestionsProperty =
         AvaloniaProperty.Register<EntrySuggestionComboBox, IReadOnlyList<string>?>(nameof(Suggestions));
@@ -38,6 +38,8 @@ public sealed class EntrySuggestionComboBox : ComboBox
         {
             // Keep typing in the editor even when the text exactly matches a saved name.
             e.Container.Focusable = false;
+            if (RemoveSuggestionCommand is not null && e.Container is ContentControl content)
+                content.HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
             e.Container.Classes.Set("suggestion-preview", e.Index == _previewIndex);
         };
         DropDownOpened += (_, _) =>
@@ -77,6 +79,7 @@ public sealed class EntrySuggestionComboBox : ComboBox
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
+        if (change.Property == RemoveSuggestionCommandProperty) UpdateRemovalTemplate();
         if (change.Property == SelectedItemProperty && _syncDepth == 0)
         {
             _completion = null;
@@ -235,6 +238,7 @@ public sealed class EntrySuggestionComboBox : ComboBox
 
     public override bool UpdateSelectionFromEvent(Control container, RoutedEventArgs eventArgs)
     {
+        if (IsRemovalSource(eventArgs.Source)) return false;
         var index = IndexFromContainer(container);
         var accepted = base.UpdateSelectionFromEvent(container, eventArgs);
         // Clicking the already highlighted item may leave SelectedItem unchanged.

@@ -9,6 +9,7 @@ public static class WorkflowProjectFiles
         DateTimeOffset now, CancellationToken token = default)
     {
         if (order.IsDeleted) throw new WorkflowValidationException("Заявка находится в корзине. Восстановите её перед подготовкой проекта.");
+        if (order.HasProjectRename) throw new WorkflowValidationException("Сначала завершите изменение параметров проекта.");
         if (string.IsNullOrWhiteSpace(root) || !Path.IsPathFullyQualified(root))
             throw new WorkflowValidationException("Сначала выберите папку проектов в настройках.");
         if (thickness <= 0)

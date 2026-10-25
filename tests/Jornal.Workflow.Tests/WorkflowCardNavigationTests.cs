@@ -37,7 +37,7 @@ public sealed class WorkflowCardNavigationTests
         await ProjectFixture.WriteAsync(project); await f.AcceptAsync();
         var firstId = Assert.Single(f.Model.Orders).Order.Id; var draft = f.Model.SelectedDraft!;
         draft.Length = "17"; draft.Coefficient = "1,3"; draft.Comment = "Ручная правка"; draft.HasBending = true;
-        f.Model.Blcb = "55"; f.Model.BlcbYear = "2026"; f.Model.ResultText = "Ручной текст письма\n";
+        f.Model.Blcb = "55"; f.Model.ManagerName = "Новый несохранённый менеджер"; f.Model.ResultText = "Ручной текст письма\n";
         f.Model.NewOrderCommand.Execute(null); f.Model.NewManager = "Иванов"; f.Model.NewCustomer = "ООО «Вторая заявка»";
         await f.Model.CreateOrderCommand.ExecuteAsync(null); Assert.Null(f.Model.Error);
         Assert.True(f.Model.HasPendingEdits); // An inactive dirty card must prevent an update restart.
@@ -47,7 +47,8 @@ public sealed class WorkflowCardNavigationTests
         Assert.Null(saved.Specifications[0].Current.Parameters.Comment);
         f.Model.SelectedOrder = f.Model.Orders.Single(o => o.Order.Id == firstId);
         Assert.Same(draft, f.Model.SelectedDraft); Assert.Equal("17", draft.Length); Assert.Equal("1,3", draft.Coefficient);
-        Assert.Equal("55", f.Model.Blcb); Assert.Equal("Ручной текст письма\n", f.Model.ResultText); Assert.True(draft.HasBending);
+        Assert.Equal("55", f.Model.Blcb); Assert.Equal("Новый несохранённый менеджер", f.Model.ManagerName);
+        Assert.Equal("Ручной текст письма\n", f.Model.ResultText); Assert.True(draft.HasBending);
         await f.Model.SaveHeaderCommand.ExecuteAsync(null); Assert.Null(f.Model.Error);
         await f.Model.SaveSpecificationCommand.ExecuteAsync(null); Assert.Null(f.Model.Error); Assert.False(f.Model.HasPendingEdits);
         saved = (await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders.Single(o => o.Id == firstId);
@@ -58,12 +59,12 @@ public sealed class WorkflowCardNavigationTests
     public async Task CancellingNewOrderRestoresTheExistingCardAndItsUnsavedFields()
     {
         using var f = new ProjectFixture(); await f.InitializeAsync();
-        f.Model.Blcb = "123"; f.Model.BlcbYear = "2026"; var manager = f.Model.Manager; var technologist = f.Model.Technologist;
-        f.Model.NewOrderCommand.Execute(null); f.Model.Manager = f.Model.Employees.Last(); f.Model.Technologist = f.Model.Employees.First();
+        f.Model.Blcb = "123"; var manager = f.Model.ManagerName; var technologist = f.Model.Technologist;
+        f.Model.NewOrderCommand.Execute(null); f.Model.ManagerName = "Несохранённый менеджер"; f.Model.Technologist = f.Model.Employees.First();
         f.Model.NewManager = "Иванов"; f.Model.NewCustomer = "Не сохранять"; Assert.False(f.Model.IsCardVisible);
         f.Model.CancelNewOrderCommand.Execute(null);
         Assert.True(f.Model.IsCardVisible); Assert.Equal("123", f.Model.Blcb);
-        Assert.Equal(manager, f.Model.Manager); Assert.Equal(technologist, f.Model.Technologist);
+        Assert.Equal(manager, f.Model.ManagerName); Assert.Equal(technologist, f.Model.Technologist);
         Assert.True(f.Model.HasPendingEdits); Assert.Single((await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders);
     }
 
@@ -85,7 +86,7 @@ public sealed class WorkflowCardNavigationTests
         await f.Model.SaveSpecificationCommand.ExecuteAsync(null); Assert.NotNull(f.Model.Error);
         var actual = (await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders.Single(o => o.Id == firstId);
         Assert.Equal("Правка коллеги", actual.Specifications[0].Current.Parameters.Comment);
-        Assert.Equal(2, actual.Specifications[0].Revisions.Length); Assert.Equal("Моя несохранённая правка", f.Model.SelectedDraft.Comment);
+        Assert.Single(actual.Specifications); Assert.Equal("Моя несохранённая правка", f.Model.SelectedDraft.Comment);
     }
 
     [Fact]

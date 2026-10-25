@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,6 +13,17 @@ spec.loader.exec_module(release)
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_notes_preserve_the_approved_nine_points_without_bell_markup(self):
+        notes = release.release_notes('2026.1.0-alpha.2')
+        self.assertEqual([str(n) for n in range(1, 10)], re.findall(r'^(\d+)\. ', notes, re.MULTILINE))
+        self.assertNotIn('**', notes)
+        self.assertNotIn('#', notes)
+        self.assertIn('Настройки → Хранилище', notes)
+        self.assertEqual('', release.release_notes('workflow-v2026.1.0-alpha.1'))
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); (root / 'docs').mkdir(); (root / 'docs/release-notes.md').write_text('# Empty\n', encoding='utf-8')
+            with self.assertRaises(ValueError): release.release_notes('2026.1.0-alpha.2', root)
+
     def test_first_release_identity_is_independent_and_windows_only(self):
         p = release.plan('workflow-v2026.1.0-alpha.1')
         self.assertEqual('DenisPapusha.JournalWorkflow', p['productId'])
@@ -43,18 +55,20 @@ class ReleaseTests(unittest.TestCase):
 
     def test_feed_hashes_package_identity_and_exact_file_set(self):
         with tempfile.TemporaryDirectory() as temp:
-            p = Path(temp); v = '2026.1.0-alpha.1'
+            p = Path(temp); v = '2026.1.0-alpha.2'
             package = p / f'{release.PACKAGE}-{v}-workflow-win-x64-full.nupkg'
             with zipfile.ZipFile(package, 'w') as z:
                 z.writestr('test.nuspec', f'<package><metadata><id>{release.PACKAGE}</id><version>{v}</version></metadata></package>')
                 z.writestr('lib/app/' + release.EXECUTABLE, b'fixture')
             setup = p / f'JournalNext-{v}-win-x64-OfflineSetup.exe'; setup.write_bytes(b'setup')
             feed = p / f'releases.{release.CHANNEL}.json'
-            asset = dict(PackageId=release.PACKAGE, Version=v, Type='Full', FileName=package.name, Size=package.stat().st_size, SHA256=release.sha(package))
+            asset = dict(PackageId=release.PACKAGE, Version=v, Type='Full', FileName=package.name, Size=package.stat().st_size,
+                         SHA256=release.sha(package), NotesMarkdown=release.release_notes(v))
             def hashes():
                 (p / 'SHA256SUMS').write_text(''.join(f'{release.sha(f)}  {f.name}\n' for f in [package, setup, feed]))
             feed.write_text(json.dumps({'Assets': [asset]})); hashes(); release.verify_release(p, v)
-            for key, value in [('PackageId', 'DenisPapusha.Journal'), ('Version', '2026.2.0'), ('SHA256', '0' * 64), ('FileName', '../old.nupkg')]:
+            for key, value in [('PackageId', 'DenisPapusha.Journal'), ('Version', '2026.2.0'), ('SHA256', '0' * 64),
+                               ('FileName', '../old.nupkg'), ('NotesMarkdown', ''), ('NotesMarkdown', 'Wrong notes')]:
                 feed.write_text(json.dumps({'Assets': [asset | {key: value}]})); hashes()
                 with self.assertRaises(ValueError): release.verify_release(p, v)
             feed.write_text(json.dumps({'Assets': [asset]})); hashes()

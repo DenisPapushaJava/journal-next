@@ -14,7 +14,7 @@ public sealed class MachineCatalogTests
     [Fact]
     public void RenameUsesPermanentIdAndDoesNotRewriteHistoryOrBreakLegacyReload()
     {
-        var book = LegacyPriceImport.Apply(WorkflowWorkspace.Empty, "source.mdb", Source(), DateTimeOffset.UtcNow);
+        var book = LegacyPriceImport.Apply(WorkflowTestData.CreateWorkspace(), "source.mdb", Source(), DateTimeOffset.UtcNow);
         var laser = book.Machines.Single(m => m.Name == "Лазер"); var actor = book.Employees[0].Id;
         book = WorkflowChanges.CreateOrder(book, "ООО «Пример»", actor, actor, actor, DateTimeOffset.UtcNow, out var orderId);
         var parameters = new CuttingParameters("Лазер", "Ст3", "Базовая", 3, "1500×3000", 1, 10, 5, null, null, 1, false, null) { MachineId = laser.Id };
@@ -40,7 +40,7 @@ public sealed class MachineCatalogTests
     {
         var source = new LegacyPriceCatalog([new("Гидроабразив", "waterjet-awjc/v1") { LegacyKey = "table:fixed-id" }],
             [new(new("Гидроабразив", "Базовая", 10), 300)], []);
-        var book = LegacyPriceImport.Apply(WorkflowWorkspace.Empty, "source.mdb", source, DateTimeOffset.UtcNow);
+        var book = LegacyPriceImport.Apply(WorkflowTestData.CreateWorkspace(), "source.mdb", source, DateTimeOffset.UtcNow);
         var machine = book.Machines.Single(m => m.LegacyKey == "table:fixed-id");
         book = WorkflowChanges.UpdateCatalog(book, book.Machines.Select(m => m.Id == machine.Id ? m with { Name = "ГАР № 2", ImportProfile = null } : m).ToArray(), book.Rates);
         source = source with { Machines = [source.Machines[0] with { Name = "Новый ГАР" }], Rates = [new(new("Новый ГАР", "Базовая", 10), 400)] };
@@ -54,7 +54,7 @@ public sealed class MachineCatalogTests
     [Fact]
     public void DuplicateNamesThicknessesAndDanglingRatesAreRejected()
     {
-        var book = LegacyPriceImport.Apply(WorkflowWorkspace.Empty, "source.mdb", Source(), DateTimeOffset.UtcNow);
+        var book = LegacyPriceImport.Apply(WorkflowTestData.CreateWorkspace(), "source.mdb", Source(), DateTimeOffset.UtcNow);
         Assert.Throws<WorkflowValidationException>(() => WorkflowChanges.UpdateCatalog(book,
             book.Machines.Select(m => m with { Name = "Одно имя" }).ToArray(), book.Rates));
         Assert.Throws<WorkflowValidationException>(() => WorkflowChanges.UpdateCatalog(book, book.Machines,
@@ -71,13 +71,13 @@ public sealed class MachineCatalogTests
         var dir = Path.Combine(Path.GetTempPath(), "workflow-schema1-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(dir);
         try
         {
-            var book = LegacyPriceImport.Apply(WorkflowWorkspace.Empty, "source.mdb", Source(), DateTimeOffset.UtcNow);
+            var book = LegacyPriceImport.Apply(WorkflowTestData.CreateWorkspace(), "source.mdb", Source(), DateTimeOffset.UtcNow);
             var actor = book.Employees[0].Id;
             book = WorkflowChanges.CreateOrder(book, "ООО «Пример»", actor, actor, actor, DateTimeOffset.UtcNow, out var orderId);
             book = WorkflowChanges.SaveSpecification(book, orderId, 1, Guid.NewGuid(),
                 new("Лазер", "Ст3", "Базовая", 3, "1500×3000", 1, 10, 5, null, null, 1, false, null),
                 "1023-1100", new(2026, 10, 23), actor, DateTimeOffset.UtcNow);
-            var node = JsonSerializer.SerializeToNode(book)!.AsObject(); node["SchemaVersion"] = 1;
+            var node = WorkflowTestData.LegacyJson(book, 1);
             foreach (var machine in node["Machines"]!.AsArray()) { machine!.AsObject().Remove("Id"); machine.AsObject().Remove("LegacyKey"); machine.AsObject().Remove("LegacyName"); }
             foreach (var rate in node["Rates"]!.AsArray()) rate!.AsObject().Remove("MachineId");
             foreach (var order in node["Orders"]!.AsArray()) foreach (var spec in order!["Specifications"]!.AsArray())
@@ -85,7 +85,7 @@ public sealed class MachineCatalogTests
             var path = Path.Combine(dir, "workspace.json"); var bytes = System.Text.Encoding.UTF8.GetBytes(node.ToJsonString());
             await File.WriteAllBytesAsync(path, bytes, TestContext.Current.CancellationToken);
             var store = new LocalWorkflowWorkspaceStore(path); var migrated = await store.ReadAsync(TestContext.Current.CancellationToken);
-            Assert.Equal(7, migrated.SchemaVersion); Assert.Equal(book.Orders[0].CuttingTotal, migrated.Orders[0].CuttingTotal);
+            Assert.Equal(11, migrated.SchemaVersion); Assert.Equal(book.Orders[0].CuttingTotal, migrated.Orders[0].CuttingTotal);
             var id = migrated.Machines.Single(m => m.Name == "Лазер").Id; Assert.NotEqual(Guid.Empty, id);
             Assert.Equal(id, migrated.Rates[0].MachineId); Assert.Equal(id, migrated.Orders[0].Specifications[0].Current.Parameters.MachineId);
             var backup = Assert.Single(Directory.GetFiles(dir, "*.bak")); Assert.Equal(bytes, await File.ReadAllBytesAsync(backup, TestContext.Current.CancellationToken));

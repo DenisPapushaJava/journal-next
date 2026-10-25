@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <ApplicationIcon>../../docs/design/assets/journal-icon.ico</ApplicationIcon>
+    <ApplicationIcon>../../docs/design/assets/journal-next-icon.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
   <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
@@ -23,7 +23,7 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Customization/Data/entry-suggestions.json" />
-    <AvaloniaResource Include="../../docs/design/assets/journal-icon.png" Link="Assets/Journal.png" />
+    <AvaloniaResource Include="../../docs/design/assets/journal-next-icon.png" Link="Assets/Journal.png" />
     <AvaloniaResource Include="../../docs/design/assets/startup/*.jpg" Link="Assets/Startup/%(Filename)%(Extension)" />
     <AvaloniaResource Include="../../logo.png" Link="Assets/Startup/company-logo.png" />
     <AvaloniaResource Include="../../docs/design/assets/lucide/*.svg" Link="Assets/Icons/%(Filename)%(Extension)" />

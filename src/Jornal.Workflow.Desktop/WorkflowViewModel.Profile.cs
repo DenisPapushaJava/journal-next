@@ -24,17 +24,20 @@ public partial class WorkflowViewModel
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException)
         { Error = ThemeError = "Не удалось сохранить тему. Выбор действует до закрытия."; }
     }
-    private Employee? ActiveEmployee => CurrentEmployee is { } current ? _workspace.Employees.SingleOrDefault(e => e.Id == current.Id) : null;
+    private Employee? ActiveEmployee => CurrentEmployee is { } current ? _workspace.Employees.SingleOrDefault(e => e.Id == current.Id && e.CanWork) : null;
     public string ProfileName => ActiveEmployee?.Name ?? "Профиль не выбран";
     public IBrush ProfileBrush => new SolidColorBrush(Color.FromUInt32(ActiveEmployee?.ColorArgb ?? 0xFF628DB2));
     public string ProfileHint => ProfileName + " · изменить: Настройки → Общие → Технолог";
-    partial void OnCurrentEmployeeChanged(Employee? value) => NotifyProfile();
+    partial void OnCurrentEmployeeChanged(Employee? value)
+    { _connection = _connection with { EmployeeId = value?.Id }; NotifyProfile(); }
     private void NotifyProfile()
     { OnPropertyChanged(nameof(ProfileName)); OnPropertyChanged(nameof(ProfileBrush)); OnPropertyChanged(nameof(ProfileHint)); }
 
     public void LoadLocalPreferences(WorkflowPreferencesStore store)
     {
-        var value = store.Load(); _preferences = store; _localPreferences = value;
+        var value = store.Load(); _connection.RequireMatchingSource(value);
+        _preferences = store; _localPreferences = value;
+        _connection = _connection with { EmployeeId = value.EmployeeId };
         _loadingLocalPreferences = true;
         try { IsDarkTheme = value.DarkTheme; } finally { _loadingLocalPreferences = false; }
         ThemeError = null; NotifyProfile(); NotifyEntrySuggestions();
@@ -45,12 +48,27 @@ public partial class WorkflowViewModel
 
     private void RefreshEmployees(Guid? actorId)
     {
-        var manager = Manager?.Id; var technologist = Technologist?.Id;
+        var technologist = Technologist?.Id;
         Employees.Clear(); foreach (var e in _workspace.Employees) Employees.Add(e);
-        CurrentEmployee = Employees.SingleOrDefault(e => e.Id == actorId);
-        Manager = Employees.SingleOrDefault(e => e.Id == manager);
+        CurrentEmployee = Employees.SingleOrDefault(e => e.Id == actorId && e.CanWork);
+        // Remember the observed selection even if that employee was archived by a colleague.
+        // This allows an explicit replacement without confusing it with another local selection.
+        _connection = _connection with { EmployeeId = actorId };
         Technologist = Employees.SingleOrDefault(e => e.Id == technologist);
         NotifyProfile();
+    }
+    public async Task<string?> ArchiveTechnologistAsync(Employee expected, CancellationToken token = default)
+    {
+        if (!CanUse) return "Дождитесь завершения текущей операции.";
+        var saved = false;
+        await RunAsync(async () =>
+        {
+            var actor = ActorId();
+            _workspace = await _store.ArchiveTechnologistAsync(expected, actor, token);
+            RefreshEmployees(actor); RefreshOrders(preserveRows: true); NotifyOrder(); saved = true;
+        }, "Не удалось подтвердить удаление из списка. Закройте настройки и обновите журнал перед повтором.");
+        if (!saved && Error is null) token.ThrowIfCancellationRequested();
+        return saved ? null : Error ?? "Не удалось убрать технолога из списка. Обновите журнал перед повтором.";
     }
     private async Task<string?> SaveProfileAsync(Employee? expectedEmployee, WorkflowProfileDraft profile, CancellationToken token)
     {
@@ -58,18 +76,22 @@ public partial class WorkflowViewModel
         var saved = false;
         await RunAsync(async () =>
         {
-            var actor = CurrentEmployee?.Id;
+            _connection.RequireMatchingSource(_preferences.Load());
+            var expectedId = _connection.EmployeeId;
             _workspace = await _store.SaveEmployeeProfileAsync(expectedEmployee, profile.Name, profile.ColorArgb, token);
             var employee = _workspace.Employees.Single(e => e.Name.Equals(profile.Name.Trim(), StringComparison.OrdinalIgnoreCase));
-            RefreshEmployees(actor); RefreshOrders();
-            var expectedId = _localPreferences.EmployeeId;
+            RefreshEmployees(expectedId); RefreshOrders();
             try
             {
                 var savedPreferences = await Task.Run(() => _preferences.Update(current =>
                 {
+                    _connection.RequireMatchingSource(current);
                     if (current.EmployeeId != expectedId && current.EmployeeId != employee.Id)
                         throw new WorkflowValidationException("На этом ПК выбран другой сотрудник. Откройте настройки заново; текущий ввод сохранён.");
-                    return current with { EmployeeId = employee.Id };
+                    if (_store.DatabaseId is null && current.DatabaseEmployees is null) return current with { EmployeeId = employee.Id };
+                    var people = new Dictionary<string, Guid?>(current.DatabaseEmployees ?? []);
+                    people[SourceKey] = employee.Id;
+                    return current with { EmployeeId = employee.Id, DatabaseEmployees = people };
                 }), token);
                 _localPreferences = _localPreferences with { EmployeeId = savedPreferences.EmployeeId };
             }
