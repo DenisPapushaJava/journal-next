@@ -67,7 +67,7 @@ public sealed class WorkflowAccessClient(string? executable = null) : IWorkflowA
         catch (Exception e) when (e is WorkflowValidationException or WorkflowConflictException or WorkflowOutcomeUnknownException or AccessHostBlockedException) { throw; }
         catch (System.ComponentModel.Win32Exception) when (!dispatched)
         { throw new WorkflowValidationException("Не удалось запустить модуль MDB. Проверьте установку Journal Next и ограничения запуска программ на этом компьютере."); }
-        catch (Exception e) when (write && dispatched && e is not OutOfMemoryException) { throw new WorkflowOutcomeUnknownException(); }
+        catch (Exception e) when (write && dispatched && e is not OutOfMemoryException) { throw new WorkflowOutcomeUnknownException(e); }
         catch (OperationCanceledException) when (!token.IsCancellationRequested) { throw new IOException("Модуль MDB не ответил вовремя. Проверьте доступность общей папки."); }
         finally
         {

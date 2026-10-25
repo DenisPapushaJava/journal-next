@@ -40,23 +40,27 @@ public sealed class WorkflowProjectMaintenance(IWorkflowWorkspaceStore store, Ac
             var folder = LocateFolder(source, target, project.Id);
             var actual = LocateNative(folder, project, plan);
             ValidateContents(folder, actual, project.Id);
-            // Deny readers/writers while allowing this process to rename the open empty file on Windows.
-            using var nativeLease = new FileStream(actual, FileMode.Open, FileAccess.ReadWrite, FileShare.Delete);
-            if (nativeLease.Length != 0) throw Unsafe("Файл проекта уже заполнен. Для переделки создайте другой вариант.", folder);
-            token.ThrowIfCancellationRequested();
-            if (project.Rename is null)
+            // Windows cannot rename a directory containing our own open file handle.
+            // Protect the empty file through intent/file rename, then close it before moving the directory.
+            using (var nativeLease = OpenEmpty(actual, folder))
             {
-                book = await store.WriteOrderAsync(orderId, expectedVersion, current =>
-                    WorkflowProjects.BeginRename(current, orderId, expectedVersion, projectId, plan), token).ConfigureAwait(false);
-                order = book.Orders.Single(o => o.Id == orderId);
-                project = order.Projects.Single(p => p.Id == projectId);
-                if (project.Rename is not { } savedPlan || !savedPlan.SameOperation(plan)) throw new WorkflowConflictException();
+                token.ThrowIfCancellationRequested();
+                if (project.Rename is null)
+                {
+                    book = await store.WriteOrderAsync(orderId, expectedVersion, current =>
+                        WorkflowProjects.BeginRename(current, orderId, expectedVersion, projectId, plan), token).ConfigureAwait(false);
+                    order = book.Orders.Single(o => o.Id == orderId);
+                    project = order.Projects.Single(p => p.Id == projectId);
+                    if (project.Rename is not { } savedPlan || !savedPlan.SameOperation(plan)) throw new WorkflowConflictException();
+                }
+                // Cancellation after the durable intent must not misreport a committed filesystem change.
+                EnsureReceipt(folder, project.Id);
+                var renamedFile = Path.Combine(folder, Path.GetFileName(plan.NativePath));
+                if (!actual.Equals(renamedFile, Comparison)) File.Move(actual, renamedFile, overwrite: false);
             }
-            // Cancellation after the durable intent must not misreport a committed filesystem change.
-            EnsureReceipt(folder, project.Id);
-            var renamedFile = Path.Combine(folder, Path.GetFileName(plan.NativePath));
-            if (!actual.Equals(renamedFile, Comparison)) File.Move(actual, renamedFile, overwrite: false);
             if (!folder.Equals(target, Comparison)) (moveDirectory ?? Directory.Move)(folder, target);
+            // Reacquire and validate after the unlocked move; never confirm a file changed in that interval.
+            using var completedLease = OpenEmpty(plan.NativePath, target);
             ValidateContents(target, plan.NativePath, project.Id);
             return await store.WriteOrderAsync(orderId, order.Version, current =>
                 WorkflowProjects.CompleteRename(current, orderId, order.Version, projectId, plan.Id), CancellationToken.None).ConfigureAwait(false);
@@ -84,6 +88,17 @@ public sealed class WorkflowProjectMaintenance(IWorkflowWorkspaceStore store, Ac
                 _ => new ProjectFileFailure(ProjectFileFailureKind.Unavailable, "Не удалось завершить изменение проекта. Проверьте доступ к папке и подключение к хранилищу. Начатое изменение можно продолжить повторной попыткой.", source, ex)
             };
         }
+    }
+
+    private static FileStream OpenEmpty(string path, string folder)
+    {
+        var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Delete);
+        try
+        {
+            if (stream.Length != 0) throw Unsafe("Файл проекта уже заполнен. Для переделки создайте другой вариант.", folder);
+            return stream;
+        }
+        catch { stream.Dispose(); throw; }
     }
 
     private static void ValidatePaths(CuttingProject project, ProjectRename plan)

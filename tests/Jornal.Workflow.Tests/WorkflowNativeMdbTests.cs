@@ -16,6 +16,14 @@ public sealed class WorkflowNativeMdbTests
         var executable = Environment.GetEnvironmentVariable("WORKFLOW_TEST_ACCESS_HOST") ?? Path.Combine(root.FullName,
             "src", "Jornal.Workflow.Desktop", "bin", "Release", "net10.0", "AccessHost", "Jornal.AccessHost.exe");
         Assert.True(File.Exists(executable), "Build the Windows Desktop project to prepare its self-contained x86 AccessHost.");
+        using (var probe = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(executable, "--probe")
+            { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true })!)
+        {
+            var error = probe.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+            var output = probe.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+            await probe.WaitForExitAsync(TestContext.Current.CancellationToken);
+            Assert.True(probe.ExitCode == 0, "Native host startup: " + await error + await output);
+        }
         var directory = Path.Combine(Path.GetTempPath(), "JournalNext-native-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
         try
         {

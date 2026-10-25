@@ -10,6 +10,27 @@ public sealed class ProjectMaintenanceTests
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
+    [Fact]
+    public async Task DirectoryMoveHasNoOwnOpenNativeHandleAndRevalidatesTheFileBeforeCommitting()
+    {
+        using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync();
+        var book = await f.Store.ReadAsync(Token); var order = book.Orders.Single(); var moved = false;
+        var service = new WorkflowProjectMaintenance(f.Store, (source, target) =>
+        {
+            var native = Directory.GetFiles(source).Single(p => Path.GetExtension(p) == ".rcam");
+            // An exclusive open proves that the service released its own handle before moving the folder.
+            using (var external = new FileStream(native, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                external.WriteByte(42);
+            Directory.Move(source, target); moved = true;
+        });
+        var error = await Assert.ThrowsAsync<ProjectFileFailure>(() => service.RenameAsync(order.Id, order.Version, project.Id,
+            project.MachineId, 8, order.TechnologistId, Token));
+        Assert.True(moved); Assert.Equal(ProjectFileFailureKind.Unsafe, error.Kind);
+        var pending = (await f.Store.ReadAsync(Token)).Orders.Single().Projects.Single();
+        Assert.NotNull(pending.Rename); Assert.Equal(project.Name, pending.Name);
+        Assert.Equal(new byte[] { 42 }, await File.ReadAllBytesAsync(pending.Rename.NativePath, Token));
+    }
+
     [Theory]
     [InlineData("Лазер", 8, ".rcam")]
     [InlineData("HansLaser", 4, ".Dsp")]
