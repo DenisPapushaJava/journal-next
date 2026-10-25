@@ -76,7 +76,11 @@ public sealed partial class WorkflowMdbDatabase
             var anyRows = tables.Any(t => oldRows[t].Count != newRows[t].Count || newRows[t].Any(r => !oldRows[t].TryGetValue(r.Key, out var old) || !WorkflowMdbMapping.Same(old, r.Value)));
             var metadataChange = patch.Catalog is not null && (meta.Root != nextCatalog.ProjectRoot || meta.PriceSource != nextCatalog.PriceSource?.Path || meta.PriceLoadedAt != nextCatalog.PriceSource?.LoadedAt);
             if (!anyRows && !metadataChange)
-            { session.Rollback(); using var read = new WorkflowMdbSession(path, false); return ReadResponse(read, ReadMetadata(read, request.DatabaseId), request with { Operation = WorkflowAccessOperation.ReadOrders, OrderIds = patch.Orders.Select(o => o.Id).ToArray() }); }
+            {
+                var unchanged = ReadResponse(session, meta, request with
+                    { Operation = WorkflowAccessOperation.ReadOrders, OrderIds = patch.Orders.Select(o => o.Id).ToArray() });
+                session.Rollback(); return unchanged with { Revision = meta.Revision - 1 };
+            }
 
             var relink = new HashSet<Guid>();
             foreach (var item in oldRows["order_items"].Values)

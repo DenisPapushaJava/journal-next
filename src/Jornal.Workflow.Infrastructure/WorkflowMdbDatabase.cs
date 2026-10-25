@@ -25,10 +25,7 @@ public sealed partial class WorkflowMdbDatabase
         if (!File.Exists(path)) throw new WorkflowValidationException("Файл базы Journal Next не найден или недоступен. Проверьте путь и сеть; новая база автоматически не создаётся.");
         if (request.Operation == WorkflowAccessOperation.Apply) return Apply(path, request);
         if (request.Operation == WorkflowAccessOperation.Purge) return Purge(path, request);
-        using var session = new WorkflowMdbSession(path, false);
-        var metadata = ReadMetadata(session, request.DatabaseId);
-        if (request.Operation == WorkflowAccessOperation.Inspect) ValidateSchema(session);
-        return ReadResponse(session, metadata, request);
+        return ReadSnapshot(path, request);
     }
     private static Metadata ReadMetadata(WorkflowMdbSession session, Guid? expected)
     {
@@ -97,12 +94,7 @@ public sealed partial class WorkflowMdbDatabase
                 }
                 finally { Release(tables); }
             });
-            WorkflowAccessResponse response;
-            using (var session = new WorkflowMdbSession(temporary, false))
-            {
-                var meta = ReadMetadata(session, id); ValidateSchema(session);
-                response = ReadResponse(session, meta, new(1, WorkflowAccessOperation.Inspect, temporary));
-            }
+            var response = ReadSnapshot(temporary, new(1, WorkflowAccessOperation.Inspect, temporary, id));
             publicationAttempted = true;
             File.Move(temporary, target, overwrite: false);
             return response;
@@ -121,8 +113,11 @@ public sealed partial class WorkflowMdbDatabase
         {
             var type = Type.GetTypeFromProgID("ADOX.Catalog", throwOnError: true)!;
             catalog = Activator.CreateInstance(type)!; dynamic value = catalog;
-            var text = WorkflowMdbSession.ConnectionString(path, true);
-            if (create) value.Create(text + ";Jet OLEDB:Engine Type=5"); else value.ActiveConnection = text;
+            // ADOX creation accepts initialization properties, not OleDb session settings.
+            var builder = new System.Data.OleDb.OleDbConnectionStringBuilder
+                { Provider = "Microsoft.Jet.OLEDB.4.0", DataSource = path, PersistSecurityInfo = false };
+            if (create) { builder["Jet OLEDB:Engine Type"] = 5; value.Create(builder.ConnectionString); }
+            else value.ActiveConnection = builder.ConnectionString;
             connection = value.ActiveConnection; use(value);
         }
         finally

@@ -15,8 +15,6 @@ internal sealed class WorkflowMdbSession : IDisposable
     {
         var builder = new OleDbConnectionStringBuilder { Provider = "Microsoft.Jet.OLEDB.4.0", DataSource = path, PersistSecurityInfo = false };
         builder["Mode"] = write ? 19 : 17; builder["OLE DB Services"] = -2;
-        builder["Jet OLEDB:Page Timeout"] = 0;
-        builder["Jet OLEDB:User Commit Sync"] = true;
         return builder.ConnectionString;
     }
     internal WorkflowMdbSession(string path, bool write)

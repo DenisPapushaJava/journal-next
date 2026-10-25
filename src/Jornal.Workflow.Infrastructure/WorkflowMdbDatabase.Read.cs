@@ -7,6 +7,16 @@ namespace Jornal.Workflow.Infrastructure;
 [SupportedOSPlatform("windows")]
 public sealed partial class WorkflowMdbDatabase
 {
+    private static WorkflowAccessResponse ReadSnapshot(string path, WorkflowAccessRequest request)
+    {
+        using var session = new WorkflowMdbSession(path, false);
+        var metadata = ReadMetadata(session, request.DatabaseId);
+        if (request.Operation == WorkflowAccessOperation.ReadRevision)
+            return new(1, metadata.DatabaseId, metadata.CatalogVersion, metadata.Revision, Orders: []);
+        if (request.Operation == WorkflowAccessOperation.Inspect) ValidateSchema(session);
+        return ReadResponse(session, metadata, request);
+    }
+
     private static WorkflowAccessResponse ReadResponse(WorkflowMdbSession session, Metadata metadata, WorkflowAccessRequest request)
     {
         Guid[] ids; Guid[] pageIds = []; var total = 0; var hasMore = false;

@@ -6,10 +6,36 @@ using Jornal.Workflow.Core;
 
 namespace Jornal.Workflow.Infrastructure;
 
-public sealed class WorkflowAccessClient(string? executable = null) : IWorkflowAccessTransport
+public sealed class WorkflowAccessClient(string? executable = null, IWorkflowAccessTransport? process = null) : IWorkflowAccessTransport
 {
     public static string DefaultExecutable => AccessHostClient.DefaultExecutable;
     public async Task<WorkflowAccessResponse> SendAsync(WorkflowAccessRequest request, CancellationToken token = default)
+    {
+        token.ThrowIfCancellationRequested();
+        Task<WorkflowAccessResponse> Send(WorkflowAccessRequest value, CancellationToken cancellation) =>
+            process?.SendAsync(value, cancellation) ?? SendProcessAsync(value, cancellation);
+        if (request.Operation is not (WorkflowAccessOperation.Inspect or WorkflowAccessOperation.Read or
+            WorkflowAccessOperation.ReadOrders or WorkflowAccessOperation.ReadTrash))
+            return await Send(request, token).ConfigureAwait(false);
+
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(45));
+        try
+        {
+            var response = await Send(request, deadline.Token).ConfigureAwait(false);
+            deadline.Token.ThrowIfCancellationRequested();
+            // A new process has a fresh Jet cache. Read only metadata to reject any multi-table snapshot
+            // assembled across another client's commit; Jet supports only ReadCommitted transactions.
+            var revision = await Send(new(1, WorkflowAccessOperation.ReadRevision, request.Path, response.DatabaseId), deadline.Token).ConfigureAwait(false);
+            if (revision.DatabaseId != response.DatabaseId || revision.Revision != response.Revision ||
+                revision.CatalogVersion != response.CatalogVersion) throw new WorkflowConflictException();
+            return response;
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        { throw new IOException("Модуль MDB не ответил вовремя. Проверьте доступность общей папки."); }
+    }
+
+    private async Task<WorkflowAccessResponse> SendProcessAsync(WorkflowAccessRequest request, CancellationToken token)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Работа с MDB доступна на Windows.");
         token.ThrowIfCancellationRequested();

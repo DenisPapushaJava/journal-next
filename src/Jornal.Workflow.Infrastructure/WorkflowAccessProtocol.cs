@@ -2,7 +2,7 @@ using Jornal.Workflow.Core;
 
 namespace Jornal.Workflow.Infrastructure;
 
-public enum WorkflowAccessOperation { Create, Inspect, Read, ReadOrders, ReadTrash, Apply, Purge }
+public enum WorkflowAccessOperation { Create, Inspect, Read, ReadOrders, ReadTrash, Apply, Purge, ReadRevision }
 public sealed record WorkflowCatalog(Employee[] Employees, Customer[] Customers, WorkflowMachine[] Machines,
     CuttingRate[] Rates, WorkflowPriceSource? PriceSource, string? ProjectRoot)
 {
