@@ -13,6 +13,15 @@ spec.loader.exec_module(release)
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_hotfix_notes_are_one_point_and_do_not_replace_previous_release(self):
+        notes = release.release_notes('2026.1.0-alpha.3')
+        self.assertEqual(['1'], re.findall(r'^(\d+)\. ', notes, re.MULTILINE))
+        self.assertIn('дробные толщины и цены', notes)
+        self.assertNotIn('**', notes)
+        self.assertNotIn('#', notes)
+        previous = release.release_notes('2026.1.0-alpha.2')
+        self.assertEqual([str(n) for n in range(1, 10)], re.findall(r'^(\d+)\. ', previous, re.MULTILINE))
+
     def test_notes_preserve_the_approved_nine_points_without_bell_markup(self):
         notes = release.release_notes('2026.1.0-alpha.2')
         self.assertEqual([str(n) for n in range(1, 10)], re.findall(r'^(\d+)\. ', notes, re.MULTILINE))

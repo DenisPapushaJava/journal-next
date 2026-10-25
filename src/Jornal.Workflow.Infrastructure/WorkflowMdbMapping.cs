@@ -134,10 +134,13 @@ public static class WorkflowMdbMapping
         };
         if (value is string text && column.Type == WorkflowMdbType.Text && text.Length > column.Size)
             throw new WorkflowValidationException($"Поле {column.Name} длиннее {column.Size} символов. Значение не сокращено.");
-        if (value is decimal number && column.Type == WorkflowMdbType.Decimal &&
-            (decimal.Round(number, 10) != number || number >= 1000000000000000000m || number <= -1000000000000000000m))
-            throw new WorkflowValidationException($"Поле {column.Name} выходит за точность MDB: до 18 целых и 10 дробных знаков. Значение не округлено.");
+        if (value is decimal number && column.Type == WorkflowMdbType.Decimal) ValidateDecimal(column, number);
         return value;
+    }
+    internal static void ValidateDecimal(WorkflowMdbColumn column, decimal number)
+    {
+        if (decimal.Round(number, 10) != number || number >= 1000000000000000000m || number <= -1000000000000000000m)
+            throw new WorkflowValidationException($"Поле {column.Name} выходит за точность MDB: до 18 целых и 10 дробных знаков. Значение не округлено.");
     }
     private static JsonArray Array(IEnumerable<JsonObject> values) => new(values.Select(v => (JsonNode)v).ToArray());
     private static JsonNode? At(JsonNode source, string path)
