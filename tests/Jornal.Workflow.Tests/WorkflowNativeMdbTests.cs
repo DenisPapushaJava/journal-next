@@ -36,6 +36,33 @@ public sealed class WorkflowNativeMdbTests
             Assert.Equal(bytes, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
             var store = new WorkflowMdbStore(path, client, created.DatabaseId); await store.InspectAsync(TestContext.Current.CancellationToken);
             var book = await store.SaveEmployeeProfileAsync(null, "Технолог native test", 0xFF628DB2, TestContext.Current.CancellationToken); var actor = book.Employees.Single().Id;
+            // A complete legacy import writes decimal thicknesses into both rates
+            // and import keys; an integer-thickness tariff alone misses that path.
+            var incoming = LegacyImportFixture();
+            var importedAt = new DateTimeOffset(2026, 10, 25, 12, 0, 0, TimeSpan.Zero);
+            var sourcePath = Path.Combine(directory, "Исходные цены.mdb");
+            book = await store.WriteAsync(book.Version, w => LegacyPriceImport.Apply(w, sourcePath, incoming, importedAt), TestContext.Current.CancellationToken);
+            Assert.Equal(152, book.Rates.Length); Assert.Equal(152, book.PriceSource!.ImportedKeys.Length);
+            Assert.Equal(sourcePath, book.PriceSource.Path); Assert.Equal(importedAt, book.PriceSource.LoadedAt);
+            Assert.Equal(0xFF628DB2, book.Employees.Single().ColorArgb); Assert.Equal(actor, book.Employees.Single().Id);
+            foreach (var expected in incoming.Rates)
+            {
+                var actual = Assert.Single(book.Rates, r => LegacyPriceImport.Key(r) == expected.Key);
+                Assert.Equal(expected.PricePerMeter, actual.PricePerMeter); Assert.Equal(1m, actual.PricePerPierce);
+            }
+            var importedIds = book.Rates.Select(r => r.Id).Order().ToArray();
+            book = await store.WriteAsync(book.Version, w => LegacyPriceImport.Apply(w, sourcePath, incoming, importedAt.AddSeconds(1)), TestContext.Current.CancellationToken);
+            Assert.Equal(importedIds, book.Rates.Select(r => r.Id).Order());
+            Assert.Equal(152, book.PriceSource!.ImportedKeys.Length);
+            // Exercise UPDATE as well as INSERT without converting exact decimals to Double.
+            var precise = book.Rates.First();
+            foreach (var value in new[] { 0.0000000001m, 123456789012345678.1234567890m, 13.1234567891m })
+            {
+                precise = precise with { PricePerMeter = value, PricePerPierce = value };
+                book = await store.WriteAsync(book.Version, w => WorkflowChanges.SetRate(w, precise), TestContext.Current.CancellationToken);
+                var saved = Assert.Single(book.Rates, r => r.Id == precise.Id);
+                Assert.Equal(value, saved.PricePerMeter); Assert.Equal(value, saved.PricePerPierce);
+            }
             var result = await store.CreateOrderFromNamesAsync("Менеджер native", "Заказчик native", actor, DateTimeOffset.Now, TestContext.Current.CancellationToken);
             var order = Assert.Single(result.Workspace.Orders);
             var machine = result.Workspace.Machines.First(); var at = new DateTimeOffset(2026, 10, 25, 1, 40, 10, TimeSpan.FromHours(3));
@@ -81,5 +108,19 @@ public sealed class WorkflowNativeMdbTests
             await Assert.ThrowsAsync<WorkflowValidationException>(() => new WorkflowMdbStore(path, client, Guid.NewGuid()).InspectAsync(TestContext.Current.CancellationToken));
         }
         finally { Directory.Delete(directory, true); }
+    }
+
+    private static LegacyPriceCatalog LegacyImportFixture()
+    {
+        // Synthetic prices only; no business data from the reported MDB.
+        decimal[] thicknesses = [0.5m, 0.8m, 1, 1.2m, 1.5m, 2, 2.5m, 3, 4, 5, 6, 8, 10, 12, 14, 15, 16, 18, 20, 22, 25, 28, 30, 32, 36, 40, 50, 55, 60];
+        (string Machine, string Group, int Count)[] bindings =
+        [
+            ("Лазер", "Базовая", 29), ("Плазма", "Базовая", 17), ("Газо-кислородная", "Базовая", 19),
+            ("HansLaser", "Базовая", 29), ("HansLaser", "Нержавеющая сталь", 29), ("HansLaser", "Цветные металлы", 29)
+        ];
+        return new(WorkflowMachine.Defaults().Where(m => m.LegacyKey is not null).ToArray(),
+            bindings.SelectMany(b => thicknesses.Take(b.Count).Select((t, i) =>
+                new LegacyMeterRate(new(b.Machine, b.Group, t), i == 0 ? 0 : 13.123456789m + i))).ToArray(), []);
     }
 }

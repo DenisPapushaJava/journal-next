@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <InternalsVisibleTo Include="Jornal.Workflow.Tests" />
     <ProjectReference Include="../Jornal.Workflow.Core/Jornal.Workflow.Core.csproj" />
     <ProjectReference Include="../Jornal.Infrastructure/Jornal.Infrastructure.csproj" />
     <ProjectReference Include="../Jornal.Parsing/Jornal.Parsing.csproj" />

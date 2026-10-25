@@ -59,9 +59,11 @@ def sha(path):
 
 
 def release_notes(value, root=ROOT):
-    if version(value) == FIRST_VERSION:
+    value = version(value)
+    if value == FIRST_VERSION:
         return ""  # The published first release intentionally has no notes.
-    text = (root / 'docs/release-notes.md').read_text(encoding='utf-8')
+    archived = root / 'docs/releases' / (value + '.md')
+    text = (archived if archived.is_file() else root / 'docs/release-notes.md').read_text(encoding='utf-8')
     # The desktop bell displays plain text. Keep the approved wording and numbering.
     text = '\n'.join(line for line in text.splitlines() if not line.startswith('#')).strip().replace('**', '')
     if not text:

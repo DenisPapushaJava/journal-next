@@ -35,11 +35,13 @@ internal sealed class WorkflowMdbSession : IDisposable
                 WorkflowMdbType.Boolean => OleDbType.Boolean,
                 WorkflowMdbType.Int32 => OleDbType.Integer,
                 WorkflowMdbType.Utc or WorkflowMdbType.Date => OleDbType.Date,
-                _ => OleDbType.Decimal
+                // Jet DECIMAL columns use DBTYPE_NUMERIC, including decimal-backed
+                // revisions and colours. DBTYPE_DECIMAL is a different OLE DB type.
+                _ => OleDbType.Numeric
             };
             var parameter = command.Parameters.Add("p" + command.Parameters.Count, type);
             if (column.Type is WorkflowMdbType.Text) parameter.Size = column.Size;
-            if (type == OleDbType.Decimal)
+            if (type == OleDbType.Numeric)
             { parameter.Precision = column.Type == WorkflowMdbType.UInt32 ? (byte)10 : column.Type == WorkflowMdbType.Int64 ? (byte)19 : (byte)28; parameter.Scale = column.Type == WorkflowMdbType.Decimal ? (byte)10 : (byte)0; }
             parameter.Value = value ?? DBNull.Value;
         }
@@ -77,17 +79,12 @@ internal sealed class WorkflowMdbSession : IDisposable
     }
     internal void Insert(WorkflowMdbRow row)
     {
-        var columns = WorkflowMdbSchema.Tables.Single(t => t.Name == row.Table).Columns;
-        Execute($"INSERT INTO [{row.Table}] (" + string.Join(",", columns.Select(c => $"[{c.Name}]")) + ") VALUES (" + string.Join(",", columns.Select(_ => "?")) + ")",
-            columns.Select(c => (c, row.Values[c.Name])).ToArray());
+        var statement = WorkflowMdbStatements.Insert(row);
+        Execute(statement.Sql, statement.Parameters);
     }
     internal void Update(WorkflowMdbRow before, WorkflowMdbRow after)
     {
-        var columns = WorkflowMdbSchema.Tables.Single(t => t.Name == after.Table).Columns.Where(c => c.Name != "id" &&
-            !Equals(before.Values[c.Name], after.Values[c.Name])).ToArray();
-        if (columns.Length == 0) return;
-        Execute($"UPDATE [{after.Table}] SET " + string.Join(",", columns.Select(c => $"[{c.Name}]=?")) + " WHERE [id]=?",
-            [.. columns.Select(c => (c, after.Values[c.Name])), (GuidColumn, after.Id)]);
+        if (WorkflowMdbStatements.Update(before, after) is { } statement) Execute(statement.Sql, statement.Parameters);
     }
     internal static readonly WorkflowMdbColumn GuidColumn = new("id", null, WorkflowMdbType.Guid);
     internal static readonly WorkflowMdbColumn LongColumn = new("version", null, WorkflowMdbType.Int64);

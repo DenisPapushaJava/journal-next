@@ -383,6 +383,10 @@ journal-diagnostics.json
 !/tests/release/
 !/tests/release/*.py
 
+# Versioned release notes are documentation, not generated packages.
+!/docs/releases/
+!/docs/releases/*.md
+
 # Journal Next private/local data
 *.accde
 *.mde
