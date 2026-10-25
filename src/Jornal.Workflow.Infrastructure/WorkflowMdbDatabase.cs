@@ -49,7 +49,8 @@ public sealed partial class WorkflowMdbDatabase
         catch (System.Data.OleDb.OleDbException ex)
         { throw new WorkflowValidationException("Не удалось проверить MDB Journal Next: файл занят, недоступен либо имеет другую структуру. Проверьте файл и доступ к папке. Код: " + ex.HResult.ToString("X8")); }
     }
-    private static WorkflowValidationException WrongDatabase() => new("Это не база Journal Next или её структура повреждена. Прежнюю MDB используйте только для импорта цен.");
+    private static WorkflowValidationException WrongDatabase(string? detail = null) => new("Это не база Journal Next или её структура повреждена. Прежнюю MDB используйте только для импорта цен." +
+        (detail is null ? "" : " Проверка: " + detail + "."));
 
     private static WorkflowAccessResponse Create(string target)
     {
@@ -143,7 +144,7 @@ public sealed partial class WorkflowMdbDatabase
         {
             using var command = session.Command($"SELECT * FROM [{table.Name}] WHERE 1=0");
             using var reader = command.ExecuteReader(CommandBehavior.SchemaOnly); var schema = reader.GetSchemaTable()!;
-            if (reader.FieldCount != table.Columns.Length) throw WrongDatabase();
+            if (reader.FieldCount != table.Columns.Length) throw WrongDatabase(table.Name + ": число полей " + reader.FieldCount);
             foreach (var column in table.Columns)
             {
                 var ordinal = reader.GetOrdinal(column.Name); var field = reader.GetFieldType(ordinal);
@@ -156,13 +157,13 @@ public sealed partial class WorkflowMdbDatabase
                     WorkflowMdbType.Utc or WorkflowMdbType.Date => typeof(DateTime),
                     _ => typeof(string)
                 };
-                if (field != expected) throw WrongDatabase();
+                if (field != expected) throw WrongDatabase(table.Name + "." + column.Name + ": тип " + field.Name + ", ожидался " + expected.Name);
                 var row = schema.Rows.Cast<DataRow>().Single(r => (string)r["ColumnName"] == column.Name);
-                if (column.Required && row["AllowDBNull"] is true) throw WrongDatabase();
-                if (column.Type == WorkflowMdbType.Text && Convert.ToInt32(row["ColumnSize"], CultureInfo.InvariantCulture) != column.Size) throw WrongDatabase();
+                if (column.Required && row["AllowDBNull"] is true) throw WrongDatabase(table.Name + "." + column.Name + ": допускается NULL");
+                if (column.Type == WorkflowMdbType.Text && Convert.ToInt32(row["ColumnSize"], CultureInfo.InvariantCulture) != column.Size) throw WrongDatabase(table.Name + "." + column.Name + ": размер " + row["ColumnSize"]);
                 if (column.Type is WorkflowMdbType.Decimal or WorkflowMdbType.Int64 or WorkflowMdbType.UInt32 &&
                     (Convert.ToInt32(row["NumericPrecision"], CultureInfo.InvariantCulture) != (column.Type == WorkflowMdbType.Decimal ? 28 : column.Type == WorkflowMdbType.Int64 ? 19 : 10) ||
-                     Convert.ToInt32(row["NumericScale"], CultureInfo.InvariantCulture) != (column.Type == WorkflowMdbType.Decimal ? 10 : 0))) throw WrongDatabase();
+                     Convert.ToInt32(row["NumericScale"], CultureInfo.InvariantCulture) != (column.Type == WorkflowMdbType.Decimal ? 10 : 0))) throw WrongDatabase(table.Name + "." + column.Name + ": точность " + row["NumericPrecision"] + ", масштаб " + row["NumericScale"]);
             }
         }
         var indexes = session.Connection.GetOleDbSchemaTable(System.Data.OleDb.OleDbSchemaGuid.Indexes, null)!;
@@ -171,10 +172,10 @@ public sealed partial class WorkflowMdbDatabase
             var rows = indexes.Rows.Cast<DataRow>().Where(r => string.Equals(Convert.ToString(r["TABLE_NAME"], CultureInfo.InvariantCulture), index.Table, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(Convert.ToString(r["INDEX_NAME"], CultureInfo.InvariantCulture), index.Name, StringComparison.OrdinalIgnoreCase)).OrderBy(r => Convert.ToInt32(r["ORDINAL_POSITION"], CultureInfo.InvariantCulture)).ToArray();
             if (!rows.Select(r => Convert.ToString(r["COLUMN_NAME"], CultureInfo.InvariantCulture)).SequenceEqual(index.Columns, StringComparer.OrdinalIgnoreCase) ||
-                index.Unique && rows.Any(r => r["UNIQUE"] is not true)) throw WrongDatabase();
+                index.Unique && rows.Any(r => r["UNIQUE"] is not true)) throw WrongDatabase("индекс " + index.Name);
         }
         foreach (var table in new[] { new WorkflowMdbTable("app_metadata", WorkflowMdbSchema.Metadata) }.Concat(WorkflowMdbSchema.Tables))
-            if (!indexes.Rows.Cast<DataRow>().Any(r => string.Equals(Convert.ToString(r["TABLE_NAME"], CultureInfo.InvariantCulture), table.Name, StringComparison.OrdinalIgnoreCase) && r["PRIMARY_KEY"] is true)) throw WrongDatabase();
+            if (!indexes.Rows.Cast<DataRow>().Any(r => string.Equals(Convert.ToString(r["TABLE_NAME"], CultureInfo.InvariantCulture), table.Name, StringComparison.OrdinalIgnoreCase) && r["PRIMARY_KEY"] is true)) throw WrongDatabase("первичный ключ " + table.Name);
         var keys = session.Connection.GetOleDbSchemaTable(System.Data.OleDb.OleDbSchemaGuid.Foreign_Keys, null)!;
         foreach (var key in WorkflowMdbSchema.ForeignKeys)
         {
@@ -183,7 +184,7 @@ public sealed partial class WorkflowMdbDatabase
             if (rows.Length != key.Columns.Length || rows.Any(r => !string.Equals(Convert.ToString(r["FK_TABLE_NAME"], CultureInfo.InvariantCulture), key.Table, StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(Convert.ToString(r["PK_TABLE_NAME"], CultureInfo.InvariantCulture), key.Parent, StringComparison.OrdinalIgnoreCase)) ||
                 !rows.Select(r => Convert.ToString(r["FK_COLUMN_NAME"], CultureInfo.InvariantCulture)).SequenceEqual(key.Columns, StringComparer.OrdinalIgnoreCase) ||
-                !rows.Select(r => Convert.ToString(r["PK_COLUMN_NAME"], CultureInfo.InvariantCulture)).SequenceEqual(key.ParentColumns, StringComparer.OrdinalIgnoreCase)) throw WrongDatabase();
+                !rows.Select(r => Convert.ToString(r["PK_COLUMN_NAME"], CultureInfo.InvariantCulture)).SequenceEqual(key.ParentColumns, StringComparer.OrdinalIgnoreCase)) throw WrongDatabase("связь " + key.Name + ", полей " + rows.Length);
         }
     }
 }
