@@ -58,10 +58,12 @@ public sealed partial class WorkflowMdbDatabase
         if (!Directory.Exists(parent)) throw new WorkflowValidationException("Папка для новой MDB не найдена или недоступна.");
         var temporary = Path.Combine(parent, ".JournalNext-create-" + Guid.NewGuid().ToString("N") + ".mdb");
         var publicationAttempted = false;
+        var stage = "создание файла";
         try
         {
             WithCatalog(temporary, true, _ => { });
             var id = Guid.NewGuid();
+            stage = "создание таблиц и индексов";
             using (var session = new WorkflowMdbSession(temporary, true))
             {
                 foreach (var sql in WorkflowMdbSchema.CreateSql()) session.Execute(sql);
@@ -70,6 +72,7 @@ public sealed partial class WorkflowMdbDatabase
                 var data = WorkflowMdbMapping.Flatten(WorkflowWorkspace.Empty);
                 foreach (var machine in data["machines"].Values) session.Insert(machine);
             }
+            stage = "открытие структуры текстовых полей";
             WithCatalog(temporary, false, catalog =>
             {
                 object? tables = null;
@@ -84,6 +87,7 @@ public sealed partial class WorkflowMdbDatabase
                             item = ((dynamic)tables)[table.Name]; columns = item.Columns;
                             foreach (var definition in table.Columns.Where(c => c.Type is WorkflowMdbType.Text or WorkflowMdbType.Memo))
                             {
+                                stage = "настройка поля " + table.Name + "." + definition.Name;
                                 dynamic? column = null; dynamic? property = null; dynamic? properties = null;
                                 try { column = columns[definition.Name]; properties = column.Properties; property = properties["Jet OLEDB:Allow Zero Length"]; property.Value = true; }
                                 finally { Release(property); Release(properties); Release(column); }
@@ -94,11 +98,14 @@ public sealed partial class WorkflowMdbDatabase
                 }
                 finally { Release(tables); }
             });
+            stage = "проверка готовой структуры";
             var response = ReadSnapshot(temporary, new(1, WorkflowAccessOperation.Inspect, temporary, id));
             publicationAttempted = true;
             File.Move(temporary, target, overwrite: false);
             return response;
         }
+        catch (COMException e)
+        { throw new WorkflowValidationException("Не удалось подготовить MDB: " + stage + ". " + e.Message + " Код: " + e.HResult.ToString("X8")); }
         catch (IOException) when (publicationAttempted) { throw new WorkflowOutcomeUnknownException(); }
         finally
         {
@@ -115,7 +122,7 @@ public sealed partial class WorkflowMdbDatabase
             catalog = Activator.CreateInstance(type)!; dynamic value = catalog;
             // ADOX creation accepts initialization properties, not OleDb session settings.
             var builder = new System.Data.OleDb.OleDbConnectionStringBuilder
-                { Provider = "Microsoft.Jet.OLEDB.4.0", DataSource = path, PersistSecurityInfo = false };
+                { Provider = "Microsoft.Jet.OLEDB.4.0", DataSource = path };
             if (create) { builder["Jet OLEDB:Engine Type"] = 5; value.Create(builder.ConnectionString); }
             else value.ActiveConnection = builder.ConnectionString;
             connection = value.ActiveConnection; use(value);
