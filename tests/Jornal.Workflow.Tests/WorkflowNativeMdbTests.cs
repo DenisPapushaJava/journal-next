@@ -59,6 +59,18 @@ public sealed class WorkflowNativeMdbTests
                 project.Id, parameters, "native-1", new(2026, 10, 25), actor, at, null, machine.ImportProfile, rate), TestContext.Current.CancellationToken);
             order = book.Orders.Single(); Assert.Equal(CuttingCalculation.Calculate(parameters, rate), order.Specifications.Single().Current.Calculation);
             Assert.True(order.Specifications.Single().Current.Parameters.HasChamfer);
+            var secondName = WorkflowProjectNames.Name(machine, 8, at.AddSeconds(1)); var secondFolder = Path.Combine(directory, secondName);
+            Directory.CreateDirectory(secondFolder); var secondNative = Path.Combine(secondFolder, secondName + WorkflowProjectNames.Extension(machine));
+            await File.WriteAllBytesAsync(secondNative, [], TestContext.Current.CancellationToken);
+            var second = renamed with { Id = Guid.NewGuid(), Variant = 2, Name = secondName, NativePath = secondNative, CreatedAt = at.AddSeconds(1) };
+            book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowProjects.Add(w, order.Id, order.Version, second, actor, at), TestContext.Current.CancellationToken);
+            order = book.Orders.Single();
+            book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.SaveSpecification(w, order.Id, order.Version,
+                second.Id, parameters, "native-2", new(2026, 10, 25), actor, at, null, machine.ImportProfile, rate), TestContext.Current.CancellationToken);
+            order = book.Orders.Single();
+            book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowProjects.Select(w, order.Id, order.Version, second.Id, actor, at), TestContext.Current.CancellationToken);
+            order = book.Orders.Single(); Assert.Equal(second.Id, order.Items.Single().CurrentProjectId);
+            Assert.Equal(second.Id, Assert.Single(order.ActiveSpecifications).Id);
             store.Query = new(Search: "Заказчик Ст3"); book = await store.ReadAsync(TestContext.Current.CancellationToken); Assert.Single(book.Orders);
             book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.MoveOrderToTrash(w, order.Id, order.Version, actor, at), TestContext.Current.CancellationToken);
             order = book.Orders.Single(); Assert.True(order.IsDeleted);

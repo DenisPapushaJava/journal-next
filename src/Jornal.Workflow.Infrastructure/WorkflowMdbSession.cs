@@ -81,9 +81,9 @@ internal sealed class WorkflowMdbSession : IDisposable
         Execute($"INSERT INTO [{row.Table}] (" + string.Join(",", columns.Select(c => $"[{c.Name}]")) + ") VALUES (" + string.Join(",", columns.Select(_ => "?")) + ")",
             columns.Select(c => (c, row.Values[c.Name])).ToArray());
     }
-    internal void Update(WorkflowMdbRow before, WorkflowMdbRow after, ISet<string>? omit = null)
+    internal void Update(WorkflowMdbRow before, WorkflowMdbRow after)
     {
-        var columns = WorkflowMdbSchema.Tables.Single(t => t.Name == after.Table).Columns.Where(c => c.Name != "id" && omit?.Contains(c.Name) != true &&
+        var columns = WorkflowMdbSchema.Tables.Single(t => t.Name == after.Table).Columns.Where(c => c.Name != "id" &&
             !Equals(before.Values[c.Name], after.Values[c.Name])).ToArray();
         if (columns.Length == 0) return;
         Execute($"UPDATE [{after.Table}] SET " + string.Join(",", columns.Select(c => $"[{c.Name}]=?")) + " WHERE [id]=?",

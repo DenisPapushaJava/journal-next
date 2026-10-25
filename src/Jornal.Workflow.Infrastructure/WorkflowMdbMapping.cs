@@ -41,7 +41,11 @@ public static class WorkflowMdbMapping
         foreach (var order in workspace.Orders)
         {
             Add("orders", order);
-            foreach (var item in order.Items) Add("order_items", item, order.Id);
+            foreach (var item in order.Items)
+            {
+                Add("order_items", item, order.Id);
+                Add("order_item_selections", item, order.Id);
+            }
             foreach (var project in order.Projects)
             {
                 Add("cutting_projects", project, order.Id);
@@ -69,7 +73,12 @@ public static class WorkflowMdbMapping
         return data["orders"].Values.Select(row =>
         {
             var json = ToObject(row);
-            json["Items"] = Array(items[row.Id].OrderBy(r => r.Values["item_number"]).Select(ToObject));
+            json["Items"] = Array(items[row.Id].OrderBy(r => r.Values["item_number"]).Select(item =>
+            {
+                if (!data["order_item_selections"].TryGetValue(item.Id, out var selected) ||
+                    !Equals(selected.Values["order_id"], row.Id)) throw new WorkflowValidationException("В MDB не указан выбранный проект позиции.");
+                var value = ToObject(item); value["CurrentProjectId"] = (Guid)selected.Values["project_id"]!; return value;
+            }));
             json["Projects"] = Array(projects[row.Id].OrderBy(r => r.Values["variant_number"]).Select(r =>
             {
                 var project = ToObject(r);

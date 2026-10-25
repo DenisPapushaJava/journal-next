@@ -8,7 +8,7 @@ namespace Jornal.Workflow.Infrastructure;
 public sealed partial class WorkflowMdbDatabase
 {
     private static readonly string[] CatalogTables = ["employees", "customers", "machines", "cutting_rates", "price_import_keys"];
-    private static readonly string[] OrderTables = ["orders", "order_items", "cutting_projects", "specifications", "accepted_reports", "project_renames"];
+    private static readonly string[] OrderTables = ["orders", "order_items", "cutting_projects", "order_item_selections", "specifications", "accepted_reports", "project_renames"];
 
     private static WorkflowAccessResponse Apply(string path, WorkflowAccessRequest request)
     {
@@ -82,10 +82,14 @@ public sealed partial class WorkflowMdbDatabase
                 session.Rollback(); return unchanged with { Revision = meta.Revision - 1 };
             }
 
-            var relink = new HashSet<Guid>();
-            foreach (var item in oldRows["order_items"].Values)
-                if (!newRows["order_items"].TryGetValue(item.Id, out var next) || !Equals(item.Values["current_project_id"], next.Values["current_project_id"]))
-                { session.Execute("UPDATE [order_items] SET [current_project_id]=NULL WHERE [id]=?", (WorkflowMdbSession.GuidColumn, item.Id)); relink.Add(item.Id); }
+            // Remove changed selections before their parents, then insert them after the projects.
+            // No partially-null composite FK or circular insertion is needed in Jet.
+            foreach (var selected in oldRows["order_item_selections"].Values.Where(row =>
+                !newRows["order_item_selections"].TryGetValue(row.Id, out var next) || !WorkflowMdbMapping.Same(row, next)).ToArray())
+            {
+                session.Execute("DELETE FROM [order_item_selections] WHERE [id]=?", (WorkflowMdbSession.GuidColumn, selected.Id));
+                oldRows["order_item_selections"].Remove(selected.Id);
+            }
             foreach (var table in new[] { "accepted_reports", "specifications", "project_renames", "cutting_projects", "order_items", "orders" })
                 foreach (var row in oldRows[table].Values.Where(r => !newRows[table].ContainsKey(r.Id)).OrderBy(r => r.Id))
                     session.Execute($"DELETE FROM [{table}] WHERE [id]=?", (WorkflowMdbSession.GuidColumn, row.Id));
@@ -99,23 +103,13 @@ public sealed partial class WorkflowMdbDatabase
                     foreach (var row in oldRows[table].Values.Where(r => !newRows[table].ContainsKey(r.Id)).OrderBy(r => r.Id))
                         session.Execute($"DELETE FROM [{table}] WHERE [id]=?", (WorkflowMdbSession.GuidColumn, row.Id));
             }
-            foreach (var table in (patch.Catalog is null ? Array.Empty<string>() : CatalogTables).Concat(new[] { "orders", "order_items", "cutting_projects", "specifications", "accepted_reports", "project_renames" }))
+            foreach (var table in (patch.Catalog is null ? Array.Empty<string>() : CatalogTables).Concat(OrderTables))
                 foreach (var row in newRows[table].Values.OrderBy(r => r.Id))
                 {
                     if (!oldRows[table].TryGetValue(row.Id, out var old))
-                    {
-                        if (table == "order_items")
-                        {
-                            var insert = row with { Values = new(row.Values) { ["current_project_id"] = null } };
-                            session.Insert(insert); relink.Add(row.Id);
-                        }
-                        else session.Insert(row);
-                    }
-                    else session.Update(old, row, table == "order_items" ? new HashSet<string> { "current_project_id" } : null);
+                        session.Insert(row);
+                    else session.Update(old, row);
                 }
-            foreach (var id in relink.Where(id => newRows["order_items"].ContainsKey(id)))
-                session.Execute("UPDATE [order_items] SET [current_project_id]=? WHERE [id]=?",
-                    (WorkflowMdbSession.GuidColumn, newRows["order_items"][id].Values["current_project_id"]), (WorkflowMdbSession.GuidColumn, id));
             if (patch.Catalog is not null)
                 session.Execute("UPDATE [app_metadata] SET [catalog_revision]=[catalog_revision]+1,[project_root]=?,[price_source]=?,[price_loaded_at]=? WHERE [singleton]=1",
                     (WorkflowMdbSession.TextColumn, nextCatalog.ProjectRoot), (WorkflowMdbSession.TextColumn, nextCatalog.PriceSource?.Path),

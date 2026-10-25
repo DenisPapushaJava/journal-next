@@ -60,7 +60,7 @@ public sealed partial class WorkflowMdbDatabase
         }
         Read("orders", "id", ids);
         var found = data["orders"].Keys.ToArray();
-        foreach (var table in new[] { "order_items", "cutting_projects", "specifications" }) Read(table, "order_id", found);
+        foreach (var table in new[] { "order_items", "cutting_projects", "order_item_selections", "specifications" }) Read(table, "order_id", found);
         Read("accepted_reports", "specification_id", data["specifications"].Keys);
         Read("project_renames", "project_id", data["cutting_projects"].Keys);
         return data;

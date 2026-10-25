@@ -52,12 +52,13 @@ public static class WorkflowMdbSchema
             C("blcb","Blcb",WorkflowMdbType.Text,false), C("row_version","Version",WorkflowMdbType.Int64),
             C("created_at","CreatedAt",WorkflowMdbType.Utc), C("updated_at","UpdatedAt",WorkflowMdbType.Utc),
             C("created_by","CreatedById",WorkflowMdbType.Guid,false), C("deleted_at","DeletedAt",WorkflowMdbType.Utc,false), C("deleted_by","DeletedBy",WorkflowMdbType.Guid,false)]),
-        new("order_items", [Id(), Owner("order_id"), C("item_number","Number",WorkflowMdbType.Int32), C("current_project_id","CurrentProjectId",WorkflowMdbType.Guid,false),
+        new("order_items", [Id(), Owner("order_id"), C("item_number","Number",WorkflowMdbType.Int32),
             C("reviewed_variant","ReviewedThroughVariant",WorkflowMdbType.Int32), C("is_included","IsIncluded",WorkflowMdbType.Boolean)]),
         new("cutting_projects", [Id(), Owner("order_id"), C("item_id","ItemId",WorkflowMdbType.Guid), C("variant_number","Variant",WorkflowMdbType.Int32),
             C("machine_id","MachineId",WorkflowMdbType.Guid), C("thickness_mm","ThicknessMm",WorkflowMdbType.Decimal), C("project_name","Name",WorkflowMdbType.Text),
             C("native_path","NativePath",WorkflowMdbType.Memo,false), C("import_profile","ImportProfile",WorkflowMdbType.Text,false,64),
             C("created_at","CreatedAt",WorkflowMdbType.Utc), C("deleted_at","DeletedAt",WorkflowMdbType.Utc,false), C("deleted_by","DeletedBy",WorkflowMdbType.Guid,false)]),
+        new("order_item_selections", [Id(), Owner("order_id"), C("project_id","CurrentProjectId",WorkflowMdbType.Guid)]),
         new("specifications", SpecificationColumns()),
         new("accepted_reports", ReportColumns()),
         new("project_renames", [Id(), Owner("project_id"), C("machine_id","MachineId",WorkflowMdbType.Guid), C("thickness_mm","ThicknessMm",WorkflowMdbType.Decimal),
@@ -98,6 +99,7 @@ public static class WorkflowMdbSchema
         new("ix_order_blcb","orders",["blcb"]), new("ix_employee_name","employees",["display_name"]), new("ix_customer_name","customers",["display_name"]),
         new("ux_machine_name","machines",["display_name"],true), new("ux_rate_key","cutting_rates",["machine_id","material_group","thickness_mm"],true),
         new("ux_item_number","order_items",["order_id","item_number"],true), new("ux_item_owner","order_items",["order_id","id"],true),
+        new("ix_selection_order","order_item_selections",["order_id"]),
         new("ux_project_variant","cutting_projects",["item_id","variant_number"],true), new("ux_project_item","cutting_projects",["item_id","id"],true),
         new("ux_project_owner","cutting_projects",["order_id","id"],true), new("ix_project_machine","cutting_projects",["machine_id"]),
         new("ix_spec_order","specifications",["order_id"]), new("ix_spec_machine","specifications",["machine_id"]),
@@ -112,7 +114,8 @@ public static class WorkflowMdbSchema
         foreach (var field in new[] { "manager_id", "technologist_id", "created_by", "deleted_by" }) F("orders", field, "employees");
         F("order_items", "order_id", "orders"); F("cutting_projects", "machine_id", "machines"); F("cutting_projects", "deleted_by", "employees");
         result.Add(new("fk_project_item", "cutting_projects", ["order_id", "item_id"], "order_items", ["order_id", "id"]));
-        result.Add(new("fk_item_current", "order_items", ["id", "current_project_id"], "cutting_projects", ["item_id", "id"]));
+        result.Add(new("fk_selection_item", "order_item_selections", ["order_id", "id"], "order_items", ["order_id", "id"]));
+        result.Add(new("fk_item_current", "order_item_selections", ["id", "project_id"], "cutting_projects", ["item_id", "id"]));
         result.Add(new("fk_spec_project", "specifications", ["order_id", "id"], "cutting_projects", ["order_id", "id"]));
         F("specifications", "author_id", "employees"); F("specifications", "machine_id", "machines"); F("accepted_reports", "specification_id", "specifications");
         F("project_renames", "project_id", "cutting_projects"); F("project_renames", "machine_id", "machines"); F("project_renames", "actor_id", "employees");

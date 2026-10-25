@@ -94,6 +94,8 @@ public sealed class WorkflowMdbTests
         Assert.All(flat.Values.SelectMany(t => t.Values).SelectMany(r => r.Values.Values), value =>
             Assert.True(value is null or string or Guid or bool or int or decimal or DateTime));
         Assert.DoesNotContain(flat.Values.SelectMany(t => t.Values).SelectMany(r => r.Values.Keys), n => n.Contains("json", StringComparison.OrdinalIgnoreCase));
+        flat["order_item_selections"].Clear();
+        Assert.Throws<WorkflowValidationException>(() => WorkflowMdbMapping.Orders(flat));
     }
     [Theory]
     [InlineData("0.12345678901")]
@@ -109,7 +111,8 @@ public sealed class WorkflowMdbTests
         var sql = WorkflowMdbSchema.CreateSql().ToArray();
         Assert.Equal(WorkflowMdbSchema.Tables.Length + 1, sql.Count(s => s.StartsWith("CREATE TABLE")));
         Assert.Contains(WorkflowMdbSchema.Indexes, i => i.Table == "orders" && i.Unique && i.Columns.SequenceEqual(new[] { "reference_number" }));
-        Assert.Contains(WorkflowMdbSchema.ForeignKeys, f => f.Name == "fk_item_current" && f.Columns.SequenceEqual(new[] { "id", "current_project_id" }));
+        Assert.Contains(WorkflowMdbSchema.ForeignKeys, f => f.Name == "fk_item_current" && f.Table == "order_item_selections" && f.Columns.SequenceEqual(new[] { "id", "project_id" }));
+        Assert.All(WorkflowMdbSchema.Tables.Single(t => t.Name == "order_item_selections").Columns, c => Assert.True(c.Required));
         Assert.All(WorkflowMdbSchema.ForeignKeys, f => Assert.Contains(WorkflowMdbSchema.Tables, t => t.Name == f.Parent));
         Assert.DoesNotContain(sql, s => s.Contains("CASCADE", StringComparison.OrdinalIgnoreCase));
     }
