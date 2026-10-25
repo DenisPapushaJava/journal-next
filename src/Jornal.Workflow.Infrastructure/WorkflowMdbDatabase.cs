@@ -140,6 +140,9 @@ public sealed partial class WorkflowMdbDatabase
 
     private static void ValidateSchema(WorkflowMdbSession session)
     {
+        // Jet's SchemaOnly reader describes the SELECT projection and can mark even a PK nullable.
+        // Read nullability from the physical column metadata, not that projection.
+        var physicalColumns = session.Connection.GetOleDbSchemaTable(System.Data.OleDb.OleDbSchemaGuid.Columns, null)!;
         foreach (var table in new[] { new WorkflowMdbTable("app_metadata", WorkflowMdbSchema.Metadata) }.Concat(WorkflowMdbSchema.Tables))
         {
             using var command = session.Command($"SELECT * FROM [{table.Name}] WHERE 1=0");
@@ -159,7 +162,10 @@ public sealed partial class WorkflowMdbDatabase
                 };
                 if (field != expected) throw WrongDatabase(table.Name + "." + column.Name + ": тип " + field.Name + ", ожидался " + expected.Name);
                 var row = schema.Rows.Cast<DataRow>().Single(r => (string)r["ColumnName"] == column.Name);
-                if (column.Required && row["AllowDBNull"] is true) throw WrongDatabase(table.Name + "." + column.Name + ": допускается NULL");
+                var physical = physicalColumns.Rows.Cast<DataRow>().Single(r =>
+                    string.Equals(Convert.ToString(r["TABLE_NAME"], CultureInfo.InvariantCulture), table.Name, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(Convert.ToString(r["COLUMN_NAME"], CultureInfo.InvariantCulture), column.Name, StringComparison.OrdinalIgnoreCase));
+                if (column.Required && physical["IS_NULLABLE"] is not false) throw WrongDatabase(table.Name + "." + column.Name + ": допускается NULL");
                 if (column.Type == WorkflowMdbType.Text && Convert.ToInt32(row["ColumnSize"], CultureInfo.InvariantCulture) != column.Size) throw WrongDatabase(table.Name + "." + column.Name + ": размер " + row["ColumnSize"]);
                 if (column.Type is WorkflowMdbType.Decimal or WorkflowMdbType.Int64 or WorkflowMdbType.UInt32 &&
                     (Convert.ToInt32(row["NumericPrecision"], CultureInfo.InvariantCulture) != (column.Type == WorkflowMdbType.Decimal ? 28 : column.Type == WorkflowMdbType.Int64 ? 19 : 10) ||
