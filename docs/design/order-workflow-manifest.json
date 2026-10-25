@@ -10,8 +10,7 @@
   },
   "components": {
     "application": "135:1154",
-    "specification": "136:1489",
-    "comparison": "136:1696"
+    "specification": "136:1489"
   },
   "screens": [
     {
@@ -92,7 +91,8 @@
         }
       ],
       "overflow": [],
-      "unstyled": []
+      "unstyled": [],
+      "status": "Retired 2026-10-25: no history screen in Journal Next; concept provenance only, do not implement"
     },
     {
       "key": "editor",
@@ -130,10 +130,9 @@
     "Dark theme, compact viewport and DPI not validated"
   ],
   "localPrototype": {
-    "date": "2026-10-24",
-    "product": "Journal Workflow",
-    "branch": "feature/order-workflow",
-    "status": "local Avalonia prototype; Figma snapshot above remains concept-only",
+    "date": "2026-10-25",
+    "product": "Journal Next",
+    "status": "Local Avalonia prototype, JSON schema 11; current-state-only implementation supersedes original Figma history concepts",
     "folderActions": "Per-row folder icons in Projects and Specifications; native project folder or imported report folder; disabled for manual rows without a path",
     "screenshots": ".local/workflow-settings-program-ui/",
     "verification": "113 Workflow tests: 110 passed, 3 optional skipped; 3 Python release-boundary checks passed; Release build without warnings/errors; both themes, main 1366/1180x768 and settings 900x660/800x580; bell/settings navigation, shared theme including failed preference writes, all draft restart guards, in-memory update success/failure, isolated preferences and diagnostics export verified headless",
@@ -145,9 +144,35 @@
     "orderNumbers": "Persisted yyyy-MM-dd-HHmmss without a Cyrillic prefix; -02/-03 for collisions; two-line date/time in the list; title starts with Заявка; exact number search",
     "profileAndCatalog": "Centered HeaderClock; readonly employee badge; left settings navigation; exact legacy palette of 5 frequent and 24 other colors plus optional ColorWheel flyout; shared employee color and local EmployeeId/theme; safe machine removal; schema 7",
     "creatorMarker": "4px author-color stripe in a 6px outlined track beside order date/time; creator is creation actor; shared employee color refreshed with F5; creator tooltip; no row fill or status meaning",
-    "colorPicker": "Name editor, 32px current swatch and Change Color button share one row on General; color name/hex are tooltips; existing presets/ColorWheel flyout and draft Save Profile behavior retained",
-    "trash": "Schema 7: DeletedAt/DeletedBy and immutable CreatedById; confirmed soft deletion, separate Trash window with restore, same IDs/numbers/prices/history/files; no purge or expiry; stale drafts retained with explicit reload",
+    "colorPicker": "After alpha.1: name editor and one 36px square button with a 32px current-color swatch share the General row; separate Change Color text button removed; accessible action name, tooltip with color name/hex, theme-based hover/focus border; existing presets/ColorWheel flyout, Escape/focus return and draft Save Profile behavior retained",
+    "trash": "Schema 8: confirmed soft deletion/restore plus selected or all trashed orders permanently removed from application data after a separate confirmation; immutable ID/version scope, atomic batch validation, no project-file operations; no automatic purge or expiry",
     "orderEntry": "Two fields: manager and customer, using personal editable suggestions; 600px left-aligned form, 320px manager, about 560px customer; active profile at Save provides creator and initial technologist",
+    "technologistDirectory": {
+      "status": "Local Journal Next prototype 2026-10-25, JSON schema 10; no commit/release",
+      "roles": "One Employees identity can hold manager and technologist roles; explicit IsTechnologist/IsTechnologistArchived; new manager names are not technologists, explicit profile save assigns/restores role with same ID/color; personal suggestions remain local and independent",
+      "removal": "28px X in profile suggestion rows, disabled for current local identity or ambiguous name; separate confirmation, Cancel focus, Escape/mouse/Enter/Space and input focus return; X never selects row or commits completion; logical role archive only, no physical deletion even when unused",
+      "preservation": "Conditional compare of employee snapshot; keep creator/responsible/IDs/color/calculations/files and unrelated profile/root/card/letter drafts; archived currently assigned responsible stays visible; stale profile save cannot silently reactivate; retyping name and explicitly saving profile restores same ID",
+      "migration": "Original-byte backup for schemas 1-9 to 10, idempotent read; infer technology role from existing profile/color or historical technical activity, retain unclassified legacy identities, no surname-based cleanup; no order version/ID/history/file changes",
+      "verification": "229 total Release tests: 226 passed, 3 optional skipped, including 9 new cases; 4 UI cases then strengthened and passed for X during pending SuggestAppend, preserving typed prefix; both themes 900x660/800x580, pointer/Space/cancel/Escape/focus/current-identity guard and drafts, no binding warnings; Release/Debug clean; headless Linux, native Windows/SMB not verified",
+      "completionScreenshots": ".local/workflow-technologists-prefix-ui/",
+      "screenshots": ".local/workflow-technologists-ui/"
+    },
+    "managerCardInput": {
+      "status": "Local fix 2026-10-25, JSON schema 9 unchanged; no commit/release",
+      "source": "Card uses the same EntrySuggestionComboBox and personal ManagerSuggestions as new-order entry; never Employees as suggestions or active technologist fallback; saved value may be absent from suggestions; free input, F4/Enter/Escape behavior retained",
+      "write": "ManagerName stays text in current/cached drafts across navigation/profile/list changes; Save resolves manager against latest workspace within one conditional header write, trims and compares case-insensitively; no duplicate names, partial entities, suggestions learning or identity changes; invalid/ambiguous/stale input preserved without automatic retry",
+      "verification": "220 total Release tests: 217 passed, 3 optional skipped; six new save/latest-name/invalid-input/conflict cases plus strengthened navigation/profile/header scenarios; F4/Escape/Enter with personal suggestions only in both themes at 1180/1366x768, no binding warnings; Debug without warnings/errors; temporary test data, headless Linux, native Windows/SMB not verified",
+      "screenshots": ".local/workflow-manager-ui/"
+    },
+    "responsibleEmployee": {
+      "status": "Local Journal Next UI change, 2026-10-25; JSON schema 9 unchanged; no commit/release",
+      "card": "Manager, BLCB and Save button in one row; fields flex up to 320px and shrink in compact windows; no responsible picker or technologist name in header summary; title ellipsis menu opens Change Responsible dialog",
+      "write": "Independent conditional write with captured order ID/version; unchanged choice is a no-op; cancellation/Escape does not mutate drafts; preserve unsaved manager/BLCB/calculations, stable row/draft selection and manual letter; advance loaded version; reject stale/other-card request, no automatic retry",
+      "identity": "Creator and author stripe, current local employee/profile, calculations, project files and reports unchanged",
+      "verification": "30 targeted Release tests passed: 9 header/new-responsibility cases and 21 navigation/trash/inclusion regressions; both themes 1180/1366x768, mouse menu/picker, cancellation/Escape/focus return, no binding warnings; Release/Debug without warnings/errors; headless Linux, no new full-suite or native Windows/SMB run",
+      "inlineHeaderVerification": "Following compact-header refinement: 4 existing header UI tests passed in both themes at 1180/1366x768; saving and bounds checked, Debug without warnings/errors; screenshots .local/workflow-header-inline-ui/",
+      "screenshots": ".local/workflow-responsible-ui/"
+    },
     "entrySuggestions": "General page button opens an independent modal editor, following legacy Journal; no lists navigation tab; manager/customer counts; Save closes after success, Cancel/Escape discards list edits, focus returns to opener and parent profile/root drafts remain; storage and expected-snapshot comparison unchanged",
     "concurrency": "Current JSON store serializes atomic resolve/create against the latest workspace; preferences and workspace leases are never nested; contention fails promptly without write replay; future Access reference resolution and locking still require native testing",
     "settings": "Three sections: General, Storage, Program; Storage merges project root/data/legacy-price-source information; General shares theme with toolbar; permanent bell opens Program in the same Settings window",
@@ -157,6 +182,129 @@
     "displayName": "Journal Next",
     "branding": "Working UI name is centralized in WorkflowIdentity.Name; package/profile/channel/EXE/tag identities remain isolated and unchanged; repository separation and Windows-only release are planned, not executed",
     "brandingVerification": "18 focused main/settings/trash/update-boundary tests and 3 Python release-identity checks passed; build without warnings/errors; display name changed, stable technical identity unchanged; full suite from the preceding stage not repeated",
-    "brandingScreenshots": ".local/journal-next-branding-ui/"
+    "brandingScreenshots": ".local/journal-next-branding-ui/",
+    "colorPickerVerification": "Local Journal Next change: Release build without warnings/errors; 8 existing settings/order-entry window cases passed; both themes and settings 900x660/800x580 visually inspected headless; screenshots .local/workflow-color-button-ui/; no commit or release",
+    "projectMaintenance": {
+      "status": "Local Journal Next prototype, JSON schema 8; no commit or release",
+      "actions": "Row menu: edit empty project parameters with actual directory/native filename rename and stable ID/time, another variant, confirmed logical trash, restore; trash performs no physical file operations",
+      "inclusion": "Per-position IsIncluded checkbox shared by variants; excluded projects stay visible but are omitted from totals, letter, readiness and report lookup; selected variant is chosen separately; handwritten letter is preserved and marked stale",
+      "recovery": "Durable Rename intent; workspace lock released before filesystem work; per-project lease and ownership receipt; no overwrite or implicit write replay; explicit resume after partial rename",
+      "verification": "Full Release run: 127 passed, 3 optional skipped; subsequently 14 targeted data tests passed including open-file refusal and migration from old JSON without the new fields; 4 UI cases for both themes and 1366/1180x768 in the full run; Debug build passed without warnings/errors",
+      "screenshots": ".local/project-maintenance-ui/",
+      "limits": "Native Windows/CAM/SMB not verified; Windows sharing violation simulated; shared Access adapter remains unimplemented"
+    },
+    "inclusionUpdates": {
+      "status": "Local fix for inclusion checkbox flicker; schema 9 and write protocol unchanged; no commit/release",
+      "view": "Workspace stays enabled for this operation; stable project/order row objects, no collection Reset or LoadOrder; current specifications, selected objects, local input, letter, focus and scroll retained",
+      "write": "IsBusy/CanUse still serialize commands and guard close/restart; native checkbox displays requested state without pre-await rollback; mouse/key/programmatic repeats guarded; totals/inclusion acknowledged only on success; error restores last confirmed display and asks F5 without replay",
+      "updates": "All variants of affected item, totals/readiness, order row, letter staleness; source order version advanced without rebasing cached inactive drafts; keyed order-list synchronization respects query/period/sort",
+      "verification": "209 total Release tests: 206 passed, 3 optional skipped; 12 new delayed-write/conflict/failure/no-op/UI cases; both themes 1180/1366x768; no collection Reset, same controls/focus/scroll, no disabled workspace; Release/Debug without warnings/errors; headless Linux, native Windows/SMB not verified",
+      "screenshots": ".local/workflow-inclusion-ui/"
+    },
+    "excludedProjectAppearance": {
+      "status": "Local UI refinement; JSON schema 9 and calculation rules unchanged; no commit/release",
+      "appearance": "Stronger disabled appearance: position/name/material/state/price use dedicated lighter theme text; subdued row/hover/selection backgrounds replace normal blue; exclusion label retained; re-inclusion restores regular text/name weight/background; trash separate",
+      "compact": "Excluded live project rows are 40px and single-line even when selected; checkbox/position/name/price/folder/menu retained; short Excluded label; ellipsis with full name/material/state tooltip and accessible name; re-inclusion restores auto-height and full details; no persisted collapsed state",
+      "interaction": "No row opacity or disabled parent; inclusion checkbox, folder and action menu remain enabled and at normal contrast; selection/focus preserved",
+      "verification": "22 targeted tests passed; both themes 1180/1366x768; selected/unselected 40px height, ellipsis/tooltip, restored full height/details, live theme switch and active actions checked; Release/Debug without warnings/errors; headless Linux only",
+      "screenshots": ".local/workflow-compact-excluded-ui/"
+    },
+    "blcbNumberOnly": {
+      "status": "Implemented locally after alpha.1; JSON schema 9; no commit/release",
+      "contract": "Optional BLCB text number only; no separate year in order model, save API, drafts, header/list/search or proposed Access schema/index; leading zeroes and compound numbers preserved; no automatic year suffix",
+      "migration": "Schema 1-8 to 9 with original-file backup; obsolete property skipped; number, IDs, versions, timestamps, history, projects and reports preserved; repeat read does not write or back up again",
+      "ui": "One 320px number input and Save Header, no year field",
+      "verification": "197 total Release tests: 194 passed, 3 optional skipped; 8 new number/migration/UI cases included; both themes 1180/1366x768; no binding warnings; Debug build without warnings/errors; native Windows/SMB not verified",
+      "screenshots": ".local/workflow-blcb-ui/"
+    },
+    "emptyStartup": {
+      "status": "Local change after alpha.1; schema 8 unchanged; no commit or release",
+      "data": "Fresh workspace has no employees/customers/orders/rates; explicit profile creation/selection in General; no first-employee manager fallback. Existing employees and historical references are preserved without automatic cleanup",
+      "fixtures": "Synthetic people and deterministic IDs exist only in the test project; UpdateProbe explicitly creates its synthetic profile; production sources contain no example employee surnames",
+      "presets": "Agreed machine/import-category/color presets and operational quantity/coefficient defaults retained",
+      "verification": "181 existing tests passed, 3 optional skipped; subsequently 4 new first-start/profile/data-preservation/UI cases passed; both themes; Release/Debug and UpdateProbe builds without warnings/errors; native Windows not verified"
+    },
+    "universalSearch": {
+      "status": "Implemented locally after alpha.1; schema 8 unchanged; no commit/release",
+      "scope": "Saved order/customer/manager/technologist/creator/BLCB, project names, current specification/report numbers, machine/material/thickness/blank/comment; all nondeleted variants, including excluded; no revision history or trash",
+      "semantics": "Case-insensitive literal substrings; AND between whitespace-separated terms, OR across fields; full existing order reference is a visibly labelled direct lookup without suffix neighbours; absent reference falls back to content search; no silent leading-zero/punctuation/yo normalization",
+      "ui": "Magnifier, clear button, Escape, Ctrl+F, result count/period and matching detail; open card, drafts, planning and letter preserved",
+      "performance": "Reusable saved-snapshot field projection; no store/file I/O or timer on keystrokes. Future Access: 300ms debounce/Enter immediate, parameterized EXISTS, paging after filtering, stale-response generation checks and real SMB measurements",
+      "verification": "184 total Release tests: 181 passed, 3 optional skipped; 31 new search cases included; both themes 1180/1366x768, keyboard/clear/focus, literal fragments, current/trashed/alternative versions, preserved drafts and refreshed snapshots; Debug without warnings/errors; native Windows not verified",
+      "screenshots": ".local/workflow-search-ui/"
+    },
+    "journalPeriod": {
+      "status": "Local Journal Next prototype after alpha.1; no commit or release; JSON schema 8 unchanged",
+      "controls": "Today / compact date button and rounded Russian calendar / All Dates; local creation day; startup Today; new search is global, subsequent day selection narrows search",
+      "preservation": "Period changes only filter the in-memory list; open card, planning, unsaved fields and letters remain; no store I/O, timers or subscriptions",
+      "calendar": "Monday-first; theme semantic colors; day/month/year navigation; adjacent months subdued; today outline; arrows, Home/End, PageUp/PageDown, Enter selection and Escape with focus return",
+      "verification": "Full Release run: 150 passed, 3 optional skipped; final 8 period/calendar cases passed after last refinements; both themes 1180/1366x768; no binding warnings; Debug build without warnings/errors",
+      "screenshots": ".local/workflow-period-ui/",
+      "limits": "Headless Linux verification; native Windows unverified; shared Access query implementation and startup-period settings remain deferred"
+    },
+    "trashPurge": {
+      "status": "Implemented locally in Journal Next; no commit or release",
+      "controls": "Purge Selected at the bottom; Empty Trash in the header; separate modal with IDs/customer labels and order/project/specification counts, cancellation focus and Escape; mutations disabled until explicit refresh after error",
+      "data": "Only confirmed trashed IDs/versions; validate entire scope before one JSON write; restored/changed/missing rows reject all; newly trashed rows remain; no CAM/HTML/PDF/archive deletion or scanning; shared catalogs untouched; schema 8 unchanged",
+      "drafts": "Local and inactive drafts/letters of remotely purged orders remain visible as local-only snapshots, cannot save or recreate the deleted order, and disappear only on explicit discard; a deleted machine label falls back to the saved calculation snapshot",
+      "verification": "145 total tests: 142 passed, 3 optional skipped; 9 purge data cases and 5 UI cases included; both themes and 960x620/800x520; Release/Debug builds without warnings/errors; user data untouched; native Windows/Jet/SMB not verified",
+      "screenshots": ".local/workflow-trash-purge-ui/"
+    },
+    "workingDirectory": "/home/denis/Myprojects/journal-next",
+    "sourceConceptBranch": "feature/order-workflow",
+    "currentStateOnly": {
+      "status": "Implemented locally at user request 2026-10-25; no commit/PR/release",
+      "model": "One SpecificationState Current per specification; no OrderEvent/Events/SpecificationRevision/Revisions, revision IDs/numbers/chains or comparison models; save replaces state, unchanged save is a no-op",
+      "ui": "Superseded by simpleProjects below: Projects / Letter only; letter index 1; current calculation inline under selected project, accepted report SHA-256 verified before launch",
+      "preservation": "Current parameters/calculation/tariff snapshot, last accepted HTML/PDF and parsed baseline, author/responsible/created/updated/deleted metadata, independent project variants/inclusion/trash/rename intent, concurrency versions and diagnostics; no old calculation restoration",
+      "migration": "Schemas 1-10 to 11 at JSON boundary with original-byte backup, latest state retained, roles/creator inferred before removing legacy history; IDs/versions/prices/last report/files preserved; corrupt sources not replaced, repeat read idempotent; previous external report copies not physically purged",
+      "verification": "246 total Release tests: 243 passed, 3 optional skipped; 17 new migration/replacement/no-op/conflict/UI/report-opening cases; both themes 1180/1366x768, no binding warnings; Release/Debug clean; headless Linux, native Windows/SMB not verified",
+      "screenshots": ".local/workflow-no-history-ui/"
+    },
+    "simpleProjects": {
+      "status": "Implemented locally at user request 2026-10-25; no commit/PR/release",
+      "principle": "One clear task flow; avoid duplicate screens, unnecessary clicks and nested levels. Add complexity only for a concrete task.",
+      "ui": "Projects / Letter only, letter index 1 including cached drafts/restart; selecting a project opens inline calculation under table. Primary material/meters/pierces visible first, coefficient/total/Save/Cancel pinned; other fields in same scrollable form without extra disclosure. Resizable split remains stable across selection; missing-report placeholder retains space. Duplicate Text toggle removed; Letter tab remains the direct navigation.",
+      "actions": "Add project -> Load specifications from project folders -> review/save -> letter result; uncommon variants/current-for-total in row menu; folder per row; accepted report action SHA-256 verified; shared price editing only in machine catalog, calculation may refresh price snapshot",
+      "removedRoutes": "Separate specification grid/tab; manual entry/import outside project; root drag/drop; shared tariff editing in calculation",
+      "preservation": "Saved calculations without a project displayed as read-only synthetic project rows marked Without project, calculation remains editable; never persist fabricated projects/files. Draft identity and dirty indicators across selection/cancel/save; inclusion/variants/trash/conflict guards, formulas and JSON schema 11 unchanged.",
+      "screenshots": ".local/workflow-simple-projects-ui/",
+      "verification": "251 total Release tests: 248 passed, 3 optional skipped; after removing duplicate letter toggle 38 targeted tests passed. Five new cases cover both themes 1180/1366x768, primary fields visible, mouse selection without dialog, independent dirty drafts/cancel/save and unchanged catalog prices, stable missing-report slot/splitter, existing unlinked calculation/inclusion. Release/Debug clean, no binding warnings; headless Linux, native Windows/SMB not verified.",
+      "splitterHandles": "User-selected centered rounded handles on all 3 resizers, 3x40px vertical / 40x3px horizontal, radius 1.5; transparent full original 6px hit area. Only handle changes JournalControlBorder -> JournalAccent for hover/native pressed/keyboard focus, stable until release/capture loss; no handlers or timers."
+    },
+    "chamferAndLetter": {
+      "status": "Implemented locally at user request 2026-10-25; no commit/PR/release",
+      "operations": "Independent manual HasChamfer beside bending in inline calculation and report review; false when absent in schema 11; retained through repeat/updated report, save/cancel/restart/trash; never changes cutting formula or tariff",
+      "letter": "Active specifications only, thickness/material ru-RU order; legacy field spacing; Cutting: rounded price with colon; ToEven whole rubles then optional per-line minimum, aligned by displayed price widths; current machine name uppercase ru-RU without cutting prefix, then CHAMFER and BENDING independently; no comments; one final LF; unchanged rich clipboard from current editable text",
+      "localPricing": "ResultPricing in preferences.json; General settings without new section; ON/500 default, valid whole nonnegative edits saved immediately, invalid edits restore last valid input, expected-policy conflict guard; existing letter/calculations/quotes unchanged until explicit generation",
+      "screenshots": ".local/workflow-chamfer-ui/",
+      "verification": "272 total Release tests: 269 passed, 3 optional skipped; 21 new cases covering exact letter/operations/rounding/minimum/alignment/culture/time/clipboard, persistence/refresh/cancel/restart/trash/default old field, independent personal pricing/conflict/invalid input and mouse UI in both themes 1180/1366x768; clean Release/Debug, no binding warnings; headless Linux, native Windows/SMB/real mail paste not verified",
+      "projectColumns": "Added at user request 2026-10-25: read-only Chamfer/Bending 60px columns before cutting cost; saved true checkmark, false empty, no specification dash; muted for excluded rows with 40px height, active names fully wrap, adjusted neighboring widths for 1180px. No new storage or I/O.",
+      "projectColumnsVerification": "17 existing targeted checks passed in both themes at 1180/1366x768, including draft persistence/import/planning/inclusion focus/selection; clean Debug/Release compilation, screenshots .local/workflow-operation-columns-ui/"
+    },
+    "nextApplicationIcon": {
+      "status": "Selected variant 2 and installed locally at user request 2026-10-25; no commit/PR/release",
+      "design": "Navy rounded square, white БЛОК mark, cyan forward chevron; separate Next identity based on original company logo",
+      "master": "docs/design/assets/journal-next-icon-master.png",
+      "windowPng": "docs/design/assets/journal-next-icon.png",
+      "windowsIco": "docs/design/assets/journal-next-icon.ico",
+      "icoSizes": [
+        16,
+        20,
+        24,
+        32,
+        40,
+        48,
+        64,
+        128,
+        256
+      ],
+      "integration": "ApplicationIcon in Workflow.Desktop and local Compatibility projects; Avalonia Assets/Journal.png alias now sourced from Next PNG; release.py vpk --icon uses Next ICO; OfflineSetup JournalNext.iss SetupIconFile also uses Next ICO",
+      "preservation": "Original journal-icon and company logo.png retained; no changes to old Journal checkout, product/profile/feed/exe identifiers or installed release",
+      "verification": "Clean Debug/Release and Windows x64 EXE build; all 9 ICO payloads present in Windows EXE and new PNG embedded in window resource; 4 headless UI and 5 Python packaging checks passed; RGBA corners validated; original Journal PNG/ICO byte hashes unchanged; no native Windows install/shortcut cache check or release"
+    }
+  },
+  "retiredComponents": {
+    "comparison": "136:1696"
   }
 }

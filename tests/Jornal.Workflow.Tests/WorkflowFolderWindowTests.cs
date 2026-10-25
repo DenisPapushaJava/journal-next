@@ -21,7 +21,7 @@ public sealed class WorkflowFolderWindowTests
         var a = await f.AddAsync(); var b = await f.AddAsync("Плазма");
         await ProjectFixture.WriteAsync(a); await ProjectFixture.WriteAsync(b); await f.AcceptAsync();
         var pending = await f.AddAsync();
-        var preferences = new WorkflowPreferencesStore(Path.Combine(f.DirectoryPath, "preferences.json")); preferences.Save(new(dark) { EmployeeId = Jornal.Workflow.Core.WorkflowWorkspace.Empty.Employees[1].Id });
+        var preferences = new WorkflowPreferencesStore(Path.Combine(f.DirectoryPath, "preferences.json")); preferences.Save(new(dark) { EmployeeId = WorkflowTestData.CreateWorkspace().Employees[1].Id });
         var window = new FolderWindow(preferences) { DataContext = f.Model, Width = 1366, Height = 768 };
         try
         {
@@ -35,35 +35,13 @@ public sealed class WorkflowFolderWindowTests
             ClickFolder(window, projects, f.Model.Projects.Single(r => r.Project.Id == pending.Id));
             Assert.Equal(Path.GetDirectoryName(pending.NativePath), window.OpenedPaths[^1]);
 
-            f.Model.OrderTabIndex = 1; Dispatcher.UIThread.RunJobs();
-            var specifications = window.FindControl<DataGrid>("WorkflowSpecificationsGrid")!;
-            var second = f.Model.Drafts.Single(d => d.Id == b.Id);
-            f.Model.SelectedDraft = draft;
             window.FolderAvailable = false;
-            ClickFolder(window, specifications, second);
-            Assert.Equal(Path.GetDirectoryName(b.NativePath), window.OpenedPaths[^1]);
+            ClickFolder(window, projects, f.Model.Projects.Single(r => r.Project.Id == b.Id));
             Assert.Equal("Рабочая папка недоступна.", f.Model.Error);
-            Assert.Equal("1,2", draft.Coefficient);
-            Assert.True(draft.IsDirty);
-
-            f.Model.AddManualSpecificationCommand.Execute(null); Dispatcher.UIThread.RunJobs();
-            var manual = f.Model.SelectedDraft!;
-            var button = FolderButton(window, specifications, manual);
-            Assert.False(button.IsEnabled); Assert.Null(manual.FolderPath);
-
-            // An imported report outside a prepared project has its own source folder.
-            var imported = Path.Combine(f.DirectoryPath, "outside.rcam.html");
-            await File.WriteAllTextAsync(imported, ProjectFixture.Html(a with { NativePath = Path.Combine(f.DirectoryPath, "6 мм 2026-10-24-155959--ЛАЗЕР.rcam") }), TestContext.Current.CancellationToken);
-            await f.Model.ImportFilesAsync([imported], TestContext.Current.CancellationToken);
-            Assert.Null(f.Model.Error);
-            var outside = f.Model.Drafts.Single(d => d.SourcePath == imported);
-            window.FolderAvailable = true;
-            ClickFolder(window, specifications, outside);
-            Assert.Equal(f.DirectoryPath, window.OpenedPaths[^1]);
-            Assert.Equal("1,2", draft.Coefficient);
+            Assert.Equal("1,2", draft.Coefficient); Assert.True(draft.IsDirty);
             var book = await f.Store.ReadAsync(TestContext.Current.CancellationToken);
             Assert.Equal(2, book.Orders.Single().Specifications.Length);
-            Assert.All(book.Orders.Single().Specifications, s => Assert.Single(s.Revisions));
+            Assert.All(book.Orders.Single().Specifications, s => Assert.NotNull(s.Current.Report));
         }
         finally { window.Close(); }
     }

@@ -7,16 +7,18 @@ public partial class WorkflowViewModel
 {
     public async Task<WorkflowReportReviewViewModel?> CreateReportReviewAsync(CancellationToken token = default, WorkflowReportReviewViewModel? previous = null)
     {
-        if (!CanUse || CurrentOrder is not { IsDeleted: false } order) return null;
+        if (!CanUse || !IsCurrentOrderActive || CurrentOrder is not { IsDeleted: false } order) return null;
         if (HasCurrentCardEdits) { Error = "Сохраните или отмените текущие изменения перед подбором отчётов."; return null; }
         if (order.Projects.Length == 0) { Error = "Сначала подготовьте проекты в заявке."; return null; }
+        if (order.HasProjectRename) { Error = "Завершите изменение параметров проекта перед подбором отчётов."; return null; }
         WorkflowReportReviewViewModel? review = null;
         await RunAsync(async () =>
         {
-            var latest = await _store.ReadAsync(token); var latestOrder = latest.Orders.Single(o => o.Id == order.Id);
+            var latest = await _store.ReadOrderAsync(order.Id, token); var latestOrder = latest.Orders.Single(o => o.Id == order.Id);
             if (previous is not null && latestOrder.Version != previous.PreviewOrderVersion)
                 throw new WorkflowValidationException("Заявка изменена в другом окне. Текущий подбор сохранён; для новой проверки закройте сводку и обновите заявку через F5.");
             _workspace = latest; order = latestOrder; RefreshOrders(); LoadOrder(order);
+            if (order.IsDeleted || order.HasProjectRename) throw new WorkflowValidationException("Подбор недоступен: заявка в корзине или изменение проекта не завершено.");
             var snapshot = _workspace; var actor = ActorId();
             review = new((candidates, cancellation) => ApplyReportReviewAsync(order, actor, candidates, cancellation),
                 async (prior, cancellation) =>
@@ -30,8 +32,9 @@ public partial class WorkflowViewModel
                 var folders = new Dictionary<string, (ReportFileSnapshot[] Files, string State)>(
                     OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
                 long totalBytes = 0;
-                foreach (var project in order.Projects.Where(p => order.Items.Any(i => i.CurrentProjectId == p.Id) ||
-                    p.Variant == order.Projects.Where(other => other.ItemId == p.ItemId).Max(other => other.Variant)))
+                foreach (var project in order.ActiveProjects.Where(p => order.Items.Any(i => i.Id == p.ItemId && i.IsIncluded) &&
+                    (order.Items.Any(i => i.CurrentProjectId == p.Id) ||
+                    p.Variant == order.ActiveProjects.Where(other => other.ItemId == p.ItemId).Max(other => other.Variant))))
                 {
                     token.ThrowIfCancellationRequested();
                     var existing = order.Specifications.SingleOrDefault(s => s.Id == project.Id);

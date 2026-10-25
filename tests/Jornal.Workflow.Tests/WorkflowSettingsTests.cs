@@ -20,7 +20,7 @@ public sealed class WorkflowSettingsTests
         Assert.Equal(root, after.ProjectRoot); Assert.Equal(before.Version + 1, after.Version);
         Assert.Equal(before.Machines, after.Machines); Assert.Equal(before.Rates, after.Rates);
         Assert.Equal(before.Orders[0].Version, after.Orders[0].Version);
-        Assert.Equal(before.Orders[0].Specifications[0].Current.Id, after.Orders[0].Specifications[0].Current.Id);
+        Assert.Equal(before.Orders[0].Specifications[0].Current, after.Orders[0].Specifications[0].Current);
         Assert.Equal(project.NativePath, after.Orders[0].Projects[0].NativePath);
         Assert.True(File.Exists(project.NativePath)); Assert.False(Directory.Exists(root));
         Assert.Same(draft, f.Model.SelectedDraft); Assert.Equal(quote, draft.Quote);

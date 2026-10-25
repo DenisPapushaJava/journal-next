@@ -26,6 +26,7 @@ if (args.SequenceEqual(["--probe"]))
     }
     catch (Exception exception) { Console.Error.WriteLine(exception.Message); return 3; }
 }
+if (args.SequenceEqual(["--workflow"])) return await Jornal.Workflow.Infrastructure.WorkflowAccessServer.RunAsync();
 if (args.Length != 0) return 2;
 
 AccessHostRequest? request = null;

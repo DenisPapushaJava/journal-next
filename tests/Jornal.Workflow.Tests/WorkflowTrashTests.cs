@@ -10,7 +10,7 @@ namespace Jornal.Workflow.Tests;
 public sealed class WorkflowTrashTests
 {
     [Fact]
-    public async Task TrashAndRestoreKeepIdentityPricesHistoryAndFilesAndReserveTheOrderNumber()
+    public async Task TrashAndRestoreKeepIdentityPricesCalculationsAndFilesAndReserveTheOrderNumber()
     {
         using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync();
         await ProjectFixture.WriteAsync(project); await f.AcceptAsync();
@@ -23,9 +23,7 @@ public sealed class WorkflowTrashTests
         var trashed = deleted.Orders.Single(); Assert.True(trashed.IsDeleted); Assert.Equal(at, trashed.DeletedAt); Assert.Equal(actor, trashed.DeletedBy);
         Assert.Equal(order.Version + 1, trashed.Version); Assert.Equal(order.ReferenceNumber, trashed.ReferenceNumber);
         Assert.Equal(order.Items, trashed.Items); Assert.Equal(order.Projects, trashed.Projects); Assert.Equal(order.Specifications, trashed.Specifications);
-        Assert.Equal(order.CuttingTotal, trashed.CuttingTotal); Assert.Equal(order.Events[0], trashed.Events[0]);
-        Assert.Equal(order.CreatedById, trashed.CreatedById);
-        Assert.Equal("Перемещена в корзину", trashed.Events[^1].Description);
+        Assert.Equal(order.CuttingTotal, trashed.CuttingTotal); Assert.Equal(order.CreatedById, trashed.CreatedById);
         Assert.NotNull(WorkflowChanges.MachineRemovalReason(deleted, project.MachineId));
         Assert.Same(deleted, WorkflowChanges.MoveOrderToTrash(deleted, order.Id, trashed.Version, actor, at));
         var next = WorkflowChanges.CreateOrder(deleted, "Другой заказчик", order.ManagerId, actor, actor, order.CreatedAt, out var newId);
@@ -36,7 +34,7 @@ public sealed class WorkflowTrashTests
         Assert.Equal(order.CreatedAt, restoredOrder.CreatedAt); Assert.Equal(order.Specifications, restoredOrder.Specifications);
         Assert.Equal(order.CreatedById, restoredOrder.CreatedById);
         Assert.Equal(order.Projects, restoredOrder.Projects); Assert.Equal(order.Items, restoredOrder.Items);
-        Assert.Equal("Восстановлена из корзины", restoredOrder.Events[^1].Description);
+        Assert.Null(restoredOrder.DeletedAt);
         Assert.Equal(hashes, paths.Select(p => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(p)))));
         restored.Validate();
     }
@@ -47,12 +45,12 @@ public sealed class WorkflowTrashTests
         using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync();
         await ProjectFixture.WriteAsync(project); await f.AcceptAsync();
         var book = await f.Store.ReadAsync(TestContext.Current.CancellationToken); var order = book.Orders.Single(); var actor = order.TechnologistId;
-        var changed = WorkflowChanges.UpdateOrder(book, order.Id, order.Version, order.ManagerId, actor, "Коллега", 2026, actor, DateTimeOffset.UtcNow);
+        var changed = WorkflowChanges.UpdateOrder(book, order.Id, order.Version, order.ManagerId, actor, "Коллега", actor, DateTimeOffset.UtcNow);
         Assert.Throws<WorkflowConflictException>(() => WorkflowChanges.MoveOrderToTrash(changed, order.Id, order.Version, actor, DateTimeOffset.UtcNow));
         var deleted = await f.Store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.MoveOrderToTrash(w, order.Id, order.Version,
             actor, DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
         var trash = deleted.Orders.Single(); var revision = trash.Specifications.Single().Current;
-        Assert.Throws<WorkflowValidationException>(() => WorkflowChanges.UpdateOrder(deleted, order.Id, trash.Version, order.ManagerId, actor, "1", 2026, actor, DateTimeOffset.UtcNow));
+        Assert.Throws<WorkflowValidationException>(() => WorkflowChanges.UpdateOrder(deleted, order.Id, trash.Version, order.ManagerId, actor, "1", actor, DateTimeOffset.UtcNow));
         Assert.Throws<WorkflowValidationException>(() => WorkflowChanges.SaveSpecification(deleted, order.Id, trash.Version, project.Id,
             revision.Parameters, revision.DocumentNumber, revision.DocumentDate, actor, DateTimeOffset.UtcNow));
         Assert.Throws<WorkflowValidationException>(() => WorkflowProjects.Add(deleted, order.Id, trash.Version, project, actor, DateTimeOffset.UtcNow));
@@ -120,7 +118,7 @@ public sealed class WorkflowTrashTests
         var confirmation = f.Model.CreateTrashConfirmation()!;
         var book = await f.Store.ReadAsync(TestContext.Current.CancellationToken); var order = book.Orders.Single();
         book = await f.Store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.UpdateOrder(w, order.Id, order.Version,
-            order.ManagerId, order.TechnologistId, "Чужая правка", 2026, order.TechnologistId, DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
+            order.ManagerId, order.TechnologistId, "Чужая правка", order.TechnologistId, DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
         await confirmation.ConfirmCommand.ExecuteAsync(null); Assert.NotNull(confirmation.Error); Assert.False(confirmation.WasMoved);
         Assert.False((await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders.Single().IsDeleted);
         await f.Model.ReloadCommand.ExecuteAsync(null); confirmation = f.Model.CreateTrashConfirmation()!;
@@ -138,21 +136,21 @@ public sealed class WorkflowTrashTests
         using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync();
         await ProjectFixture.WriteAsync(project); await f.AcceptAsync();
         var before = await f.Store.ReadAsync(TestContext.Current.CancellationToken);
-        var legacy = JsonSerializer.SerializeToNode(before)!.AsObject(); legacy["SchemaVersion"] = 6;
+        var legacy = WorkflowTestData.LegacyJson(before, 6);
         foreach (var o in legacy["Orders"]!.AsArray()) { o!.AsObject().Remove("DeletedAt"); o.AsObject().Remove("DeletedBy"); o.AsObject().Remove("CreatedById"); }
         var path = Path.Combine(f.DirectoryPath, "schema-six.json"); var original = legacy.ToJsonString();
         await File.WriteAllTextAsync(path, original, TestContext.Current.CancellationToken);
         var migrated = await new LocalWorkflowWorkspaceStore(path).ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(7, migrated.SchemaVersion); Assert.Equal(before.Version, migrated.Version);
+        Assert.Equal(11, migrated.SchemaVersion); Assert.Equal(before.Version, migrated.Version);
         Assert.All(migrated.Orders, o => Assert.False(o.IsDeleted));
         var old = before.Orders.Single(); var order = migrated.Orders.Single();
         Assert.Equal(old.ReferenceNumber, order.ReferenceNumber); Assert.Equal(old.Version, order.Version);
         Assert.Equal(old.CreatedById, order.CreatedById);
-        Assert.Equal(old.Projects, order.Projects); Assert.Equal(old.Items, order.Items); Assert.Equal(old.Events, order.Events);
-        Assert.Equal(old.Specifications.Single().Revisions, order.Specifications.Single().Revisions);
+        Assert.Equal(old.Projects, order.Projects); Assert.Equal(old.Items, order.Items);
+        Assert.Equal(old.Specifications.Single().Current, order.Specifications.Single().Current);
         Assert.Equal(original, await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(f.DirectoryPath, "schema-six.json.*.bak")), TestContext.Current.CancellationToken));
         Assert.Throws<WorkflowValidationException>(() => (migrated with { Orders = [order with { DeletedAt = DateTimeOffset.UtcNow }] }).Validate());
-        var unknown = WorkflowWorkspaceMigration.Upgrade(before with { SchemaVersion = 6, Orders = [old with { CreatedById = null, Events = [] }] });
+        var unknown = WorkflowWorkspaceMigration.Upgrade(before with { SchemaVersion = 6, Orders = [old with { CreatedById = null }] });
         Assert.Null(unknown.Orders.Single().CreatedById);
         var trashedUnknown = WorkflowChanges.MoveOrderToTrash(unknown, old.Id, old.Version, old.TechnologistId, DateTimeOffset.UtcNow);
         var restoredUnknown = WorkflowChanges.RestoreOrder(trashedUnknown, old.Id, old.Version + 1, old.TechnologistId, DateTimeOffset.UtcNow);

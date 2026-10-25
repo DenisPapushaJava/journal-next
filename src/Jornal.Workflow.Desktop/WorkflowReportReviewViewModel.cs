@@ -63,7 +63,7 @@ public partial class WorkflowReportCandidate : ObservableObject
         Draft?.MaterialNeedsReview == true && !Draft.MaterialConfirmed ? "Проверьте материал." :
         Draft is not null && !MatchesProject ?
             "Толщина или станок отличаются от проекта. Подготовьте другой вариант." :
-        Draft?.CalculationError ?? (Ready ? "Тариф и ручной коэффициент сохранены; принятый отчёт попадёт в историю." : Status);
+        Draft?.CalculationError ?? (Ready ? "Тариф и ручной коэффициент сохранены; будет принята копия отчёта." : Status);
     public string Total => Draft?.TotalText ?? (_existing is { } saved ? SpecificationDraft.Money(saved.Current.Calculation.TotalCost) + " ₽" : "—");
     private bool MatchesProject
     {
@@ -98,7 +98,7 @@ public partial class WorkflowReportCandidate : ObservableObject
         {
             Draft = _existing is null ? new SpecificationDraft { Id = project.Id } : new(_existing);
             var values = Parts(Values(oldDraft)); for (var i = 0; i < values.Length; i++) Set(Draft, i, values[i]);
-            Draft.Coefficient = oldDraft.Coefficient; Draft.Comment = oldDraft.Comment; Draft.HasBending = oldDraft.HasBending;
+            Draft.Coefficient = oldDraft.Coefficient; Draft.Comment = oldDraft.Comment; Draft.HasBending = oldDraft.HasBending; Draft.HasChamfer = oldDraft.HasChamfer;
             Draft.MaterialNeedsReview = oldDraft.MaterialNeedsReview; Draft.MaterialConfirmed = oldDraft.MaterialConfirmed;
             Draft.SourcePath = oldDraft.SourcePath; Draft.ImportProfile = oldDraft.ImportProfile; Draft.IncomingReport = oldDraft.IncomingReport;
             Draft.UseMachine(workspace.Machines.Single(m => m.Id == project.MachineId));

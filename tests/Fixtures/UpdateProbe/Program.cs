@@ -17,8 +17,9 @@ try
     // Only create fresh synthetic profile data on the disposable runner.
     if (Directory.Exists(WorkflowIdentity.ProfileDirectory)) throw new IOException("Probe must not replace an existing Next profile.");
     Directory.CreateDirectory(WorkflowIdentity.ProfileDirectory);
-    var actor = WorkflowWorkspace.Empty.Employees[1].Id;
     var store = new LocalWorkflowWorkspaceStore(WorkflowIdentity.WorkspacePath);
+    var synthetic = await store.SaveEmployeeProfileAsync(null, "Тестовый технолог", 0xFF628DB2);
+    var actor = synthetic.Employees.Single().Id;
     var created = await store.CreateOrderFromNamesAsync("Тест менеджер", "Тестовый заказчик", actor, DateTimeOffset.UtcNow);
     new WorkflowPreferencesStore(WorkflowIdentity.PreferencesPath).Save(new(true) { EmployeeId = actor, EntrySuggestions = new() { Managers = ["Не потерять список"] } });
     new JsonAppUpdatePreferencesStore(WorkflowIdentity.UpdatePreferencesPath).Save(new(IncludePreview: true, CheckAutomatically: false));

@@ -18,7 +18,7 @@ public sealed class ProjectPreparationMigrationTests
         await ProjectFixture.WriteAsync(alternative, 20000); await f.AcceptAsync();
         await f.AddAsync(); // A separate project without a report must remain uncalculated.
         var before = await f.Store.ReadAsync(TestContext.Current.CancellationToken);
-        var legacy = JsonSerializer.SerializeToNode(before)!.AsObject(); legacy["SchemaVersion"] = 3;
+        var legacy = WorkflowTestData.LegacyJson(before, 3);
         foreach (var project in legacy["Orders"]![0]!["Projects"]!.AsArray())
         {
             project!["Material"] = "Прежний ввод при подготовке";
@@ -27,17 +27,17 @@ public sealed class ProjectPreparationMigrationTests
         var path = Path.Combine(f.DirectoryPath, "schema-three.json"); var original = legacy.ToJsonString();
         await File.WriteAllTextAsync(path, original, TestContext.Current.CancellationToken);
         var migrated = await new LocalWorkflowWorkspaceStore(path).ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(7, migrated.SchemaVersion); Assert.Equal(before.Version, migrated.Version);
+        Assert.Equal(11, migrated.SchemaVersion); Assert.Equal(before.Version, migrated.Version);
         Assert.Equal(before.Machines, migrated.Machines); Assert.Equal(before.Rates, migrated.Rates);
         var oldOrder = before.Orders[0]; var order = migrated.Orders[0];
         Assert.Equal(oldOrder.Version, order.Version); Assert.Equal(oldOrder.Items, order.Items);
-        Assert.Equal(oldOrder.Projects, order.Projects); Assert.Equal(oldOrder.Events, order.Events);
+        Assert.Equal(oldOrder.Projects, order.Projects);
         Assert.Equal(oldOrder.CuttingTotal, order.CuttingTotal); Assert.Equal(1, order.PendingProjectCount);
         Assert.Equal(first.Id, order.Items[0].CurrentProjectId);
         foreach (var specification in oldOrder.Specifications)
         {
             var after = order.Specifications.Single(s => s.Id == specification.Id);
-            Assert.Equal(specification.Revisions, after.Revisions);
+            Assert.Equal(specification.Current, after.Current);
             Assert.Equal("Ст3", after.Current.Parameters.Material); Assert.Equal("Базовая", after.Current.Parameters.MaterialGroup);
             Assert.True(File.Exists(after.Current.Report!.ArchivePath));
         }

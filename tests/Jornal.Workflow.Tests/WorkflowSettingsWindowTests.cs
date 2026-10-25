@@ -17,13 +17,41 @@ namespace Jornal.Workflow.Tests;
 public sealed class WorkflowSettingsWindowTests
 {
     [AvaloniaTheory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task EmptyEmployeeCatalogCanBeConfiguredThroughSettingsInBothThemes(bool dark)
+    {
+        using var log = new BindingLog(); using var f = new ProjectFixture();
+        var preferences = new WorkflowPreferencesStore(Path.Combine(f.DirectoryPath, "preferences.json"));
+        preferences.Save(new(dark));
+        var window = new WorkflowWindow(preferences) { DataContext = f.Model, Width = 1180, Height = 768 };
+        try
+        {
+            window.Show();
+            for (var i = 0; i < 500 && f.Model.IsBusy; i++) { await Task.Delay(10, TestContext.Current.CancellationToken); Dispatcher.UIThread.RunJobs(); }
+            Dispatcher.UIThread.RunJobs(); Assert.False(f.Model.IsBusy); Assert.Empty(f.Model.Employees);
+            Assert.Equal("Профиль не выбран", f.Model.ProfileName); Click(window, "WorkflowSettings");
+            var settings = Assert.IsType<WorkflowSettingsWindow>(Assert.Single(window.OwnedWindows));
+            var model = Assert.IsType<WorkflowSettingsViewModel>(settings.DataContext);
+            Assert.Empty(model.EmployeeSuggestions); Assert.Empty(model.ProfileName);
+            var input = settings.FindControl<EntrySuggestionComboBox>("WorkflowProfileName")!;
+            input.GetVisualDescendants().OfType<TextBox>().Single().Focus();
+            settings.KeyTextInput("Лебедев"); Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Лебедев", model.ProfileName); await model.SaveCommand.ExecuteAsync(null); Assert.Null(model.Error);
+            Assert.Equal("Лебедев", Assert.Single(f.Model.Employees).Name); Assert.Equal("Лебедев", f.Model.ProfileName);
+            SaveFrame(settings, dark, 800, "workflow-first-profile");
+            Assert.True(log.Errors.Count == 0, string.Join("\n", log.Errors));
+        }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); }
+    }
+
+    [AvaloniaTheory]
     [InlineData(false, 1366)] [InlineData(true, 1366)]
     [InlineData(false, 1180)] [InlineData(true, 1180)]
     public async Task ToolbarOpensIndependentCatalogAndSettingsWithoutLosingTheActiveDraft(bool dark, int width)
     {
         using var log = new BindingLog(); using var f = new ProjectFixture(); await f.InitializeAsync();
         var project = await f.AddAsync(); await ProjectFixture.WriteAsync(project); await f.AcceptAsync();
-        var preferences = new WorkflowPreferencesStore(Path.Combine(f.DirectoryPath, "preferences.json")); preferences.Save(new(dark) { EmployeeId = Jornal.Workflow.Core.WorkflowWorkspace.Empty.Employees[1].Id });
+        var preferences = new WorkflowPreferencesStore(Path.Combine(f.DirectoryPath, "preferences.json")); preferences.Save(new(dark) { EmployeeId = WorkflowTestData.CreateWorkspace().Employees[1].Id });
         var window = new WorkflowWindow(preferences) { DataContext = f.Model, Width = width, Height = 768 };
         try
         {

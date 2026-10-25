@@ -54,9 +54,11 @@ try {
     New-Item -ItemType Directory -Force -Path $testHost | Out-Null
     Copy-Item (Join-Path $first 'current/AccessHost/*') $testHost -Recurse -Force
     $env:WORKFLOW_LEGACY_MDB = $fixture
-    & dotnet test tests/Jornal.Workflow.Tests/Jornal.Workflow.Tests.csproj -c Release --no-build --no-restore --filter 'FullyQualifiedName~RealMdbCopyLoadsPricesWithoutChangingItsBytes'
-    if ($LASTEXITCODE -ne 0) { throw 'Real MDB import failed.' }
+    $env:WORKFLOW_TEST_ACCESS_HOST = $hostPath
+    & dotnet test tests/Jornal.Workflow.Tests/Jornal.Workflow.Tests.csproj -c Release --no-build --no-restore --filter 'FullyQualifiedName~RealMdbCopyLoadsPricesWithoutChangingItsBytes|FullyQualifiedName~WorkflowNativeMdbTests'
+    if ($LASTEXITCODE -ne 0) { throw 'Installed MDB import or new database lifecycle failed.' }
     Remove-Item Env:WORKFLOW_LEGACY_MDB
+    Remove-Item Env:WORKFLOW_TEST_ACCESS_HOST
     Stop-Installed $first
     $uninstall = Start-Process (Join-Path $first 'Update.exe') -ArgumentList @('--uninstall','--silent') -Wait -PassThru
     if ($uninstall.ExitCode -ne 0) { throw 'Disposable Next installation did not uninstall.' }
@@ -103,12 +105,14 @@ try {
     $postHost = Join-Path $second 'current/AccessHost/Jornal.AccessHost.exe'
     & $postHost --probe
     if ($LASTEXITCODE -ne 0) { throw 'Updated x86 host is unavailable.' }
-    @{version=$Version; freshInstall=$true; installedJetRead=$true; updated=$true; uiTextRestored=$true; profilesPreserved=$true; packageId='DenisPapusha.JournalWorkflow'; channel='workflow-win-x64'} |
+    @{version=$Version; freshInstall=$true; installedJetRead=$true; installedWorkflowMdbLifecycle=$true; updated=$true; uiTextRestored=$true; profilesPreserved=$true; packageId='DenisPapusha.JournalWorkflow'; channel='workflow-win-x64'} |
         ConvertTo-Json | Set-Content artifacts/installer-logs/verification.json -Encoding utf8
     Write-Host 'JOURNAL_NEXT_WINDOWS_INSTALL_UPDATE_OK'
 } finally {
     Stop-Installed $first
     if (Get-Variable second -ErrorAction SilentlyContinue) { Stop-Installed $second }
     if (Test-Path Env:JOURNAL_NEXT_UPDATE_PROBE_ROOT) { Remove-Item Env:JOURNAL_NEXT_UPDATE_PROBE_ROOT }
+    if (Test-Path Env:WORKFLOW_LEGACY_MDB) { Remove-Item Env:WORKFLOW_LEGACY_MDB }
+    if (Test-Path Env:WORKFLOW_TEST_ACCESS_HOST) { Remove-Item Env:WORKFLOW_TEST_ACCESS_HOST }
     if (Test-Path (Join-Path $root 'failed.txt')) { Get-Content (Join-Path $root 'failed.txt') | Write-Host }
 }

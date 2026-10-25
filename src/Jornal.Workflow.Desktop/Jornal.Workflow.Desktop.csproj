@@ -3,7 +3,7 @@
     <OutputType>WinExe</OutputType>
     <Product>Journal Next</Product>
     <VersionSuffix>workflow.dev</VersionSuffix>
-    <ApplicationIcon>../../docs/design/assets/journal-icon.ico</ApplicationIcon>
+    <ApplicationIcon>../../docs/design/assets/journal-next-icon.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
   <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
@@ -19,4 +19,8 @@
     <ProjectReference Include="../Journal.Compatibility/Jornal.Desktop.csproj" />
     <ProjectReference Include="../Jornal.Workflow.Infrastructure/Jornal.Workflow.Infrastructure.csproj" />
   </ItemGroup>
+  <Target Name="PrepareWorkflowAccessHost" AfterTargets="Build" Condition="'$(OS)' == 'Windows_NT' and '$(RuntimeIdentifier)' == '' and '$(DesignTimeBuild)' != 'true'">
+    <MSBuild Projects="../Jornal.AccessHost/Jornal.AccessHost.csproj" Targets="Publish"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x86;SelfContained=true;PublishDir=$([System.IO.Path]::GetFullPath('$(TargetDir)AccessHost/'))" />
+  </Target>
 </Project>

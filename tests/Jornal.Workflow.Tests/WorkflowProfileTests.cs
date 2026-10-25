@@ -12,6 +12,41 @@ namespace Jornal.Workflow.Tests;
 public sealed class WorkflowProfileTests
 {
     [Fact]
+    public async Task FreshInstallationStartsWithoutPeopleAndFirstProfileEnablesOrderCreation()
+    {
+        using var f = new ProjectFixture();
+        var empty = await f.Store.ReadAsync(TestContext.Current.CancellationToken);
+        Assert.Empty(empty.Employees); Assert.Empty(empty.Customers); Assert.Empty(empty.Orders); Assert.Empty(empty.Rates);
+        empty.Validate(); Assert.False(File.Exists(f.Store.FilePath));
+        await f.Model.ReloadCommand.ExecuteAsync(null);
+        Assert.Empty(f.Model.Employees); Assert.Null(f.Model.CurrentEmployee); Assert.Empty(f.Model.ManagerName);
+        Assert.Equal("Профиль не выбран", f.Model.ProfileName);
+        var settings = f.Model.CreateGeneralSettings(); Assert.Empty(settings.ProfileName); Assert.Empty(settings.EmployeeSuggestions);
+        f.Model.NewOrderCommand.Execute(null); Assert.False(f.Model.IsCreating); Assert.Contains("Выберите себя", f.Model.Error);
+        settings.ProfileName = "Лебедев"; await settings.SaveCommand.ExecuteAsync(null); Assert.Null(settings.Error);
+        var employee = Assert.Single((await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Employees);
+        Assert.Equal("Лебедев", employee.Name); Assert.NotEqual(Guid.Empty, employee.Id); Assert.Equal(employee.Id, f.Model.CurrentEmployee!.Id);
+        await f.Model.ReloadCommand.ExecuteAsync(null); Assert.Equal(employee.Id, f.Model.CurrentEmployee!.Id); Assert.Empty(f.Model.ManagerName);
+        f.Model.NewOrderCommand.Execute(null); Assert.True(f.Model.IsCreating); Assert.Empty(f.Model.NewManager); Assert.Empty(f.Model.NewCustomer);
+        f.Model.NewManager = "Смирнов"; f.Model.NewCustomer = "Первый заказчик"; await f.Model.CreateOrderCommand.ExecuteAsync(null);
+        Assert.Null(f.Model.Error);
+        var order = Assert.Single((await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders);
+        Assert.Equal(employee.Id, order.CreatedById); Assert.Equal(employee.Id, order.TechnologistId); Assert.NotEqual(employee.Id, order.ManagerId);
+    }
+
+    [Fact]
+    public async Task ExistingEmployeeCatalogIsPreservedAndNoFirstEmployeeIsSelectedAutomatically()
+    {
+        using var f = new ProjectFixture();
+        await f.Store.WriteAsync(0, _ => WorkflowTestData.CreateWorkspace(), TestContext.Current.CancellationToken);
+        var before = await File.ReadAllBytesAsync(f.Store.FilePath, TestContext.Current.CancellationToken);
+        await f.Model.ReloadCommand.ExecuteAsync(null);
+        Assert.Equal(3, f.Model.Employees.Count); Assert.Null(f.Model.CurrentEmployee); Assert.Empty(f.Model.ManagerName);
+        Assert.Equal(before, await File.ReadAllBytesAsync(f.Store.FilePath, TestContext.Current.CancellationToken));
+        Assert.Equal(3, f.Model.CreateGeneralSettings().EmployeeSuggestions.Count);
+    }
+
+    [Fact]
     public async Task FamiliarPresetsAndExactColorKeepSeparateEditorStateAcrossSettingsSections()
     {
         using var f = new ProjectFixture(); await f.InitializeAsync(); var settings = f.Model.CreateGeneralSettings();
@@ -45,6 +80,7 @@ public sealed class WorkflowProfileTests
         var before = await f.Store.ReadAsync(TestContext.Current.CancellationToken);
         var originalAuthor = before.Orders.Single().Specifications.Single().Current.AuthorId;
         var draft = f.Model.SelectedDraft!; draft.Coefficient = "1,3";
+        f.Model.ManagerName = "Несохранённый менеджер";
         var preferences = new WorkflowPreferencesStore(Path.Combine(f.DirectoryPath, "preferences.json"));
         preferences.Update(p => p with { DarkTheme = true });
         var settings = f.Model.CreateGeneralSettings(); settings.ProfileName = "Кузнецов";
@@ -58,6 +94,8 @@ public sealed class WorkflowProfileTests
         Assert.Equal(before.ProjectRoot, after.ProjectRoot); Assert.Equal(before.Orders.Single().Version, after.Orders.Single().Version);
         Assert.Equal(originalAuthor, after.Orders.Single().Specifications.Single().Current.AuthorId);
         Assert.Same(draft, f.Model.SelectedDraft); Assert.Equal("1,3", draft.Coefficient);
+        Assert.Equal("Несохранённый менеджер", f.Model.ManagerName);
+        Assert.Equal(before.Orders.Single().ManagerId, after.Orders.Single().ManagerId);
         Assert.Equal(employee.Id, preferences.Load().EmployeeId); Assert.True(preferences.Load().DarkTheme);
         var json = await File.ReadAllTextAsync(Path.Combine(f.DirectoryPath, "preferences.json"), TestContext.Current.CancellationToken);
         Assert.DoesNotContain("Кузнецов", json); Assert.DoesNotContain("Color", json);
@@ -98,11 +136,11 @@ public sealed class WorkflowProfileTests
         var oldOrder = book.Orders.Single(); var chosen = f.Model.CreateGeneralSettings(); chosen.ProfileName = "Иванов";
         await chosen.SaveCommand.ExecuteAsync(null); Assert.Null(chosen.Error);
         book = await f.Store.ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(oldOrder.Events, book.Orders.Single().Events); Assert.Equal(oldOrder.TechnologistId, book.Orders.Single().TechnologistId);
+        Assert.Equal(oldOrder.Version, book.Orders.Single().Version); Assert.Equal(oldOrder.TechnologistId, book.Orders.Single().TechnologistId);
         f.Model.NewOrderCommand.Execute(null); f.Model.NewManager = "Иванов"; f.Model.NewCustomer = "Новая заявка";
         await f.Model.CreateOrderCommand.ExecuteAsync(null); Assert.Null(f.Model.Error);
         var added = (await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders.Single(o => o.Id != oldOrder.Id);
-        Assert.Equal(f.Model.CurrentEmployee!.Id, added.TechnologistId); Assert.Equal(f.Model.CurrentEmployee.Id, added.Events.Single().ActorId);
+        Assert.Equal(f.Model.CurrentEmployee!.Id, added.TechnologistId); Assert.Equal(f.Model.CurrentEmployee.Id, added.CreatedById);
     }
 
     [Fact]
@@ -110,14 +148,14 @@ public sealed class WorkflowProfileTests
     {
         using var f = new ProjectFixture(); await f.InitializeAsync();
         var book = await f.Store.ReadAsync(TestContext.Current.CancellationToken);
-        var old = JsonSerializer.SerializeToNode(book)!.AsObject(); old["SchemaVersion"] = 5;
+        var old = WorkflowTestData.LegacyJson(book, 5);
         foreach (var employee in old["Employees"]!.AsArray()) employee!.AsObject().Remove("ColorArgb");
         var path = Path.Combine(f.DirectoryPath, "schema-five.json"); var original = old.ToJsonString();
         await File.WriteAllTextAsync(path, original, TestContext.Current.CancellationToken);
         var upgraded = await new LocalWorkflowWorkspaceStore(path).ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(7, upgraded.SchemaVersion); Assert.Equal(book.Version, upgraded.Version);
+        Assert.Equal(11, upgraded.SchemaVersion); Assert.Equal(book.Version, upgraded.Version);
         Assert.Equal(book.Orders.Single().ReferenceNumber, upgraded.Orders.Single().ReferenceNumber);
-        Assert.Equal(book.Orders.Single().Events, upgraded.Orders.Single().Events);
+        Assert.Equal(book.Orders.Single().CreatedById, upgraded.Orders.Single().CreatedById);
         Assert.Equal(original, await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(f.DirectoryPath, "schema-five.json.*.bak")), TestContext.Current.CancellationToken));
         var blocked = Path.Combine(f.DirectoryPath, "blocked");
         var client = Client(f, Path.Combine(blocked, "preferences.json")); await client.ReloadCommand.ExecuteAsync(null);

@@ -21,7 +21,11 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     private WorkflowProfileDraft _originalProfile;
     private bool _loading;
     private HsvColor _spectrum = new(Color.FromUInt32(0xFF628DB2));
-    public string WorkspacePath { get; }
+    public string WorkspacePath => Journal.WorkspacePath;
+    public string DatabaseDescription => Journal.DatabaseDescription;
+    public bool CanChooseDatabase => CanEdit && Journal.CanConnectDatabase;
+    public string DatabasePlatformHint => Journal.CanConnectDatabase ? "Создание новой базы не переносит тестовые заявки прототипа. Прежняя MDB подходит только для импорта цен." :
+        "Работа с MDB доступна в Windows через модуль Access x86. Microsoft Access устанавливать не требуется.";
     public WorkflowViewModel Journal { get; }
     public AppUpdatesViewModel Updates => Journal.Updates;
     public bool CanClose => !IsBusy && !IsExporting && (!Updates.IsApplying || Updates.RestartScheduled);
@@ -29,7 +33,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     public string PriceSourcePath => _snapshot().PriceSource?.Path ?? "Источник ещё не выбран";
     public string PriceSourceStatus => _snapshot().PriceSource is { } source ?
         $"Цены загружены {source.LoadedAt.ToLocalTime():dd.MM.yyyy HH:mm}" : "Прежние цены ещё не загружены";
-    public IReadOnlyList<string> EmployeeSuggestions => _employees.Select(e => e.Name).Order().ToArray();
+    public IReadOnlyList<string> EmployeeSuggestions => _employees.Where(e => e.CanWork).Select(e => e.Name).Order().ToArray();
     [ObservableProperty] private string _profileName = "";
     [ObservableProperty] private string _projectRoot = "";
     [ObservableProperty] private int _selectedSectionIndex;
@@ -69,6 +73,35 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     }
     public WorkflowEntrySuggestionsViewModel CreateEntrySuggestionsEditor() => new(_suggestions(), _saveSuggestions);
     public void RefreshEntrySuggestionsSummary() => OnPropertyChanged(nameof(EntrySuggestionsSummary));
+    public Employee? FindTechnologist(string? name)
+    {
+        var matches = _employees.Where(e => e.CanWork && e.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).Take(2).ToArray();
+        return matches.Length == 1 ? matches[0] : null;
+    }
+    public bool CanRemoveTechnologist(string? name) => CanEdit && FindTechnologist(name) is { } employee &&
+        employee.Id != Journal.CurrentEmployee?.Id && Journal.CurrentEmployee is not null;
+    public async Task RemoveTechnologistAsync(Employee expected, CancellationToken token = default)
+    {
+        if (!CanRemoveTechnologist(expected.Name)) return;
+        IsBusy = true; Error = null; Status = null;
+        try
+        {
+            Error = await Journal.ArchiveTechnologistAsync(expected, token);
+            if (Error is null)
+            {
+                _employees = _snapshot().Employees;
+                if (ProfileName.Trim().Equals(expected.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    _loading = true; ProfileName = _originalProfile.Name;
+                    ProfileSpectrumColor = new(Color.FromUInt32(_originalProfile.ColorArgb)); _loading = false;
+                }
+                OnPropertyChanged(nameof(EmployeeSuggestions)); Changed();
+                Status = "Технолог убран из списка. Заявки и расчёты сохранены.";
+            }
+        }
+        catch (OperationCanceledException) { Status = "Операция отменена. Обновите журнал перед повтором."; }
+        finally { IsBusy = false; }
+    }
     private bool CanSave => CanEdit && (IsProfile ? HasProfileChanges : IsStorage && HasRootChanges);
 
     public WorkflowSettingsViewModel(string workspacePath, Func<WorkflowWorkspace> snapshot,
@@ -77,10 +110,10 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
         Func<WorkflowEntrySuggestions?> suggestions,
         Func<WorkflowEntrySuggestions?, WorkflowEntrySuggestions, CancellationToken, Task<string?>> saveSuggestions, WorkflowViewModel journal)
     {
-        WorkspacePath = workspacePath; _snapshot = snapshot; _saveRoot = saveRoot; _profile = profile; _saveProfile = saveProfile;
+        _snapshot = snapshot; _saveRoot = saveRoot; _profile = profile; _saveProfile = saveProfile;
         _suggestions = suggestions; _saveSuggestions = saveSuggestions;
-        Journal = journal; Updates.PropertyChanged += OnUpdatesChanged;
-        _originalProfile = profile(); ReloadRoot(); ReloadProfile();
+        Journal = journal; Updates.PropertyChanged += OnUpdatesChanged; Journal.PropertyChanged += OnJournalAvailabilityChanged;
+        _originalProfile = profile(); ReloadRoot(); ReloadProfile(); ReloadResultPricing();
     }
     private void ReloadRoot()
     {
@@ -106,6 +139,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     }
     partial void OnSelectedSectionIndexChanged(int value)
     {
+        NormalizeResultPriceInput();
         foreach (var name in new[] { nameof(SaveLabel), nameof(IsSaveVisible), nameof(IsProfile), nameof(IsStorage), nameof(IsProgram), nameof(SectionTitle) }) OnPropertyChanged(name);
         SaveCommand.NotifyCanExecuteChanged(); Error = null; Status = null;
     }
@@ -119,11 +153,31 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     [RelayCommand] private void SelectProfileColor(WorkflowProfileColorOption? color)
     { if (CanEdit && color is not null) ProfileSpectrumColor = new(Color.FromUInt32(color.Argb)); }
     private void NotifyAvailability()
-    { OnPropertyChanged(nameof(CanEdit)); OnPropertyChanged(nameof(CanClose)); OnPropertyChanged(nameof(CanRestart)); OnPropertyChanged(nameof(CanExportDiagnostics)); SaveCommand.NotifyCanExecuteChanged(); }
+    { OnPropertyChanged(nameof(CanChooseDatabase)); OnPropertyChanged(nameof(CanEdit)); OnPropertyChanged(nameof(CanClose)); OnPropertyChanged(nameof(CanRestart)); OnPropertyChanged(nameof(CanExportDiagnostics)); SaveCommand.NotifyCanExecuteChanged(); }
+    public async Task ChooseDatabaseAsync(string path, bool create, CancellationToken token = default)
+    {
+        if (!CanChooseDatabase) return;
+        if (HasChanges) { Error = "Сохраните изменения настроек перед сменой базы или закройте настройки кнопкой «Отмена»."; return; }
+        IsBusy = true; Error = null; Status = null;
+        try
+        {
+            Error = await Journal.ConnectDatabaseAsync(path, create, token);
+            if (Error is null)
+            {
+                ReloadRoot(); ReloadProfile();
+                OnPropertyChanged(nameof(WorkspacePath)); OnPropertyChanged(nameof(DatabaseDescription));
+                Status = (create ? "База создана и подключена." : "База подключена.") +
+                    (Journal.CurrentEmployee is null ? " Выберите себя в разделе «Общие → Технолог»." : "");
+            }
+        }
+        finally { IsBusy = false; }
+    }
     private void OnUpdatesChanged(object? sender, PropertyChangedEventArgs e)
     { if (e.PropertyName is nameof(AppUpdatesViewModel.IsApplying) or nameof(AppUpdatesViewModel.RestartScheduled)) NotifyAvailability(); }
     partial void OnIsBusyChanged(bool value) => NotifyAvailability();
-    public void Dispose() => Updates.PropertyChanged -= OnUpdatesChanged;
+    private void OnJournalAvailabilityChanged(object? sender, PropertyChangedEventArgs e)
+    { if (e.PropertyName == nameof(WorkflowViewModel.CanUse)) NotifyAvailability(); }
+    public void Dispose() { Updates.PropertyChanged -= OnUpdatesChanged; Journal.PropertyChanged -= OnJournalAvailabilityChanged; }
     [RelayCommand(CanExecute = nameof(CanSave))]
     private async Task SaveAsync(CancellationToken token)
     {

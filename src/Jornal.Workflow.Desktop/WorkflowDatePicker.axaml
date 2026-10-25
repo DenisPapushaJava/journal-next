@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Jornal.Workflow.Desktop" xmlns:ui="using:Jornal.Desktop.Controls"
+             x:Class="Jornal.Workflow.Desktop.WorkflowDatePicker" x:Name="Picker" x:DataType="vm:WorkflowDatePicker">
+  <UserControl.Styles>
+    <Style Selector="FlyoutPresenter.workflowCalendar">
+      <Setter Property="Padding" Value="12" /><Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Background" Value="{DynamicResource JournalSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource JournalControlBorder}" />
+    </Style>
+    <Style Selector="Button.calendarDay">
+      <Setter Property="Height" Value="38" /><Setter Property="Margin" Value="1" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="8" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="Transparent" /><Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+    </Style>
+    <Style Selector="Button.calendarDay.outside"><Setter Property="Foreground" Value="{DynamicResource JournalMuted}" /></Style>
+    <Style Selector="Button.calendarDay.today"><Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" /></Style>
+    <Style Selector="Button.calendarDay.selected">
+      <Setter Property="Background" Value="{DynamicResource JournalAccent}" /><Setter Property="Foreground" Value="{DynamicResource JournalOnAccent}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+  </UserControl.Styles>
+  <ui:JournalButton x:Name="DateButton" Icon="calendar-days" Label="{Binding Calendar.Caption, ElementName=Picker}"
+                    HorizontalAlignment="Stretch" AutomationProperties.Name="Выбрать дату заявок" ToolTip.Tip="Выбрать дату создания заявок">
+    <Button.Flyout>
+      <Flyout Placement="BottomEdgeAlignedLeft" FlyoutPresenterClasses="workflowCalendar" Opened="OnOpened" Closed="OnClosed">
+        <Grid x:Name="CalendarPanel" DataContext="{Binding Calendar, ElementName=Picker}" x:DataType="vm:WorkflowCalendarViewModel"
+              Width="294" RowDefinitions="Auto,8,Auto,4,Auto" KeyDown="OnCalendarKeyDown">
+          <Grid ColumnDefinitions="38,*,38">
+            <ui:JournalButton x:Name="PreviousMonth" Icon="chevron-left" IconOnly="True" Width="36" Height="36"
+                              IsEnabled="{Binding CanPrevious}" Click="OnPrevious" AutomationProperties.Name="Предыдущий период" />
+            <Button x:Name="CalendarHeading" Grid.Column="1" Classes="command" Content="{Binding Title}" Click="OnHeading"
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" FontWeight="SemiBold" Background="Transparent"
+                    AutomationProperties.Name="Выбрать месяц или год" />
+            <ui:JournalButton x:Name="NextMonth" Grid.Column="2" Icon="chevron-right" IconOnly="True" Width="36" Height="36"
+                              IsEnabled="{Binding CanNext}" Click="OnNext" AutomationProperties.Name="Следующий период" />
+          </Grid>
+          <ItemsControl Grid.Row="2" ItemsSource="{Binding Weekdays}" IsVisible="{Binding IsDays}" IsHitTestVisible="False">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="7" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String"><TextBlock Text="{Binding}" HorizontalAlignment="Center" Margin="0,4" FontSize="12" Foreground="{DynamicResource JournalMuted}" /></DataTemplate></ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <ItemsControl x:Name="CalendarCells" Grid.Row="4" ItemsSource="{Binding Cells}">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="{Binding Columns}" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:WorkflowCalendarCell">
+              <Button Classes="calendarDay" Classes.outside="{Binding IsOutside}" Classes.today="{Binding IsToday}" Classes.selected="{Binding IsSelected}"
+                      Content="{Binding Caption}" IsEnabled="{Binding IsEnabled}" AutomationProperties.Name="{Binding Description}" Click="OnDay" />
+            </DataTemplate></ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </Grid>
+      </Flyout>
+    </Button.Flyout>
+  </ui:JournalButton>
+</UserControl>

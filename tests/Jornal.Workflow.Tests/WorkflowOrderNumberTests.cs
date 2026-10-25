@@ -13,14 +13,14 @@ public sealed class WorkflowOrderNumberTests
     public void SameSecondNumbersAreUniqueAndDoNotChangeWhenOrderDetailsAreEdited()
     {
         var at = DateTimeOffset.Parse("2026-10-24T14:35:27+03:00", CultureInfo.InvariantCulture);
-        var book = WorkflowWorkspace.Empty; var actor = book.Employees[0].Id;
+        var book = WorkflowTestData.CreateWorkspace(); var actor = book.Employees[0].Id;
         book = WorkflowChanges.CreateOrder(book, "ПТЕК", actor, actor, actor, at, out var first);
         book = WorkflowChanges.CreateOrder(book, "Другой заказчик", actor, actor, actor, at.AddMilliseconds(123), out var second);
         book = WorkflowChanges.CreateOrder(book, "Третий заказчик", actor, actor, actor, at.AddSeconds(1), out var third);
         Assert.Equal("2026-10-24-143527", book.Orders.Single(o => o.Id == first).DisplayNumber);
         Assert.Equal("2026-10-24-143527-02", book.Orders.Single(o => o.Id == second).DisplayNumber);
         Assert.Equal("2026-10-24-143528", book.Orders.Single(o => o.Id == third).DisplayNumber);
-        book = WorkflowChanges.UpdateOrder(book, first, 1, actor, actor, "БЛЦБ-7", 2026, actor, at.AddDays(5));
+        book = WorkflowChanges.UpdateOrder(book, first, 1, actor, actor, "БЛЦБ-7", actor, at.AddDays(5));
         Assert.Equal("2026-10-24-143527", book.Orders.Single(o => o.Id == first).DisplayNumber);
         Assert.Equal(1, book.Orders.Single(o => o.Id == first).Number);
         book.Validate();
@@ -43,13 +43,13 @@ public sealed class WorkflowOrderNumberTests
         var before = await f.Store.ReadAsync(TestContext.Current.CancellationToken); var first = before.Orders.Single();
         before = WorkflowChanges.CreateOrder(before, "Вторая заявка", first.ManagerId, first.TechnologistId,
             first.TechnologistId, first.CreatedAt, out var secondId);
-        var legacy = JsonSerializer.SerializeToNode(before)!.AsObject(); legacy["SchemaVersion"] = 4;
+        var legacy = WorkflowTestData.LegacyJson(before, 4);
         foreach (var order in legacy["Orders"]!.AsArray()) order!.AsObject().Remove("ReferenceNumber");
         var path = Path.Combine(f.DirectoryPath, "schema-four.json"); var original = legacy.ToJsonString();
         await File.WriteAllTextAsync(path, original, TestContext.Current.CancellationToken);
         var store = new LocalWorkflowWorkspaceStore(path);
         var migrated = await store.ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(7, migrated.SchemaVersion); Assert.Equal(before.Version, migrated.Version);
+        Assert.Equal(11, migrated.SchemaVersion); Assert.Equal(before.Version, migrated.Version);
         var stem = first.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd-HHmmss", CultureInfo.InvariantCulture);
         Assert.Equal(stem, migrated.Orders.Single(o => o.Id == first.Id).ReferenceNumber);
         Assert.Equal(stem + "-02", migrated.Orders.Single(o => o.Id == secondId).ReferenceNumber);
@@ -58,10 +58,10 @@ public sealed class WorkflowOrderNumberTests
             var after = migrated.Orders.Single(o => o.Id == old.Id);
             Assert.Equal(old.Number, after.Number); Assert.Equal(old.Version, after.Version);
             Assert.Equal(old.CreatedAt, after.CreatedAt); Assert.Equal(old.UpdatedAt, after.UpdatedAt);
-            Assert.Equal(old.Events, after.Events); Assert.Equal(old.Items, after.Items); Assert.Equal(old.Projects, after.Projects);
+            Assert.Equal(old.Items, after.Items); Assert.Equal(old.Projects, after.Projects);
             Assert.Equal(old.CuttingTotal, after.CuttingTotal);
             foreach (var spec in old.Specifications)
-                Assert.Equal(spec.Revisions, after.Specifications.Single(s => s.Id == spec.Id).Revisions);
+                Assert.Equal(spec.Current, after.Specifications.Single(s => s.Id == spec.Id).Current);
         }
         var revision = migrated.Orders.Single(o => o.Id == first.Id).Specifications.Single().Current;
         Assert.True(File.Exists(project.NativePath)); Assert.True(File.Exists(revision.SourcePath)); Assert.True(File.Exists(revision.Report!.ArchivePath));

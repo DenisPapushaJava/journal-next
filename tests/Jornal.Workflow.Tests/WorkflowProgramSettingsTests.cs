@@ -87,7 +87,7 @@ public sealed class WorkflowProgramSettingsTests
             Assert.Equal(preview, new JsonAppUpdatePreferencesStore(updatePreferences).Load().Preferences!.IncludePreview);
             Assert.Equal("Не менять настройки прежнего Journal", await File.ReadAllTextAsync(legacyPreferences, TestContext.Current.CancellationToken));
             await updates.CheckCommand.ExecuteAsync(null); await updates.DownloadCommand.ExecuteAsync(null); Assert.True(updates.CanInstall);
-            client.AddManualSpecificationCommand.Execute(null); client.SelectedDraft!.Material = "Не потерять ввод";
+            client.AddLegacySpecificationDraft(); client.SelectedDraft!.Material = "Не потерять ввод";
             Assert.True(client.HasPendingEdits);
             updates.InstallCommand.Execute(null); Assert.Equal(0, updater.Restarts); Assert.True(window.IsVisible);
             client.CancelDraftCommand.Execute(null);

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Jornal.Workflow.Core;
 
 namespace Jornal.Workflow.Desktop;
 
@@ -7,9 +8,20 @@ public sealed record WorkflowPreferences(bool DarkTheme = false)
 {
     public Guid? EmployeeId { get; init; }
     public WorkflowEntrySuggestions? EntrySuggestions { get; init; }
+    public WorkflowResultPricing? ResultPricing { get; init; }
+    public string? DatabasePath { get; init; }
+    public Guid? DatabaseId { get; init; }
+    public Dictionary<string, Guid?>? DatabaseEmployees { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore] public string SourceKey => DatabaseId?.ToString("N") ?? "local";
     public void Validate()
     {
         if (EmployeeId == Guid.Empty) throw new InvalidDataException("Проверьте локальный выбор технолога.");
+        if (DatabaseId == Guid.Empty || DatabasePath is not null &&
+            (!Path.IsPathFullyQualified(DatabasePath) || !Path.GetExtension(DatabasePath).Equals(".mdb", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidDataException("Проверьте локальное подключение MDB.");
+        if (DatabaseEmployees is { } people && (people.Count > 64 || people.Any(p => p.Value == Guid.Empty ||
+            p.Key != "local" && !Guid.TryParseExact(p.Key, "N", out _))))
+            throw new InvalidDataException("Проверьте локальные профили баз.");
         try { EntrySuggestions?.Normalize(); }
         catch (ArgumentException ex) { throw new InvalidDataException("Проверьте локальные списки ввода: " + ex.Message, ex); }
     }
@@ -25,7 +37,7 @@ public sealed class WorkflowPreferencesStore(string path)
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
             if (stream.Length > MaximumBytes) throw new InvalidDataException("Настройки нового Journal слишком велики.");
             var value = JsonSerializer.Deserialize<WorkflowPreferences>(stream) ?? new(); value.Validate();
-            return value with { EntrySuggestions = value.EntrySuggestions?.Normalize() };
+            return value with { EntrySuggestions = value.EntrySuggestions?.Normalize(), ResultPricing = value.ResultPricing?.Normalize() };
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) { return new(); }
     }
@@ -38,7 +50,7 @@ public sealed class WorkflowPreferencesStore(string path)
         using var lease = new FileStream(path + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var current = Load(); var next = change(current); next.Validate();
         if (ReferenceEquals(current, next)) return current;
-        next = next with { EntrySuggestions = next.EntrySuggestions?.Normalize() }; SaveCore(next); return next;
+        next = next with { EntrySuggestions = next.EntrySuggestions?.Normalize(), ResultPricing = next.ResultPricing?.Normalize() }; SaveCore(next); return next;
     }
 
     private void SaveCore(WorkflowPreferences preferences)
@@ -63,12 +75,14 @@ public sealed record WorkflowRestartResult(Guid OrderId, long Version, string Te
 public sealed record WorkflowRestartDraft(int Schema, Guid? OrderId, string ResultText)
 {
     public WorkflowRestartResult[]? Results { get; init; }
+    public Guid? DatabaseId { get; init; }
 }
 public sealed class WorkflowRestartStore(string path)
 {
     public void Save(WorkflowRestartDraft draft)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        using var lease = new FileStream(path + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
@@ -82,10 +96,11 @@ public sealed class WorkflowRestartStore(string path)
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
-    public WorkflowRestartDraft? Take()
+    public WorkflowRestartDraft? Take(Guid? databaseId = null, bool remove = true, WorkflowRestartDraft? expected = null)
     {
         try
         {
+            using var lease = new FileStream(path + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
             WorkflowRestartDraft draft;
             using (var stream = File.OpenRead(path))
             {
@@ -96,8 +111,11 @@ public sealed class WorkflowRestartStore(string path)
                     r.Version < 0 || r.Text is null) || results.Select(r => r.OrderId).Distinct().Count() != results.Length))
                     throw new InvalidDataException("Повреждены результаты карточек перед обновлением.");
             }
-            File.Delete(path); return draft;
+            if (draft.DatabaseId != databaseId) return null;
+            if (expected is not null && JsonSerializer.Serialize(expected) != JsonSerializer.Serialize(draft)) return null;
+            if (remove) File.Delete(path);
+            return draft;
         }
-        catch (FileNotFoundException) { return null; }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) { return null; }
     }
 }

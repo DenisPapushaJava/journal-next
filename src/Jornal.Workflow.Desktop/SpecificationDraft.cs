@@ -11,7 +11,7 @@ public partial class SpecificationDraft : ObservableObject
 {
     private static readonly CultureInfo Culture = CultureInfo.GetCultureInfo("ru-RU");
     public Guid Id { get; init; } = Guid.NewGuid();
-    public SpecificationRevision? Saved { get; }
+    public SpecificationState? Saved { get; }
     public string? SourcePath { get; set; }
     private readonly string? _nativeProjectPath;
     public string? FolderPath => Path.GetDirectoryName(_nativeProjectPath ?? SourcePath);
@@ -60,6 +60,7 @@ public partial class SpecificationDraft : ObservableObject
     [ObservableProperty] private string _duration = "";
     [ObservableProperty] private string _coefficient = "1";
     [ObservableProperty] private bool _hasBending;
+    [ObservableProperty] private bool _hasChamfer;
     [ObservableProperty] private string? _comment;
     [ObservableProperty] private bool _materialNeedsReview;
     [ObservableProperty] private bool _materialConfirmed;
@@ -68,7 +69,9 @@ public partial class SpecificationDraft : ObservableObject
     [ObservableProperty] private string? _calculationError;
     public CuttingCalculation? Quote { get; private set; }
     public string Caption => string.IsNullOrWhiteSpace(Number) ? "Новая спецификация" : Number;
-    public string VersionText => Saved is null ? "Не сохранена" : $"Версия {Saved.Number}";
+    public string SaveStatus => Saved is null ? "Не сохранена" : $"Сохранена {Saved.SavedAt.ToLocalTime():dd.MM.yyyy HH:mm}";
+    public string ProjectSummary => $"{Machine} · {Thickness} мм · № {Number} · {Date}";
+    public string RateSummary => $"Тариф: {PricePerMeter} ₽/м · {PricePerPierce} ₽/пробивку";
     public string TotalText => Quote is { } q ? Money(q.TotalCost) + " ₽" : "Не рассчитано";
     public string Breakdown => Quote is { } q ? $"Метры: {Money(q.LengthCost)} ₽\nПробивки: {Money(q.PierceCost)} ₽\nКоэффициент: {Coefficient}" : "";
     public string SourceName => SourcePath is null ? "Ручной ввод" : Path.GetFileName(SourcePath);
@@ -96,7 +99,7 @@ public partial class SpecificationDraft : ObservableObject
         BlankSize = p.BlankSize; Quantity = N(p.BlankQuantity); Length = N(p.CutLengthMeters);
         Pierces = p.PierceCount?.ToString(Culture) ?? ""; Weight = p.WeightKg is { } w ? N(w) : "";
         Duration = p.DurationSeconds is { } seconds ? FormatDuration(seconds) : "";
-        Coefficient = N(p.ManualCoefficient); HasBending = p.HasBending; Comment = p.Comment;
+        Coefficient = N(p.ManualCoefficient); HasBending = p.HasBending; HasChamfer = p.HasChamfer; Comment = p.Comment;
         _rate = new(r.Calculation.RateId, p.Machine, p.MaterialGroup, p.ThicknessMm, r.Calculation.PricePerMeter, r.Calculation.PricePerPierce) { MachineId = p.MachineId };
         PricePerMeter = N(_rate.PricePerMeter); PricePerPierce = N(_rate.PricePerPierce!.Value);
         _loading = false; Recalculate();
@@ -108,21 +111,25 @@ public partial class SpecificationDraft : ObservableObject
     protected override void OnPropertyChanged(PropertyChangedEventArgs e)
     {
         base.OnPropertyChanged(e);
-        if (_loading || e.PropertyName is nameof(Caption) or nameof(VersionText) or nameof(TotalText) or nameof(Breakdown) or nameof(IsDirty) or nameof(CanSave) or nameof(CalculationError)) return;
+        if (_loading || e.PropertyName is nameof(Caption) or nameof(SaveStatus) or nameof(TotalText) or nameof(Breakdown) or nameof(IsDirty) or nameof(CanSave) or nameof(CalculationError)) return;
         if (e.PropertyName == nameof(Number)) base.OnPropertyChanged(new PropertyChangedEventArgs(nameof(Caption)));
+        if (e.PropertyName is nameof(Machine) or nameof(Thickness) or nameof(Number) or nameof(Date))
+            base.OnPropertyChanged(new PropertyChangedEventArgs(nameof(ProjectSummary)));
+        if (e.PropertyName is nameof(PricePerMeter) or nameof(PricePerPierce))
+            base.OnPropertyChanged(new PropertyChangedEventArgs(nameof(RateSummary)));
         Recalculate();
     }
     public CuttingParameters Parameters() => new(Machine?.Trim() ?? "", Material?.Trim() ?? "", MaterialGroup ?? "", Decimal(Thickness, "толщину"), BlankSize ?? "",
         Decimal(Quantity, "количество"), Decimal(Length, "длину реза"), string.IsNullOrWhiteSpace(Pierces) ? null : Integer(Pierces),
         string.IsNullOrWhiteSpace(Weight) ? null : Decimal(Weight, "вес"), ParseDuration(Duration), Decimal(Coefficient, "коэффициент"),
-        HasBending, string.IsNullOrWhiteSpace(Comment) ? null : Comment.Trim(), MaterialNeedsReview && !MaterialConfirmed) { MachineId = MachineId };
+        HasBending, string.IsNullOrWhiteSpace(Comment) ? null : Comment.Trim(), MaterialNeedsReview && !MaterialConfirmed) { MachineId = MachineId, HasChamfer = HasChamfer };
     public DateOnly DocumentDate() => DateOnly.TryParseExact(Date, "dd.MM.yyyy", Culture, DateTimeStyles.None, out var date)
         ? date : throw new WorkflowValidationException("Укажите дату спецификации в формате ДД.ММ.ГГГГ.");
     public CuttingRate Rate()
     {
         if (_rate is null || _rate.MachineId != MachineId || _rate.MaterialGroup != MaterialGroup || _rate.ThicknessMm != Decimal(Thickness, "толщину") ||
             _rate.PricePerMeter != Decimal(PricePerMeter, "цену метра") || _rate.PricePerPierce != Decimal(PricePerPierce, "цену пробивки"))
-            throw new WorkflowValidationException("Сначала сохраните тариф или обновите его из прайса.");
+            throw new WorkflowValidationException("Обновите цены из прайса.");
         return _rate;
     }
     public CuttingRate NewRate() => new(Guid.NewGuid(), Machine?.Trim() ?? "", MaterialGroup ?? "", Decimal(Thickness, "толщину"),

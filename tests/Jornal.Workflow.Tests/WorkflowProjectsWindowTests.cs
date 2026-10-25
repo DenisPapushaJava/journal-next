@@ -37,7 +37,7 @@ public sealed class WorkflowProjectsWindowTests
         f.Model.SelectedOrder = f.Model.Orders.Single(o => o.Order.Id == originalId);
         await ProjectFixture.WriteAsync(a, 20000);
         var review = await f.ReviewAsync();
-        var preferences = new WorkflowPreferencesStore(Path.Combine(f.DirectoryPath, "preferences.json")); preferences.Save(new(dark) { EmployeeId = Jornal.Workflow.Core.WorkflowWorkspace.Empty.Employees[1].Id });
+        var preferences = new WorkflowPreferencesStore(Path.Combine(f.DirectoryPath, "preferences.json")); preferences.Save(new(dark) { EmployeeId = WorkflowTestData.CreateWorkspace().Employees[1].Id });
         var window = new WorkflowWindow(preferences) { DataContext = f.Model, Width = windowWidth, Height = 768 };
         var reviewWindow = new WorkflowReportReviewWindow { DataContext = review, RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light };
         try
@@ -85,8 +85,8 @@ public sealed class WorkflowProjectsWindowTests
             Dispatcher.UIThread.RunJobs(); SaveFrame(window, dark, "workflow-journal");
             window.FindControl<TabControl>("WorkflowOrderTabs")!.SelectedIndex = 1;
             f.Model.ResultText = "Результат для письма\n"; Dispatcher.UIThread.RunJobs();
-            Assert.Equal(3, f.Model.OrderTabIndex);
-            f.Model.OrderTabIndex = 1; Dispatcher.UIThread.RunJobs();
+            Assert.Equal(1, f.Model.OrderTabIndex);
+            f.Model.OrderTabIndex = 0; Dispatcher.UIThread.RunJobs();
             InWindow(window.FindControl<Button>("SaveWorkflowSpecification")!, window);
             SaveFrame(window, dark, "workflow-order-details");
             Assert.Equal("Результат для письма\n", f.Model.ResultText);

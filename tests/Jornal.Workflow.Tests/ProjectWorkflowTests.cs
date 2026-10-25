@@ -13,15 +13,15 @@ internal sealed class ProjectFixture : IDisposable
     public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), "workflow-projects-" + Guid.NewGuid().ToString("N"));
     public LocalWorkflowWorkspaceStore Store { get; }
     public WorkflowViewModel Model { get; }
-    public ProjectFixture()
+    public ProjectFixture(Func<LocalWorkflowWorkspaceStore, WorkflowViewModel>? modelFactory = null)
     {
         Directory.CreateDirectory(DirectoryPath);
         Store = new(Path.Combine(DirectoryPath, "workspace.json"));
-        Model = new(Store, new AppUpdatesViewModel(new WorkflowAppUpdater()));
+        Model = modelFactory?.Invoke(Store) ?? new(Store, new AppUpdatesViewModel(new WorkflowAppUpdater()));
     }
     public async Task InitializeAsync()
     {
-        var book = WorkflowWorkspace.Empty;
+        var book = WorkflowTestData.CreateWorkspace();
         book = WorkflowProjects.SetRoot(book, Path.Combine(DirectoryPath, "projects"));
         foreach (var machine in book.Machines)
             book = WorkflowChanges.SetRate(book, new(Guid.NewGuid(), machine.Name, "Базовая", 6, 100, 1) { MachineId = machine.Id });
@@ -90,7 +90,7 @@ public sealed class ProjectWorkflowTests
     }
 
     [Fact]
-    public async Task ChangedBytesWithSameSizeAndMtimeProduceHistoryEvenWhenTotalsAreEqual()
+    public async Task ChangedBytesWithSameSizeAndMtimeUpdateAcceptedSnapshotEvenWhenTotalsAreEqual()
     {
         using var f = new ProjectFixture(); await f.InitializeAsync(); var p = await f.AddAsync();
         await ProjectFixture.WriteAsync(p, tail: "<!-- aaa -->"); await f.AcceptAsync();
@@ -101,7 +101,7 @@ public sealed class ProjectWorkflowTests
         Assert.Equal(size, new FileInfo(source).Length);
         await f.AcceptAsync();
         var spec = (await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders[0].Specifications[0];
-        Assert.Equal(2, spec.Revisions.Length); Assert.Equal(old.Calculation, spec.Current.Calculation);
+        Assert.Single((await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders[0].Specifications); Assert.Equal(old.Calculation, spec.Current.Calculation);
         Assert.NotEqual(old.Report!.Sha256, spec.Current.Report!.Sha256);
         Assert.True(File.Exists(old.Report.ArchivePath));
         Assert.Equal("Ручной текст\n", f.Model.ResultText); Assert.True(f.Model.ResultIsStale);
@@ -175,7 +175,7 @@ public sealed class ProjectWorkflowTests
         File.Delete(Path.Combine(Path.GetDirectoryName(p.NativePath)!, "исправленный.htm"));
         await File.WriteAllTextAsync(ProjectFixture.ReportPath(p), ProjectFixture.Html(p).Replace(p.Name, "6 мм 2000-01-01-010101--ЛАЗЕР"), TestContext.Current.CancellationToken);
         review = await f.ReviewAsync(); Assert.Empty(Assert.Single(review.Candidates).Choices);
-        Assert.Single((await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders[0].Specifications[0].Revisions);
+        Assert.Single((await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders[0].Specifications);
     }
 
     [Fact]
@@ -211,10 +211,10 @@ public sealed class ProjectWorkflowTests
         await ProjectFixture.WriteAsync(p, 20000); preview = await f.ReviewAsync();
         book = await f.Store.ReadAsync(TestContext.Current.CancellationToken); o = book.Orders.Single(order => order.Id == o.Id);
         await f.Store.WriteAsync(book.Version, w => WorkflowChanges.UpdateOrder(w, o.Id, o.Version, o.ManagerId,
-            o.TechnologistId, "123", 2026, o.TechnologistId, DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
+            o.TechnologistId, "123", o.TechnologistId, DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
         await preview.SaveCommand.ExecuteAsync(null); Assert.NotNull(preview.Error); Assert.False(preview.WasSaved);
         Assert.NotNull(preview.Selected!.Draft);
-        Assert.Single((await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders.Single(order => order.Id == o.Id).Specifications[0].Revisions);
+        Assert.Single((await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders.Single(order => order.Id == o.Id).Specifications);
     }
 
     [Fact]
@@ -251,9 +251,9 @@ public sealed class ProjectWorkflowTests
         var schema2 = book with { SchemaVersion = 2, Orders = book.Orders.Select(o => o with { Items = [], Projects = [] }).ToArray() };
         var path = Path.Combine(f.DirectoryPath, "old-workspace.json"); var json = JsonSerializer.Serialize(schema2); await File.WriteAllTextAsync(path, json, TestContext.Current.CancellationToken);
         var migrated = await new LocalWorkflowWorkspaceStore(path).ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(7, migrated.SchemaVersion); var project = Assert.Single(migrated.Orders[0].Projects);
+        Assert.Equal(11, migrated.SchemaVersion); var project = Assert.Single(migrated.Orders[0].Projects);
         Assert.Equal(old.Id, project.Id); Assert.Null(project.NativePath);
-        Assert.Equal(old.Current.Id, migrated.Orders[0].Specifications[0].Current.Id);
+        Assert.Equal(old.Current, migrated.Orders[0].Specifications[0].Current);
         Assert.Equal(book.Orders[0].CuttingTotal, migrated.Orders[0].CuttingTotal);
         var backup = Assert.Single(Directory.GetFiles(f.DirectoryPath, "old-workspace.json.*.bak"));
         Assert.Equal(json, await File.ReadAllTextAsync(backup, TestContext.Current.CancellationToken));
@@ -315,7 +315,7 @@ public sealed class ProjectWorkflowTests
         await f.Model.ReloadCommand.ExecuteAsync(null); Assert.Null(f.Model.Error);
         await File.WriteAllTextAsync(ProjectFixture.ReportPath(p), ProjectFixture.Html(p).Replace("--ЛАЗЕР", "--ПЛАЗМА"), TestContext.Current.CancellationToken);
         var review = await f.ReviewAsync(); Assert.Empty(Assert.Single(review.Candidates).Choices);
-        Assert.Single((await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders[0].Specifications[0].Revisions);
+        Assert.Single((await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders[0].Specifications);
     }
 
     [Fact]

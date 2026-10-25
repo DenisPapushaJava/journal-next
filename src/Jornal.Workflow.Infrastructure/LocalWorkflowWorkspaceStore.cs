@@ -1,10 +1,11 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Jornal.Workflow.Core;
 
 namespace Jornal.Workflow.Infrastructure;
 
 // Только локальная разработка. Не является реализацией общей сетевой БД.
-public sealed class LocalWorkflowWorkspaceStore(string path)
+public sealed class LocalWorkflowWorkspaceStore(string path) : IWorkflowWorkspaceStore
 {
     private const long MaximumSize = 16 * 1024 * 1024;
     private readonly string _path = ValidatePath(path);
@@ -30,6 +31,15 @@ public sealed class LocalWorkflowWorkspaceStore(string path)
 
     public Task<WorkflowWorkspace> SaveEmployeeProfileAsync(Employee? expected, string name, uint color, CancellationToken token = default) =>
         WriteCoreAsync(null, book => WorkflowChanges.SaveEmployeeProfile(book, expected, name, color), token, false);
+
+    public Task<WorkflowWorkspace> ArchiveTechnologistAsync(Employee expected, Guid actor, CancellationToken token = default) =>
+        WriteCoreAsync(null, book => WorkflowChanges.ArchiveTechnologist(book, expected, actor), token, false);
+
+    public Task<WorkflowWorkspace> PurgeTrashedOrdersAsync(IReadOnlyList<WorkflowTrashTarget> targets, Guid actor, CancellationToken token = default)
+    {
+        var frozen = targets.ToArray();
+        return WriteCoreAsync(null, book => WorkflowChanges.PurgeTrashedOrders(book, frozen, actor), token, false);
+    }
 
     public async Task<(WorkflowWorkspace Workspace, Guid OrderId)> CreateOrderFromNamesAsync(string manager, string customer,
         Guid actor, DateTimeOffset at, CancellationToken token = default)
@@ -105,12 +115,15 @@ public sealed class LocalWorkflowWorkspaceStore(string path)
         using (source)
         {
             if (source.Length > MaximumSize) throw new IOException("Локальные данные разработки превышают допустимый размер.");
-            value = JsonSerializer.Deserialize<WorkflowWorkspace>(source) ?? throw new WorkflowValidationException("Файл локальных данных пуст.");
-        }
-        if (value.SchemaVersion is 1 or 2 or 3 or 4 or 5 or 6)
-        {
-            value = WorkflowWorkspaceMigration.Upgrade(value);
-            Backup(); Save(value);
+            var data = JsonNode.Parse(source) as JsonObject ?? throw new WorkflowValidationException("Файл локальных данных пуст.");
+            var schema = data["SchemaVersion"]?.GetValue<int>() ?? 0;
+            value = schema == 11 ? data.Deserialize<WorkflowWorkspace>() ?? throw new WorkflowValidationException("Файл локальных данных пуст.") :
+                WorkflowWorkspaceMigration.Upgrade(data);
+            if (schema != 11)
+            {
+                value.Validate();
+                source.Dispose(); Backup(); Save(value);
+            }
         }
         value.Validate(); return value;
     }

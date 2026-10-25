@@ -43,9 +43,9 @@
           <DataGridTextColumn Header="Резка" Binding="{Binding Total}" Width="108" />
         </DataGrid.Columns>
       </DataGrid>
-      <GridSplitter x:Name="ReviewPaneSplitter" Grid.Column="1" Width="6" HorizontalAlignment="Center"
+      <GridSplitter x:Name="ReviewPaneSplitter" Classes="workflow-splitter columns" Grid.Column="1" Width="6" HorizontalAlignment="Center"
                     ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" KeyboardIncrement="16"
-                    Background="{DynamicResource JournalBorder}" ToolTip.Tip="Ширина списка и карточки · ← →"
+                    ToolTip.Tip="Ширина списка и карточки · ← →"
                     AutomationProperties.Name="Ширина списка проектов и карточки" />
       <Border x:Name="ReviewDetailsPanel" Grid.Column="2" Classes="panel" Padding="16">
         <Grid RowDefinitions="Auto,12,*,12,Auto">
@@ -96,7 +96,10 @@
                   <TextBox Text="{Binding MaterialGroup}" />
                 </StackPanel>
                 <CheckBox Content="Материал проверен" IsVisible="{Binding MaterialNeedsReview}" IsChecked="{Binding MaterialConfirmed}" />
-                <CheckBox Content="Гибка" IsChecked="{Binding HasBending}" />
+                <StackPanel Orientation="Horizontal" Spacing="16">
+                  <CheckBox x:Name="ReviewHasChamfer" Content="Фаска" IsChecked="{Binding HasChamfer}" />
+                  <CheckBox Content="Гибка" IsChecked="{Binding HasBending}" />
+                </StackPanel>
                 <Expander Header="Номер и дата спецификации" HorizontalAlignment="Stretch">
                   <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,4,Auto" Margin="0,8,0,0">
                     <TextBlock Text="Номер спецификации" Classes="muted" /><TextBlock Grid.Column="2" Text="Дата" Classes="muted" />

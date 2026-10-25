@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Journal Next: запуск и отладка",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "Journal Next: сборка Debug",
+      "program": "${workspaceFolder}/src/Jornal.Workflow.Desktop/bin/Debug/net10.0/Jornal.Workflow.Desktop.dll",
+      "cwd": "${workspaceFolder}",
+      "args": [],
+      "console": "integratedTerminal",
+      "stopAtEntry": false,
+      "justMyCode": true,
+      "linux": {
+        "env": {
+          "DOTNET_ROOT": "${env:HOME}/.dotnet"
+        }
+      }
+    }
+  ]
+}

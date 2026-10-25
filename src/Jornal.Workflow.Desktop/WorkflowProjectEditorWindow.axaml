@@ -1,0 +1,36 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Workflow.Desktop" xmlns:core="using:Jornal.Workflow.Core" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Workflow.Desktop.WorkflowProjectEditorWindow" x:DataType="vm:WorkflowProjectEditorViewModel"
+        Title="Изменить параметры проекта" Width="660" MinWidth="560" Height="460" MinHeight="430"
+        Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
+  <Grid Margin="24" RowDefinitions="*,16,Auto">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Spacing="12">
+        <TextBlock Text="Параметры заготовки" FontSize="20" FontWeight="SemiBold" />
+        <TextBlock Text="{Binding CurrentName}" Classes="muted" TextWrapping="Wrap" />
+        <Grid ColumnDefinitions="*,16,140" RowDefinitions="Auto,4,Auto">
+          <TextBlock Text="Станок" Classes="muted" /><TextBlock Grid.Column="2" Text="Толщина, мм" Classes="muted" />
+          <ComboBox x:Name="EditWorkflowProjectMachine" Grid.Row="2" ItemsSource="{Binding Machines}" SelectedItem="{Binding Machine}"
+                    IsEnabled="{Binding CanEdit}" HorizontalAlignment="Stretch" AutomationProperties.Name="Станок проекта">
+            <ComboBox.ItemTemplate><DataTemplate x:DataType="core:WorkflowMachine"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+          </ComboBox>
+          <ui:EntrySuggestionComboBox x:Name="EditWorkflowProjectThickness" Grid.Row="2" Grid.Column="2" Value="{Binding Thickness}"
+                    Suggestions="{Binding ThicknessSuggestions}" IsEnabled="{Binding CanEdit}" HorizontalAlignment="Stretch" AutomationProperties.Name="Толщина проекта, мм" />
+        </Grid>
+        <Border Classes="panel" Padding="12">
+          <StackPanel Spacing="6">
+            <TextBlock Text="Новое название папки и файла" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding PreviewName}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding PreviewPath}" Classes="muted" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+        <TextBlock Text="{Binding Notice}" Classes="muted" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding Error}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+      </StackPanel>
+    </ScrollViewer>
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <ui:JournalButton x:Name="SaveWorkflowProjectParameters" Label="Сохранить" IsEnabled="{Binding CanSave}" Classes="primary" Click="OnSave" />
+      <ui:JournalButton Label="Закрыть" IsEnabled="{Binding !IsBusy}" Click="OnClose" />
+    </StackPanel>
+  </Grid>
+</Window>

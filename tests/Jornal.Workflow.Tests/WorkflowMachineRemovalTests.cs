@@ -27,7 +27,7 @@ public sealed class WorkflowMachineRemovalTests
     }
 
     [Fact]
-    public async Task AProjectWithoutReportAndAnyHistoricalCalculationPreventMachineRemoval()
+    public async Task AProjectOrCurrentCalculationProtectsItsMachineAndReplacingCalculationReleasesThePreviousMachine()
     {
         using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync();
         var editor = f.Model.CreateCatalogSettings(); editor.SelectedMachine = editor.Machines.Single(m => m.Id == project.MachineId);
@@ -40,12 +40,15 @@ public sealed class WorkflowMachineRemovalTests
         var parameters = new CuttingParameters(gas.Name, "Ст3", "Базовая", 6, "Лист", 1, 1, 1, null, 60, 1, false, null) { MachineId = gas.Id };
         book = await f.Store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.SaveSpecification(w, order.Id, order.Version,
             specId, parameters, "Тест", new(2026, 10, 24), actor, DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
+        Assert.Contains("сохранённые расчёты", WorkflowChanges.MachineRemovalReason(book, gas.Id));
         order = book.Orders.Single(); var version = order.Version;
         book = await f.Store.WriteOrderAsync(order.Id, version, w => WorkflowChanges.SaveSpecification(w, order.Id, version,
             specId, parameters with { Machine = plasma.Name, MachineId = plasma.Id }, "Тест", new(2026, 10, 24), actor, DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
-        Assert.Contains("истории", WorkflowChanges.MachineRemovalReason(book, gas.Id));
-        Assert.Throws<WorkflowValidationException>(() => WorkflowChanges.UpdateCatalog(book,
-            book.Machines.Where(m => m.Id != gas.Id).ToArray(), book.Rates.Where(r => r.MachineId != gas.Id).ToArray()));
+        Assert.Null(WorkflowChanges.MachineRemovalReason(book, gas.Id));
+        Assert.Contains("сохранённые расчёты", WorkflowChanges.MachineRemovalReason(book, plasma.Id));
+        var removed = WorkflowChanges.UpdateCatalog(book,
+            book.Machines.Where(m => m.Id != gas.Id).ToArray(), book.Rates.Where(r => r.MachineId != gas.Id).ToArray());
+        removed.Validate(); Assert.DoesNotContain(removed.Machines, m => m.Id == gas.Id);
     }
 
     [Fact]
@@ -53,7 +56,7 @@ public sealed class WorkflowMachineRemovalTests
     {
         using var f = new ProjectFixture(); await f.InitializeAsync();
         var orderId = f.Model.SelectedOrder!.Order.Id; var machine = f.Model.ProjectMachines.Single(m => m.Name == "Труборез");
-        f.Model.AddManualSpecificationCommand.Execute(null); f.Model.SelectedDraft!.UseMachine(machine);
+        f.Model.AddLegacySpecificationDraft(); f.Model.SelectedDraft!.UseMachine(machine);
         var editor = f.Model.CreateCatalogSettings(); editor.SelectedMachine = editor.Machines.Single(m => m.Id == machine.Id);
         Assert.False(editor.RemoveMachineCommand.CanExecute(null)); Assert.Contains("черновике", editor.RemovalReason);
         f.Model.NewOrderCommand.Execute(null); f.Model.NewManager = "Иванов"; f.Model.NewCustomer = "Другая заявка"; await f.Model.CreateOrderCommand.ExecuteAsync(null);

@@ -34,7 +34,7 @@ public sealed class WorkflowTests
     [Fact]
     public void IdenticalTariffIsNotAChange()
     {
-        var rate = Rate(); var workspace = WorkflowChanges.SetRate(WorkflowWorkspace.Empty, rate);
+        var rate = Rate(); var workspace = WorkflowChanges.SetRate(WorkflowTestData.CreateWorkspace(), rate);
         Assert.Same(workspace, WorkflowChanges.SetRate(workspace, rate with { Id = Guid.NewGuid() }));
     }
     [Fact]
@@ -64,15 +64,15 @@ public sealed class WorkflowTests
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
     [Fact]
-    public async Task VersionsPricesAndAuthorsSurviveTransferAndRestartWithoutNoOpWrites()
+    public async Task CurrentCalculationPricesAndAuthorSurviveTransferAndRestartWithoutNoOpWrites()
     {
         var dir = Path.Combine(Path.GetTempPath(), "workflow-test-" + Guid.NewGuid().ToString("N"));
         try
         {
             var path = Path.Combine(dir, "workspace.json"); var store = new LocalWorkflowWorkspaceStore(path);
-            var initial = await store.ReadAsync(TestContext.Current.CancellationToken);
+            var initial = WorkflowTestData.CreateWorkspace();
             var actor = initial.Employees[1].Id; var nextActor = initial.Employees[2].Id; Guid orderId = default;
-            var book = await store.WriteAsync(0, w => WorkflowChanges.CreateOrder(w, "ООО «Пример»", w.Employees[0].Id, actor, actor,
+            var book = await store.WriteAsync(0, _ => WorkflowChanges.CreateOrder(initial, "ООО «Пример»", initial.Employees[0].Id, actor, actor,
                 DateTimeOffset.UtcNow, out orderId), TestContext.Current.CancellationToken);
             var rate = Rate(); book = await store.WriteAsync(book.Version, w => WorkflowChanges.SetRate(w, rate), TestContext.Current.CancellationToken);
             var specId = Guid.NewGuid();
@@ -81,18 +81,17 @@ public sealed class WorkflowTests
             var version = book.Version; var original = book.Orders[0].Specifications[0].Current;
             book = await store.WriteAsync(book.Version, w => WorkflowChanges.SaveSpecification(w, orderId, w.Orders[0].Version, specId,
                 Parameters(), "1023-0920", new(2026, 10, 23), actor, DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
-            Assert.Equal(version, book.Version); Assert.Single(book.Orders[0].Specifications[0].Revisions);
+            Assert.Equal(version, book.Version); Assert.Equal(original, book.Orders[0].Specifications[0].Current);
             book = await store.WriteAsync(book.Version, w => WorkflowChanges.UpdateOrder(w, orderId, w.Orders[0].Version,
-                w.Employees[0].Id, nextActor, "0005", 2026, actor, DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
+                w.Employees[0].Id, nextActor, "0005", actor, DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
             book = await store.WriteAsync(book.Version, w => WorkflowChanges.SetRate(w, rate with { Id = Guid.NewGuid(), PricePerMeter = 240 }), TestContext.Current.CancellationToken);
             book = await store.WriteAsync(book.Version, w => WorkflowChanges.SaveSpecification(w, orderId, w.Orders[0].Version, specId,
                 Parameters() with { HasBending = true }, "1023-0920", new(2026, 10, 23), nextActor, DateTimeOffset.UtcNow,
                 quotedRate: rate), TestContext.Current.CancellationToken);
             var loaded = await new LocalWorkflowWorkspaceStore(path).ReadAsync(TestContext.Current.CancellationToken);
             var order = Assert.Single(loaded.Orders); Assert.Equal("0005", order.Blcb); Assert.Equal(nextActor, order.TechnologistId);
-            var revisions = Assert.Single(order.Specifications).Revisions; Assert.Equal(2, revisions.Length);
-            Assert.Equal(original, revisions[0]); Assert.Equal(actor, revisions[0].AuthorId); Assert.Equal(nextActor, revisions[1].AuthorId);
-            Assert.Equal(230, revisions[1].Calculation.PricePerMeter); Assert.True(revisions[1].Parameters.HasBending);
+            var current = Assert.Single(order.Specifications).Current; Assert.Equal(nextActor, current.AuthorId);
+            Assert.NotEqual(original, current); Assert.Equal(230, current.Calculation.PricePerMeter); Assert.True(current.Parameters.HasBending);
             await Assert.ThrowsAsync<WorkflowConflictException>(() => store.WriteAsync(version, w => w, TestContext.Current.CancellationToken));
             Assert.Equal(loaded.Version, (await store.ReadAsync(TestContext.Current.CancellationToken)).Version);
         }

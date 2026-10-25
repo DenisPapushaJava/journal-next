@@ -5,6 +5,9 @@ namespace Jornal.Workflow.Core;
 public sealed record Employee(Guid Id, string Name)
 {
     public uint? ColorArgb { get; init; }
+    public bool IsTechnologist { get; init; }
+    public bool IsTechnologistArchived { get; init; }
+    [JsonIgnore] public bool CanWork => IsTechnologist && !IsTechnologistArchived;
 }
 public sealed record Customer(Guid Id, string Name);
 public sealed record CuttingRate(Guid Id, string Machine, string MaterialGroup, decimal ThicknessMm,
@@ -19,6 +22,7 @@ public sealed record CuttingParameters(string Machine, string Material, string M
     bool MaterialNeedsReview = false)
 {
     public Guid MachineId { get; init; }
+    public bool HasChamfer { get; init; }
     public bool SameInputs(CuttingParameters other) => MachineId == other.MachineId && this with { Machine = other.Machine } == other;
     public void Validate()
     {
@@ -54,20 +58,16 @@ public sealed record CuttingCalculation(Guid RateId, decimal PricePerMeter, deci
     }
 }
 
-public sealed record SpecificationRevision(Guid Id, int Number, string DocumentNumber, DateOnly DocumentDate,
+public sealed record SpecificationState(string DocumentNumber, DateOnly DocumentDate,
     DateTimeOffset SavedAt, Guid AuthorId, CuttingParameters Parameters, CuttingCalculation Calculation,
     string? SourcePath, string? ImportProfile)
 {
     public AcceptedReport? Report { get; init; }
 }
-public sealed record WorkflowSpecification(Guid Id, SpecificationRevision[] Revisions)
-{
-    [JsonIgnore] public SpecificationRevision Current => Revisions[^1];
-}
-public sealed record OrderEvent(DateTimeOffset At, Guid ActorId, string Description);
+public sealed record WorkflowSpecification(Guid Id, SpecificationState Current);
 public sealed record WorkflowOrder(Guid Id, long Number, Guid CustomerId, Guid ManagerId, Guid TechnologistId,
-    string? Blcb, int? BlcbYear, long Version, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
-    WorkflowSpecification[] Specifications, OrderEvent[] Events)
+    string? Blcb, long Version, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
+    WorkflowSpecification[] Specifications)
 {
     public WorkflowOrderItem[] Items { get; init; } = [];
     public CuttingProject[] Projects { get; init; } = [];
@@ -76,16 +76,20 @@ public sealed record WorkflowOrder(Guid Id, long Number, Guid CustomerId, Guid M
     public DateTimeOffset? DeletedAt { get; init; }
     public Guid? DeletedBy { get; init; }
     [JsonIgnore] public bool IsDeleted => DeletedAt is not null;
+    [JsonIgnore] public IEnumerable<CuttingProject> ActiveProjects => Projects.Where(p => !p.IsDeleted);
+    [JsonIgnore] public bool HasProjectRename => Projects.Any(p => p.Rename is not null);
     [JsonIgnore] public string DisplayNumber => ReferenceNumber;
     [JsonIgnore] public IEnumerable<WorkflowSpecification> ActiveSpecifications
     {
         get
         {
-            var projectIds = Projects.Select(p => p.Id).ToHashSet(); var currentIds = Items.Select(i => i.CurrentProjectId).ToHashSet();
+            var projectIds = Projects.Select(p => p.Id).ToHashSet();
+            var currentIds = ActiveProjects.Where(p => Items.Any(i => i.IsIncluded && i.CurrentProjectId == p.Id)).Select(p => p.Id).ToHashSet();
             return Specifications.Where(s => !projectIds.Contains(s.Id) || currentIds.Contains(s.Id));
         }
     }
-    [JsonIgnore] public int PendingProjectCount => Items.Count(i => !Specifications.Any(s => s.Id == i.CurrentProjectId));
+    [JsonIgnore] public int PendingProjectCount => Items.Count(i => i.IsIncluded && ActiveProjects.Any(p => p.ItemId == i.Id) &&
+        (!ActiveProjects.Any(p => p.Id == i.CurrentProjectId) || !Specifications.Any(s => s.Id == i.CurrentProjectId)));
     [JsonIgnore] public decimal CuttingTotal => ActiveSpecifications.Sum(spec => spec.Current.Calculation.TotalCost);
 }
 
@@ -95,14 +99,11 @@ public sealed record WorkflowWorkspace(int SchemaVersion, long Version, Employee
     public WorkflowMachine[] Machines { get; init; } = [];
     public WorkflowPriceSource? PriceSource { get; init; }
     public string? ProjectRoot { get; init; }
-    public static WorkflowWorkspace Empty => new(7, 0,
-        [new(Guid.Parse("10000000-0000-0000-0000-000000000001"), "Иванов"),
-         new(Guid.Parse("10000000-0000-0000-0000-000000000002"), "Петров"),
-         new(Guid.Parse("10000000-0000-0000-0000-000000000003"), "Сидоров")], [], [], []) { Machines = WorkflowMachine.Defaults() };
+    public static WorkflowWorkspace Empty => new(11, 0, [], [], [], []) { Machines = WorkflowMachine.Defaults() };
 
     public void Validate()
     {
-        if (SchemaVersion != 7 || Version < 0 || Employees is null || Customers is null || Rates is null || Orders is null)
+        if (SchemaVersion != 11 || Version < 0 || Employees is null || Customers is null || Rates is null || Orders is null)
             throw new WorkflowValidationException("Неизвестная структура локальных данных нового Journal.");
         if (Employees.Any(e => e.ColorArgb is { } color && color >> 24 != 255))
             throw new WorkflowValidationException("Цвет сотрудника должен быть непрозрачным.");
@@ -129,20 +130,19 @@ public sealed record WorkflowWorkspace(int SchemaVersion, long Version, Employee
             if (order.DeletedAt.HasValue != order.DeletedBy.HasValue || order.DeletedBy is { } deletedBy && !Employees.Any(e => e.Id == deletedBy))
                 throw new WorkflowValidationException("Нарушены данные корзины заявки.");
             WorkflowProjects.Validate(order, Machines);
-            if (order.Specifications is null || order.Events is null || !Customers.Any(c => c.Id == order.CustomerId) ||
+            if (order.Projects.Any(p => p.DeletedBy is { } by && !Employees.Any(e => e.Id == by) ||
+                p.Rename is { } rename && !Employees.Any(e => e.Id == rename.ActorId)))
+                throw new WorkflowValidationException("Нарушены связи проекта с сотрудниками.");
+            if (order.Specifications is null || !Customers.Any(c => c.Id == order.CustomerId) ||
                 !Employees.Any(e => e.Id == order.ManagerId) || !Employees.Any(e => e.Id == order.TechnologistId))
                 throw new WorkflowValidationException("Нарушены связи заявки со справочниками.");
             foreach (var specification in order.Specifications)
             {
-                if (specification.Revisions is not { Length: > 0 }) throw new WorkflowValidationException("У спецификации нет сохранённой версии.");
-                for (var i = 0; i < specification.Revisions.Length; i++)
-                {
-                    var revision = specification.Revisions[i];
-                    if (revision.Number != i + 1 || !Employees.Any(e => e.Id == revision.AuthorId) || !Machines.Any(m => m.Id == revision.Parameters.MachineId))
-                        throw new WorkflowValidationException("Нарушена история версий спецификации.");
-                    revision.Parameters.Validate();
-                    if (revision.Report is { } report) report.Validate();
-                }
+                if (specification.Current is not { } saved || !Employees.Any(e => e.Id == saved.AuthorId) ||
+                    !Machines.Any(m => m.Id == saved.Parameters.MachineId))
+                    throw new WorkflowValidationException("Нарушены данные сохранённого расчёта спецификации.");
+                saved.Parameters.Validate();
+                if (saved.Report is { } report) report.Validate();
             }
         }
     }
