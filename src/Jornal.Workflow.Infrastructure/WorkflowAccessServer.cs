@@ -23,7 +23,7 @@ public static class WorkflowAccessServer
             {
                 WorkflowConflictException or WorkflowValidationException or WorkflowOutcomeUnknownException => e.Message,
                 COMException => "Недоступен системный компонент создания MDB (Jet/ADOX x86). Код: " + e.HResult.ToString("X8"),
-                System.Data.OleDb.OleDbException => "База MDB занята либо запрос не выполнен. Проверьте доступ и обновите журнал. Код: " + e.HResult.ToString("X8"),
+                System.Data.OleDb.OleDbException => "Не удалось выполнить запрос MDB: " + e.Message + " Код: " + e.HResult.ToString("X8"),
                 UnauthorizedAccessException => "Нет прав на работу с файлом MDB или его папкой.",
                 IOException => "Файл MDB или общая папка недоступны. Проверьте подключение и права.",
                 _ => "Не удалось выполнить операцию MDB. Код: " + e.HResult.ToString("X8")
