@@ -14,7 +14,7 @@ internal sealed class WorkflowMdbSession : IDisposable
     internal static string ConnectionString(string path, bool write)
     {
         var builder = new OleDbConnectionStringBuilder { Provider = "Microsoft.Jet.OLEDB.4.0", DataSource = path, PersistSecurityInfo = false };
-        builder["Mode"] = write ? 19 : 17; builder["OLE DB Services"] = -2;
+        builder["Mode"] = write ? 19 : "Read"; builder["OLE DB Services"] = -2;
         return builder.ConnectionString;
     }
     internal WorkflowMdbSession(string path, bool write)

@@ -106,6 +106,8 @@ public sealed partial class WorkflowMdbDatabase
         }
         catch (COMException e)
         { throw new WorkflowValidationException("Не удалось подготовить MDB: " + stage + ". " + e.Message + " Код: " + e.HResult.ToString("X8")); }
+        catch (System.Data.OleDb.OleDbException e)
+        { throw new WorkflowValidationException("Не удалось подготовить MDB: " + stage + ". " + e.Message + " Код: " + e.HResult.ToString("X8")); }
         catch (IOException) when (publicationAttempted) { throw new WorkflowOutcomeUnknownException(); }
         finally
         {
