@@ -7,7 +7,7 @@ on:
       version:
         description: 'Версия Windows-выпуска'
         required: true
-        default: '2026.1.0-alpha.3'
+        default: '2026.1.0-alpha.4'
         type: string
       create_draft:
         description: 'После проверок создать тег и черновик выпуска'

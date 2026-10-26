@@ -5,12 +5,28 @@ namespace Jornal.Workflow.Desktop;
 
 public partial class WorkflowViewModel
 {
+    // Keep one bounded scan in memory so a partial acceptance or a trip to prices
+    // does not discard the remaining choices/conflicts. F5 explicitly starts over.
+    private (Guid OrderId, WorkflowReportReviewViewModel Review)? _reportReview;
+    private Guid? _reportImportOrderId;
+    private int _acceptedReports;
+    private bool HasPendingReportEdits => _reportReview?.Review.Candidates.Any(c => !c.WasAccepted && c.Draft?.IsDirty == true) == true;
+    private WorkflowReportReviewViewModel? CurrentReportReview => _reportReview is { } session &&
+        CurrentOrder is { } order && session.OrderId == order.Id && session.Review.PreviewOrderVersion == order.Version ? session.Review : null;
+    public bool HasReportImportNotice => CurrentOrder is { } order && _reportImportOrderId == order.Id && _acceptedReports > 0;
+    public string AcceptedReportsCaption => $"Принято {_acceptedReports}";
+    public string ReportImportNotice => !HasReportImportNotice ? "" : $"Принято {_acceptedReports}" +
+        (WaitingProjectCount > 0 ? $", ещё {WaitingProjectCount} ожидают спецификацию" : "") +
+        (ReviewProjectCount > 0 ? $", требуют проверки: {ReviewProjectCount}" : "");
+    internal void ReportReviewClosed() => NotifyCompleteness();
+
     public async Task<WorkflowReportReviewViewModel?> CreateReportReviewAsync(CancellationToken token = default, WorkflowReportReviewViewModel? previous = null)
     {
         if (!CanUse || !IsCurrentOrderActive || CurrentOrder is not { IsDeleted: false } order) return null;
         if (HasCurrentCardEdits) { Error = "Сохраните или отмените текущие изменения перед подбором отчётов."; return null; }
         if (order.Projects.Length == 0) { Error = "Сначала подготовьте проекты в заявке."; return null; }
         if (order.HasProjectRename) { Error = "Завершите изменение параметров проекта перед подбором отчётов."; return null; }
+        previous ??= CurrentReportReview;
         WorkflowReportReviewViewModel? review = null;
         await RunAsync(async () =>
         {
@@ -20,12 +36,24 @@ public partial class WorkflowViewModel
             _workspace = latest; order = latestOrder; RefreshOrders(); LoadOrder(order);
             if (order.IsDeleted || order.HasProjectRename) throw new WorkflowValidationException("Подбор недоступен: заявка в корзине или изменение проекта не завершено.");
             var snapshot = _workspace; var actor = ActorId();
-            review = new((candidates, cancellation) => ApplyReportReviewAsync(order, actor, candidates, cancellation),
+            review = new(async (candidates, cancellation) =>
+                {
+                    var error = await ApplyReportReviewAsync(order, actor, candidates, cancellation);
+                    if (error is null)
+                    {
+                        review!.PreviewOrderVersion = CurrentOrder!.Version;
+                        foreach (var candidate in candidates) { candidate.WasAccepted = true; candidate.IsSelected = false; }
+                        if (review.Candidates.All(candidate => !candidate.NeedsAttention)) _reportReview = null;
+                        _reportImportOrderId = order.Id; _acceptedReports = candidates.Count;
+                        NotifyCompleteness();
+                    }
+                    return error;
+                },
                 async (prior, cancellation) =>
                 {
                     var renewed = await CreateReportReviewAsync(cancellation, prior);
                     return (renewed, renewed is null ? Error : null);
-                }) { PreviewOrderVersion = order.Version };
+                }, () => _workspace) { PreviewOrderVersion = order.Version };
             var scopes = await Task.Run(async () =>
             {
                 var result = new List<(CuttingProject Project, ReportFileSnapshot[] Files, string State)>();
@@ -76,9 +104,10 @@ public partial class WorkflowViewModel
             }, token);
             foreach (var scope in scopes)
                 review.Candidates.Add(new(snapshot, scope.Project, order.Items.Single(i => i.Id == scope.Project.ItemId).Number,
-                    scope.Files, scope.State, review.Changed, previous?.Candidates.SingleOrDefault(c => c.Project.Id == scope.Project.Id)));
+                    scope.Files, scope.State, review.Changed, previous?.Candidates.SingleOrDefault(c => c.Project.Id == scope.Project.Id && !c.WasAccepted)));
             review.Selected = review.Candidates.FirstOrDefault(c => c.Draft is not null) ?? review.Candidates.FirstOrDefault();
             review.Changed();
+            _reportReview = (order.Id, review); NotifyCompleteness();
         });
         return Error is null ? review : null;
     }
@@ -118,6 +147,8 @@ public partial class WorkflowViewModel
                 return next;
             }, token);
             saved = true; RefreshOrders(); LoadOrder(_workspace.Orders.Single(o => o.Id == previewOrder.Id));
+            var bending = accepted.Where(entry => entry.Parameters.HasBending && entry.Draft.Saved?.Parameters.HasBending != true).Select(entry => entry.Draft.Id).ToArray();
+            if (bending.Length > 0) await EnsureSavedBendingFoldersAsync(CurrentOrder!, bending, token);
         });
         if (!saved && Error is null) token.ThrowIfCancellationRequested();
         return saved ? null : Error ?? "Отчёты не сохранены; подбор остался в окне.";

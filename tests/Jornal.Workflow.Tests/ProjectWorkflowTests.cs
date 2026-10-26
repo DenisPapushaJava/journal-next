@@ -144,6 +144,24 @@ public sealed class ProjectWorkflowTests
     }
 
     [Fact]
+    public async Task LeavingPriceSetupWithoutSavingKeepsHistoricalTariffUntilExplicitRefresh()
+    {
+        using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync();
+        await ProjectFixture.WriteAsync(project); await f.AcceptAsync();
+        var catalog = f.Model.CreateCatalogSettings(); catalog.SelectedMachine = catalog.Machines.Single(m => m.Id == project.MachineId);
+        catalog.SelectedRate = Assert.Single(catalog.Rates!); catalog.SelectedRate.PricePerMeter = "900";
+        await catalog.SaveCommand.ExecuteAsync(null); Assert.Null(catalog.Error);
+        await ProjectFixture.WriteAsync(project, tail: "<!-- changed layout -->");
+        var review = await f.ReviewAsync(); var candidate = Assert.Single(review.Candidates); var draft = candidate.Draft!;
+        draft.Coefficient = "1,7"; var source = candidate.SelectedFile;
+        review.RefreshPricing(refreshSelected: false);
+        Assert.Same(draft, candidate.Draft); Assert.Same(source, candidate.SelectedFile);
+        Assert.Equal("100", draft.PricePerMeter); Assert.Equal("1,7", draft.Coefficient);
+        review.RefreshRateCommand.Execute(null);
+        Assert.Equal("900", draft.PricePerMeter); Assert.Equal("1,7", draft.Coefficient);
+    }
+
+    [Fact]
     public async Task SourceChangedAfterPreviewRejectsWholeBatchAndKeepsReviewEdits()
     {
         using var f = new ProjectFixture(); await f.InitializeAsync(); var a = await f.AddAsync(); var b = await f.AddAsync("Плазма");

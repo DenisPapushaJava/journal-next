@@ -35,8 +35,11 @@ public sealed class WorkflowProjectMaintenance(IWorkflowWorkspaceStore store, Ac
         {
             ValidatePaths(project, plan);
             RejectLinks(parent);
-            using var operationLease = new FileStream(Path.Combine(parent, ".workflow-edit-" + project.Id.ToString("N") + ".lock"),
+            var leasePath = Path.Combine(parent, ".workflow-edit-" + project.Id.ToString("N") + ".lock");
+            using var operationLease = new FileStream(leasePath,
                 FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            // Attribute access does not require dropping the exclusive operation lease.
+            WorkflowServiceFiles.TryHide(leasePath);
             var folder = LocateFolder(source, target, project.Id);
             var actual = LocateNative(folder, project, plan);
             ValidateContents(folder, actual, project.Id);
@@ -162,9 +165,13 @@ public sealed class WorkflowProjectMaintenance(IWorkflowWorkspaceStore store, Ac
 
     private static void EnsureReceipt(string folder, Guid id)
     {
-        if (HasReceipt(folder, id)) return;
-        using var file = new FileStream(Path.Combine(folder, Receipt), FileMode.CreateNew, FileAccess.Write, FileShare.Read);
-        file.Write(System.Text.Encoding.ASCII.GetBytes(id.ToString("N"))); file.Flush(true);
+        var path = Path.Combine(folder, Receipt);
+        if (!HasReceipt(folder, id))
+        {
+            using var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            file.Write(System.Text.Encoding.ASCII.GetBytes(id.ToString("N"))); file.Flush(true);
+        }
+        WorkflowServiceFiles.TryHide(path);
     }
 
     private static ProjectFileFailure Unsafe(string message, string path) => new ProjectFileFailure(ProjectFileFailureKind.Unsafe, message, path);

@@ -13,6 +13,13 @@ spec.loader.exec_module(release)
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_alpha_four_notes_are_exactly_the_three_approved_points(self):
+        self.assertEqual(
+            '1. Задание в цех: копирование текста по составу заявки.\n'
+            '2. Папка «ГИБКА»: автоматическое создание после сохранения отметки.\n'
+            '3. Служебные файлы и папки проектов скрываются в Windows.\n',
+            release.release_notes('2026.1.0-alpha.4'))
+
     def test_hotfix_notes_are_one_point_and_do_not_replace_previous_release(self):
         notes = release.release_notes('2026.1.0-alpha.3')
         self.assertEqual(['1'], re.findall(r'^(\d+)\. ', notes, re.MULTILINE))

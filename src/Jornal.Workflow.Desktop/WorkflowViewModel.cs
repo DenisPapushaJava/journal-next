@@ -77,6 +77,8 @@ public partial class WorkflowViewModel : ObservableObject
     [ObservableProperty] private bool _isCreating;
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string? _error;
+    public bool HasError => !string.IsNullOrWhiteSpace(Error);
+    partial void OnErrorChanged(string? value) => OnPropertyChanged(nameof(HasError));
     [ObservableProperty] private string _resultText = "";
     [ObservableProperty] private string _search = "";
     public bool IsJournal => _openOrderId is null;
@@ -86,7 +88,7 @@ public partial class WorkflowViewModel : ObservableObject
     private bool CanSaveSpecification => CanUse && IsCurrentOrderActive && !IsCurrentCardStale && SelectedDraft?.CanSave == true;
     public bool CanUse => !IsBusy && !_readingDatabase && !_savingProjectInclusion && !Updates.IsApplying;
     public bool CanBrowseWorkspace => (!IsBusy || _savingProjectInclusion) && !Updates.IsApplying;
-    public bool HasPendingEdits => HasCurrentCardEdits || _workspace.Orders.Any(o => o.HasProjectRename) ||
+    public bool HasPendingEdits => HasCurrentCardEdits || HasPendingReportEdits || _workspace.Orders.Any(o => o.HasProjectRename) ||
         _cards.Any(pair => ((pair.Key != _openOrderId || IsCreating) && pair.Value.HasEdits) ||
             !_workspace.Orders.Any(o => o.Id == pair.Key) && pair.Value.Result.Length > 0);
     public string OrderTitle => CurrentOrder is { } o ? $"Заявка {o.DisplayNumber} · {CustomerName(o.CustomerId)}" : "Заявки";
@@ -114,6 +116,8 @@ public partial class WorkflowViewModel : ObservableObject
             CaptureCard(); var restore = RequiresDatabaseRefresh && _openOrderId is { } oldId ? _cards.GetValueOrDefault(oldId) : null;
             _loadedOrderSnapshot = CurrentOrder; ConfigureDatabaseQuery();
             var workspace = await _store.ReadAsync();
+            _reportReview = null; _reportImportOrderId = null;
+            ResetCuttingTask();
             try { LoadLocalPreferences(_preferences); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException)
             { Error = "Не удалось прочитать локальные настройки. Данные заявок доступны; проверьте профиль и списки."; }
@@ -216,6 +220,7 @@ public partial class WorkflowViewModel : ObservableObject
         await RunAsync(async () =>
         {
             var parameters = draft.Parameters(); var rate = draft.Rate(); var date = draft.DocumentDate(); var actorId = ActorId(); var documentNumber = draft.Number;
+            var createBendingFolder = parameters.HasBending && draft.Saved?.Parameters.HasBending != true;
             var expected = CardVersion;
             AcceptedReport? report = null;
             if (draft.IncomingReport is { } incoming)
@@ -229,6 +234,7 @@ public partial class WorkflowViewModel : ObservableObject
             _loadedOrderVersion = CurrentOrder!.Version;
             var specification = CurrentOrder!.Specifications.Single(s => s.Id == draft.Id); var index = Drafts.IndexOf(draft);
             Drafts[index] = CreateDraft(specification); SelectedDraft = Drafts[index]; MarkResultStale(); RefreshProjects(draft.Id); RefreshOrders(); NotifyOrder();
+            if (createBendingFolder) await EnsureSavedBendingFoldersAsync(CurrentOrder!, [draft.Id]);
         });
     }
     [RelayCommand] private void GenerateResult()
@@ -401,6 +407,7 @@ public partial class WorkflowViewModel : ObservableObject
             OnPropertyChanged(nameof(HasPendingEdits));
             if (sender is SpecificationDraft changed)
                 Projects.SingleOrDefault(p => p.Project.Id == changed.Id)?.ApplyLocalChanges(changed.IsDirty);
+            NotifyCompleteness();
         }
         if (e.PropertyName == nameof(SpecificationDraft.CanSave)) SaveSpecificationCommand.NotifyCanExecuteChanged();
         if (sender is SpecificationDraft draft && e.PropertyName is nameof(SpecificationDraft.Machine) or nameof(SpecificationDraft.MaterialGroup) or nameof(SpecificationDraft.Thickness))
@@ -416,13 +423,15 @@ public partial class WorkflowViewModel : ObservableObject
     private string EmployeeName(Guid id) => _workspace.Employees.Single(e => e.Id == id).Name;
     private void NotifyOrder()
     {
+        NotifyCompleteness();
+        NotifyBendingFolders();
         foreach (var name in new[] { nameof(IsJournal), nameof(IsOrderOpen), nameof(IsCardVisible), nameof(IsNoCardSelected), nameof(HeaderSummary),
             nameof(OrderTitle), nameof(TotalText), nameof(BendingText), nameof(ProjectsStatus), nameof(IsCurrentOrderActive), nameof(IsCurrentCardStale),
             nameof(HasCardReview), nameof(CardReviewText), nameof(TrashCaption), nameof(IsCurrentOrderMissing), nameof(HasPendingEdits) }) OnPropertyChanged(name);
         SaveSpecificationCommand.NotifyCanExecuteChanged();
     }
     partial void OnIsBusyChanged(bool value)
-    { OnPropertyChanged(nameof(CanUse)); OnPropertyChanged(nameof(CanBrowseWorkspace)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList(); }
+    { OnPropertyChanged(nameof(CanUse)); OnPropertyChanged(nameof(CanBrowseWorkspace)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList(); NotifyCuttingTask(); }
     private async Task RunAsync(Func<Task> action, string? fileError = null, bool projectInclusion = false)
     {
         if (IsBusy || _readingDatabase || _savingProjectInclusion && !projectInclusion) return; IsBusy = true; Error = null;
@@ -438,7 +447,7 @@ public partial class WorkflowViewModel : ObservableObject
         }
         finally { IsBusy = false; NotifyDatabase(); }
     }
-    public void Detach() { CancelDatabaseSearch(); if (SelectedDraft is { } draft) draft.PropertyChanged -= DraftChanged; }
+    public void Detach() { _cuttingTaskDetached = true; _copiedCuttingTask = null; _cuttingTaskPreview = null; _bendingFolderFailures = null; CancelDatabaseSearch(); _reportReview = null; if (SelectedDraft is { } draft) draft.PropertyChanged -= DraftChanged; }
     public WorkflowRestartDraft CreateRestartDraft()
     {
         CaptureCard();

@@ -113,6 +113,15 @@ public partial class WorkflowCatalogViewModel : ObservableObject
         SelectedMachine = Machines.SingleOrDefault(m => m.Id == selected) ?? Machines.FirstOrDefault();
         _loading = false; Changed();
     }
+    public void SelectTariff(Guid machineId, string group, decimal thickness)
+    {
+        SelectedMachine = Machines.SingleOrDefault(m => m.Id == machineId);
+        if (SelectedMachine is null) return;
+        SelectedRate = SelectedMachine.Rates.FirstOrDefault(r => r.MaterialGroup == group &&
+            decimal.TryParse(r.Thickness.Replace(',', '.'), System.Globalization.CultureInfo.InvariantCulture, out var value) && value == thickness);
+        if (SelectedRate is not null) return;
+        AddRate(); SelectedRate!.MaterialGroup = group; SelectedRate.Thickness = SpecificationDraft.N(thickness);
+    }
     private void Changed()
     {
         if (_loading) return;

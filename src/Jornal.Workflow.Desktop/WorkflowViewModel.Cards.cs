@@ -17,7 +17,7 @@ public partial class WorkflowViewModel
     public string HeaderSummary => CurrentOrder is not { } order ? "" :
         $"Менеджер: {(string.IsNullOrWhiteSpace(ManagerName) ? "не указан" : ManagerName)} · БЛЦБ: " +
         (string.IsNullOrWhiteSpace(Blcb) ? "пока нет" : Blcb);
-    private void NotifyHeaderEdit() { OnPropertyChanged(nameof(HasPendingEdits)); OnPropertyChanged(nameof(HeaderSummary)); }
+    private void NotifyHeaderEdit() { OnPropertyChanged(nameof(HasPendingEdits)); OnPropertyChanged(nameof(HeaderSummary)); NotifyCuttingTask(); }
     private long CardVersion => _loadedOrderVersion ?? CurrentOrder?.Version ?? 0;
     private bool HasCurrentCardEdits => IsCreating ? !string.IsNullOrWhiteSpace(NewCustomer) || !string.IsNullOrWhiteSpace(NewManager) :
         IsPlanning || Drafts.Any(d => d.IsDirty) || CurrentOrder is { } o &&

@@ -38,7 +38,9 @@ public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, s
         _inclusionWritePending = value; _pendingIncluded = value ? requested : null;
         OnPropertyChanged(nameof(CanHitToggle)); OnPropertyChanged(nameof(DisplayedIncluded));
     }
-    public string Position => IsLegacyCalculation ? "Без проекта" : $"{ItemNumber} · вариант {Project.Variant}";
+    public string Position => IsLegacyCalculation ? "Без проекта" : $"{ItemNumber}";
+    public string VariantCaption => hasAlternatives ? $"Вариант {Project.Variant}" : "";
+    public bool HasAlternatives => hasAlternatives;
     public string Name => Project.Name;
     public string Material => Saved?.Parameters.Material ?? "—";
     public string Thickness => SpecificationDraft.N(Project.ThicknessMm);
@@ -76,9 +78,10 @@ public partial class WorkflowViewModel
     [ObservableProperty] private bool _showTrashedProjects;
     public string ProjectTrashCaption => $"Корзина проектов ({CurrentOrder?.Projects.Count(p => p.IsDeleted) ?? 0})";
     public string EmptyProjectText => ShowTrashedProjects ? "В корзине нет проектов." : "Добавьте проект: станок и толщина.";
-    public bool ShowProjectCalculation => Drafts.Count > 0 && !IsPlanning && !ShowTrashedProjects;
-    public string CalculationEmptyText => SelectedProject is null ? "Выберите проект." : "Нет спецификации для этого проекта.";
-    public double CalculationMaxHeight => ShowProjectCalculation ? double.PositiveInfinity : 0;
+    public bool ShowProjectCalculation => Projects.Count > 0 && !IsPlanning && !ShowTrashedProjects;
+    public string CalculationEmptyText => SelectedProject is null ? "Выберите проект." :
+        "Сохраните HTML/PDF-спецификацию рядом с файлом проекта, затем нажмите «Загрузить спецификации».";
+    public double CalculationMaxHeight => !ShowProjectCalculation ? 0 : HasSelectedDraft ? double.PositiveInfinity : 88;
     private void NotifyProjectCalculation()
     { OnPropertyChanged(nameof(ShowProjectCalculation)); OnPropertyChanged(nameof(CalculationMaxHeight)); OnPropertyChanged(nameof(CalculationEmptyText)); }
     partial void OnShowTrashedProjectsChanged(bool value) { RefreshProjects(); OnPropertyChanged(nameof(EmptyProjectText)); NotifyProjectCalculation(); }
@@ -181,14 +184,14 @@ public partial class WorkflowViewModel
     partial void OnSelectedProjectChanged(WorkflowProjectRow? value)
     {
         if (!_refreshingProjects) SelectedDraft = value is null || value.IsDeleted ? null : Drafts.SingleOrDefault(d => d.Id == value.Project.Id);
-        OnPropertyChanged(nameof(CalculationEmptyText));
+        NotifyProjectCalculation();
     }
     partial void OnPlanMachineChanged(WorkflowMachine? value)
     {
         OnPropertyChanged(nameof(PlannedName));
         OnPropertyChanged(nameof(PlanThicknessSuggestions));
     }
-    partial void OnIsPlanningChanged(bool value) { OnPropertyChanged(nameof(HasPendingEdits)); NotifyProjectCalculation(); }
+    partial void OnIsPlanningChanged(bool value) { OnPropertyChanged(nameof(HasPendingEdits)); NotifyProjectCalculation(); NotifyCuttingTask(); }
     private void MarkResultStale() { if (!string.IsNullOrWhiteSpace(ResultText)) ResultIsStale = true; }
     private void RefreshProjects(Guid? select = null)
     {
@@ -221,7 +224,7 @@ public partial class WorkflowViewModel
         }
         finally { _refreshingProjects = false; }
         SelectedDraft = SelectedProject is { IsDeleted: false } selected ? Drafts.SingleOrDefault(d => d.Id == selected.Project.Id) : null;
-        OnPropertyChanged(nameof(ProjectMachines)); OnPropertyChanged(nameof(ProjectsStatus));
+        OnPropertyChanged(nameof(ProjectMachines)); OnPropertyChanged(nameof(ProjectsStatus)); NotifyCompleteness();
         OnPropertyChanged(nameof(IsProjectListEmpty)); OnPropertyChanged(nameof(NeedsProjectRoot));
         OnPropertyChanged(nameof(ProjectTrashCaption)); OnPropertyChanged(nameof(HasPendingEdits));
         NotifyProjectCalculation();
