@@ -39,6 +39,7 @@ public partial class WorkflowViewModel
         foreach (var name in new[] { nameof(WorkspacePath), nameof(IsMdb), nameof(CanConnectDatabase), nameof(DatabaseDescription),
             nameof(HasMoreOrders), nameof(RequiresDatabaseRefresh) }) OnPropertyChanged(name);
         NotifyOrderList(); OnPropertyChanged(nameof(TrashCaption));
+        NotifyCuttingTask();
     }
     public async Task<string?> ConnectDatabaseAsync(string path, bool create, CancellationToken token = default)
     {
@@ -74,6 +75,8 @@ public partial class WorkflowViewModel
             }), token);
             _sourceLetters[previousKey] = previous;
             ForgetOpenCard(); IsCreating = false; NewCustomer = ""; NewManager = "";
+            _reportReview = null; _reportImportOrderId = null;
+            ResetCuttingTask(); _bendingFolderFailures = null;
             _cards.Clear(); SelectedOrder = null; _connection = new(candidate, saved.EmployeeId); _workspace = workspace;
             _localPreferences = saved; _hasLoadedOrders = true;
             _refreshing = true;
@@ -138,7 +141,7 @@ public partial class WorkflowViewModel
     private async Task ReadDatabasePageAsync(bool more, CancellationToken token, long generation)
     {
         if (_store is not IWorkflowQueryStore store) return;
-        _readingDatabase = true; OnPropertyChanged(nameof(CanUse)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList();
+        _readingDatabase = true; OnPropertyChanged(nameof(CanUse)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList(); NotifyCuttingTask();
         try
         {
             ConfigureDatabaseQuery();
@@ -152,6 +155,6 @@ public partial class WorkflowViewModel
             { LoadOrder(order); if (state is not null) RestoreCard(order, state); }
             NotifyDatabase();
         }
-        finally { _readingDatabase = false; OnPropertyChanged(nameof(CanUse)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList(); }
+        finally { _readingDatabase = false; OnPropertyChanged(nameof(CanUse)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList(); NotifyCuttingTask(); }
     }
 }

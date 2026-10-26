@@ -16,6 +16,7 @@ public partial class SpecificationDraft : ObservableObject
     private readonly string? _nativeProjectPath;
     public string? FolderPath => Path.GetDirectoryName(_nativeProjectPath ?? SourcePath);
     public bool HasFolder => !string.IsNullOrWhiteSpace(FolderPath);
+    public bool HasSavedBendingFolder => Saved?.Parameters.HasBending == true && _nativeProjectPath is not null;
     public string FolderHint => HasFolder ? "Открыть папку спецификации" : "У спецификации пока нет файла и папки";
     public string? ImportProfile { get; set; }
     public ReportFileSnapshot? IncomingReport { get; set; }
@@ -67,11 +68,14 @@ public partial class SpecificationDraft : ObservableObject
     [ObservableProperty] private string _pricePerMeter = "";
     [ObservableProperty] private string _pricePerPierce = "";
     [ObservableProperty] private string? _calculationError;
+    public bool HasCalculationError => !string.IsNullOrWhiteSpace(CalculationError);
+    partial void OnCalculationErrorChanged(string? value) => base.OnPropertyChanged(new PropertyChangedEventArgs(nameof(HasCalculationError)));
     public CuttingCalculation? Quote { get; private set; }
     public string Caption => string.IsNullOrWhiteSpace(Number) ? "Новая спецификация" : Number;
     public string SaveStatus => Saved is null ? "Не сохранена" : $"Сохранена {Saved.SavedAt.ToLocalTime():dd.MM.yyyy HH:mm}";
     public string ProjectSummary => $"{Machine} · {Thickness} мм · № {Number} · {Date}";
     public string RateSummary => $"Тариф: {PricePerMeter} ₽/м · {PricePerPierce} ₽/пробивку";
+    public string DetailsSummary => $"Заготовка: {BlankSize} · кол-во: {Quantity} · вес: {Weight} кг";
     public string TotalText => Quote is { } q ? Money(q.TotalCost) + " ₽" : "Не рассчитано";
     public string Breakdown => Quote is { } q ? $"Метры: {Money(q.LengthCost)} ₽\nПробивки: {Money(q.PierceCost)} ₽\nКоэффициент: {Coefficient}" : "";
     public string SourceName => SourcePath is null ? "Ручной ввод" : Path.GetFileName(SourcePath);
@@ -117,6 +121,8 @@ public partial class SpecificationDraft : ObservableObject
             base.OnPropertyChanged(new PropertyChangedEventArgs(nameof(ProjectSummary)));
         if (e.PropertyName is nameof(PricePerMeter) or nameof(PricePerPierce))
             base.OnPropertyChanged(new PropertyChangedEventArgs(nameof(RateSummary)));
+        if (e.PropertyName is nameof(BlankSize) or nameof(Quantity) or nameof(Weight))
+            base.OnPropertyChanged(new PropertyChangedEventArgs(nameof(DetailsSummary)));
         Recalculate();
     }
     public CuttingParameters Parameters() => new(Machine?.Trim() ?? "", Material?.Trim() ?? "", MaterialGroup ?? "", Decimal(Thickness, "толщину"), BlankSize ?? "",

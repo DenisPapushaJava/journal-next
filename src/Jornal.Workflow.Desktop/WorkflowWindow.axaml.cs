@@ -31,7 +31,7 @@ public partial class WorkflowWindow : Window
     {
         base.OnOpened(e); if (Model is not { } model) return;
         model.UseLocalPreferencesStore(_preferences);
-        model.Updates.ConfigureRestart(() => model.CanUse && !model.HasPendingEdits && OwnedWindows.All(w => w is WorkflowSettingsWindow { CanRestart: true }),
+        model.Updates.ConfigureRestart(() => model.CanUse && !model.IsCopyingCuttingTask && !model.HasPendingEdits && OwnedWindows.All(w => w is WorkflowSettingsWindow { CanRestart: true }),
             () => _restart.Save(model.CreateRestartDraft()), Close);
         await model.ReloadCommand.ExecuteAsync(null);
         if (model.Error is null)
@@ -166,8 +166,22 @@ public partial class WorkflowWindow : Window
         if (Model is not { CanUse: true } model || OwnedWindows.Count > 0) return;
         var review = await model.CreateReportReviewAsync(_lifetime.Token);
         if (review is null || !IsVisible || _lifetime.IsCancellationRequested) return;
-        var window = new WorkflowReportReviewWindow { DataContext = review, RequestedThemeVariant = ActualThemeVariant };
+        var window = new WorkflowReportReviewWindow(candidate =>
+        {
+            var catalog = model.CreateCatalogSettings();
+            catalog.SelectTariff(candidate.Project.MachineId, candidate.Draft!.MaterialGroup, candidate.Project.ThicknessMm);
+            return new(() => model.CreateDatabaseSettings()) { DataContext = catalog };
+        }) { DataContext = review, RequestedThemeVariant = ActualThemeVariant };
         await window.ShowDialog(this);
+        model.ReportReviewClosed();
+    }
+    private void OnGoToProject(object? sender, RoutedEventArgs e)
+    {
+        if (Model?.SelectedProject is not { } project) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (IsVisible && ReferenceEquals(Model?.SelectedProject, project)) WorkflowProjectsGrid.ScrollIntoView(project, null);
+        }, DispatcherPriority.Loaded);
     }
     private async void OnOpenAcceptedReport(object? sender, RoutedEventArgs e)
     {

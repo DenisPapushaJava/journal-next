@@ -94,7 +94,7 @@ public static partial class WorkflowReportFiles
         var archiveRoot = Path.Combine(Path.GetDirectoryName(report.SourcePath)!, ".workflow-reports");
         var folder = Path.Combine(archiveRoot, report.Sha256);
         Directory.CreateDirectory(folder);
-        HideArchiveFolder(archiveRoot);
+        WorkflowServiceFiles.TryHide(archiveRoot);
         var path = Path.Combine(folder, Path.GetFileName(report.SourcePath));
         var temporary = Path.Combine(folder, Guid.NewGuid().ToString("N") + ".tmp");
         try
@@ -112,20 +112,6 @@ public static partial class WorkflowReportFiles
         }
         finally { File.Delete(temporary); }
         return new(Guid.NewGuid(), report.Sha256, report.Bytes.LongLength, Path.GetFileName(report.SourcePath), path, baseline);
-    }
-
-    private static void HideArchiveFolder(string path)
-    {
-        if (!OperatingSystem.IsWindows()) return; // The leading dot already hides it on Linux.
-        try
-        {
-            var attributes = File.GetAttributes(path);
-            if ((attributes & FileAttributes.Hidden) == 0) File.SetAttributes(path, attributes | FileAttributes.Hidden);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Visibility is cosmetic. A share may allow report writes but reject attribute changes.
-        }
     }
 
     private static async Task<byte[]> CaptureAsync(string path, CancellationToken token)

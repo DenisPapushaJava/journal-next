@@ -32,7 +32,7 @@
           <DataGridTemplateColumn Header="Проект" Width="*" MinWidth="190">
             <DataGridTemplateColumn.CellTemplate>
               <DataTemplate x:DataType="vm:WorkflowReportCandidate">
-                <StackPanel Spacing="4" Margin="4,10,8,10">
+                <StackPanel Spacing="2" Margin="4,6,8,6">
                   <TextBlock Text="{Binding ProjectName}" TextWrapping="Wrap" FontWeight="SemiBold" ToolTip.Tip="{Binding ProjectName}" />
                   <TextBlock Text="{Binding PositionCaption}" Classes="muted" FontSize="12" />
                   <TextBlock Text="{Binding Status}" TextWrapping="Wrap" FontSize="12" />
@@ -78,7 +78,8 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <Grid IsVisible="{Binding HasDraft}">
+              <TextBlock Text="{Binding ReportSummary}" IsVisible="{Binding HasDraft}" TextWrapping="Wrap" Classes="muted" />
+              <Expander x:Name="ReviewReportFields" Header="Изменить данные отчёта" HorizontalAlignment="Stretch" IsVisible="{Binding HasDraft}" IsExpanded="{Binding ShowReportFields, Mode=TwoWay}">
               <StackPanel Spacing="12" DataContext="{Binding Draft}" x:DataType="vm:SpecificationDraft">
                 <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,4,Auto,12,Auto,4,Auto,12,Auto,4,Auto,12,Auto,4,Auto">
                   <TextBlock Text="Материал" Classes="muted" /><TextBlock Grid.Column="2" Text="Толщина, мм" Classes="muted" />
@@ -95,17 +96,21 @@
                   <TextBlock Text="Категория тарифа HansLaser" Classes="muted" />
                   <TextBox Text="{Binding MaterialGroup}" />
                 </StackPanel>
-                <CheckBox Content="Материал проверен" IsVisible="{Binding MaterialNeedsReview}" IsChecked="{Binding MaterialConfirmed}" />
-                <StackPanel Orientation="Horizontal" Spacing="16">
-                  <CheckBox x:Name="ReviewHasChamfer" Content="Фаска" IsChecked="{Binding HasChamfer}" />
-                  <CheckBox Content="Гибка" IsChecked="{Binding HasBending}" />
-                </StackPanel>
                 <Expander Header="Номер и дата спецификации" HorizontalAlignment="Stretch">
                   <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,4,Auto" Margin="0,8,0,0">
                     <TextBlock Text="Номер спецификации" Classes="muted" /><TextBlock Grid.Column="2" Text="Дата" Classes="muted" />
                     <TextBox Grid.Row="2" Text="{Binding Number}" /><TextBox Grid.Row="2" Grid.Column="2" Text="{Binding Date}" />
                   </Grid>
                 </Expander>
+              </StackPanel>
+              </Expander>
+              <Grid IsVisible="{Binding HasDraft}">
+              <StackPanel DataContext="{Binding Draft}" x:DataType="vm:SpecificationDraft" Spacing="8">
+                <CheckBox Content="Материал проверен" IsVisible="{Binding MaterialNeedsReview}" IsChecked="{Binding MaterialConfirmed}" />
+                <StackPanel Orientation="Horizontal" Spacing="16">
+                  <CheckBox x:Name="ReviewHasChamfer" Content="Фаска" IsChecked="{Binding HasChamfer}" />
+                  <CheckBox Content="Гибка" IsChecked="{Binding HasBending}" />
+                </StackPanel>
               </StackPanel>
               </Grid>
             </StackPanel>
@@ -118,8 +123,10 @@
                 <TextBox x:Name="ReviewCoefficient" DataContext="{Binding Selected.Draft}" x:DataType="vm:SpecificationDraft"
                          Text="{Binding Coefficient}" AutomationProperties.Name="Ручной коэффициент" />
               </Grid>
-              <ui:JournalButton Grid.Row="4" Label="Обновить тариф" Command="{Binding RefreshRateCommand}" IsEnabled="{Binding CanEdit}"
-                                IsVisible="{Binding Selected.HasDraft}" HorizontalAlignment="Left" />
+              <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8" IsVisible="{Binding Selected.HasDraft}" IsEnabled="{Binding CanEdit}">
+                <ui:JournalButton Label="Обновить тариф" Command="{Binding RefreshRateCommand}" />
+                <ui:JournalButton x:Name="ConfigureReviewPrices" Label="Настроить тариф…" Click="OnConfigurePrices" />
+              </StackPanel>
             </Grid>
           </Border>
         </Grid>

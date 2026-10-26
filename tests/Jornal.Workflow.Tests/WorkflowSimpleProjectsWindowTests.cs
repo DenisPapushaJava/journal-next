@@ -43,7 +43,7 @@ public sealed class WorkflowSimpleProjectsWindowTests
             InViewport(window.FindControl<TextBox>("WorkflowCalculationLength")!, fields);
             InWindow(save, window); InWindow(coefficient, window);
             Assert.DoesNotContain(pane.GetVisualDescendants().OfType<ComboBox>(), c => c.IsEffectivelyVisible);
-            Assert.Empty(pane.GetVisualDescendants().OfType<Expander>());
+            Assert.False(window.FindControl<Expander>("WorkflowCalculationDetails")!.IsExpanded);
             var firstDraft = f.Model.SelectedDraft; EditCoefficient("1,3"); Assert.Equal("1,3", firstDraft.Coefficient);
             Assert.True(f.Model.SelectedProject!.HasLocalChanges); Assert.Contains("не сохранены", f.Model.SelectedProject.State);
             var calculationRow = window.FindControl<Grid>("WorkflowProjectWorkspace")!.RowDefinitions[2];
@@ -60,8 +60,8 @@ public sealed class WorkflowSimpleProjectsWindowTests
             Assert.Null(f.Model.Error); Assert.Same(firstDraft, f.Model.Drafts.Single(d => d.Id == a.Id));
             var height = grid.Bounds.Height;
             Select(pending.Id); Assert.Null(f.Model.SelectedDraft); Assert.True(pane.IsEffectivelyVisible); Assert.False(fields.IsEffectivelyVisible);
-            Assert.Equal("Нет спецификации для этого проекта.", f.Model.CalculationEmptyText);
-            Assert.InRange(Math.Abs(grid.Bounds.Height - height), 0, 1); SaveFrame("pending");
+            Assert.Contains("рядом с файлом проекта", f.Model.CalculationEmptyText);
+            Assert.True(grid.Bounds.Height > height + 40); Assert.InRange(pane.Bounds.Height, 50, 88); SaveFrame("pending");
             Select(a.Id); Assert.Equal("1,3", coefficient.Text); Click(save);
             await Until(() => !f.Model.IsBusy && f.Model.SelectedDraft?.Saved?.Parameters.ManualCoefficient == 1.3m);
             Assert.Null(f.Model.Error); Assert.False(f.Model.HasPendingEdits); Assert.Empty(window.OwnedWindows);

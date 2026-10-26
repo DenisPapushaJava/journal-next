@@ -49,6 +49,7 @@ public partial class WorkflowViewModel
     {
         OnPropertyChanged(nameof(CanUse)); OnPropertyChanged(nameof(CanBrowseWorkspace));
         SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList();
+        NotifyCuttingTask();
     }
 
     private void ApplyInclusionSnapshot(WorkflowWorkspace book, Guid orderId)

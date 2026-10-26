@@ -27,7 +27,7 @@ public partial class WorkflowFieldConflict : ObservableObject
 
 public partial class WorkflowReportCandidate : ObservableObject
 {
-    private readonly WorkflowWorkspace _workspace;
+    private WorkflowWorkspace _workspace;
     private readonly WorkflowSpecification? _existing;
     private Action _changed;
     private bool _pricing;
@@ -35,7 +35,8 @@ public partial class WorkflowReportCandidate : ObservableObject
     private readonly string _emptyState;
     public CuttingProject Project { get; }
     public string Position { get; }
-    public string PositionCaption => "Позиция " + Position.Replace(" · ", " · вариант ", StringComparison.Ordinal);
+    public string PositionCaption => _workspace.Orders.SelectMany(o => o.ActiveProjects).Count(p => p.ItemId == Project.ItemId) > 1
+        ? "Позиция " + Position.Replace(" · ", " · вариант ", StringComparison.Ordinal) : "Позиция " + Position.Split(" · ")[0];
     public string CardTitle
     {
         get
@@ -53,7 +54,13 @@ public partial class WorkflowReportCandidate : ObservableObject
     public ReportFileSnapshot? Snapshot => SelectedFile?.Snapshot;
     [ObservableProperty] private WorkflowReportChoice? _selectedFile;
     [ObservableProperty] private SpecificationDraft? _draft;
+    [ObservableProperty] private bool _showReportFields;
+    public string ReportSummary => Draft is not { } draft ? "" :
+        $"{draft.Material} · {draft.Thickness} мм · {draft.BlankSize}\nРез: {draft.Length} м · пробивки: {draft.Pierces} · время: {draft.Duration}\nКоличество: {draft.Quantity} · вес: {draft.Weight} кг";
     public bool HasDraft => Draft is not null;
+    internal bool WasAccepted { get; set; }
+    public bool NeedsAttention => !WasAccepted && (Conflicts.Any(c => c.Selection < 0) ||
+        (Snapshot is null ? Choices.Count > 0 : Snapshot.Sha256 != _existing?.Current.Report?.Sha256 || Draft?.IsDirty == true));
     [ObservableProperty] private bool _isSelected;
     public string Status => Snapshot is null ? _emptyState :
         Snapshot.Sha256 == _existing?.Current.Report?.Sha256 ? Draft?.IsDirty == true ? "Параметры изменены" : "Без изменений" :
@@ -109,6 +116,7 @@ public partial class WorkflowReportCandidate : ObservableObject
         if (Choices.Count == 1 && !uncertain) SelectedFile = Choices[0];
         else if (Draft is not null) Draft.PropertyChanged += DraftChanged;
         if (previous?.Snapshot is not null) IsSelected = previous.IsSelected;
+        ShowReportFields = previous?.ShowReportFields ?? NeedsReportFields;
     }
     private HashSet<string> _pendingFields = [];
     internal void UseChangedCallback(Action changed) => _changed = changed;
@@ -150,7 +158,20 @@ public partial class WorkflowReportCandidate : ObservableObject
             previousHash != value.Snapshot.Sha256) Draft.MaterialGroup = "";
         _pendingFields = [];
         Draft.PropertyChanged += DraftChanged;
-        Reprice(); IsSelected = true; Changed();
+        Reprice(); IsSelected = true; if (NeedsReportFields) ShowReportFields = true; Changed();
+    }
+    private bool NeedsReportFields
+    {
+        get
+        {
+            if (Draft is not { } draft) return false;
+            try
+            {
+                _ = draft.Parameters(); _ = draft.DocumentDate();
+                return string.IsNullOrWhiteSpace(draft.Number) || draft.MaterialNeedsReview || !MatchesProject;
+            }
+            catch (WorkflowValidationException) { return true; }
+        }
     }
     private void DraftChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -177,11 +198,22 @@ public partial class WorkflowReportCandidate : ObservableObject
         finally { _pricing = false; }
     }
     public void RefreshRate() { _freshRate = true; Reprice(); Changed(); }
+    internal bool TariffChanged(WorkflowWorkspace workspace)
+    {
+        CuttingRate? Rate(WorkflowWorkspace book) => book.Rates.SingleOrDefault(r => r.MachineId == Project.MachineId &&
+            r.MaterialGroup == Draft?.MaterialGroup && r.ThicknessMm == Project.ThicknessMm);
+        return Rate(workspace) != Rate(_workspace);
+    }
+    internal void UpdatePricing(WorkflowWorkspace workspace, bool refresh)
+    {
+        _workspace = workspace; if (refresh) _freshRate = true;
+        Draft?.UseMachine(workspace.Machines.Single(m => m.Id == Project.MachineId)); Reprice(); Changed();
+    }
     partial void OnIsSelectedChanged(bool value) => _changed();
     partial void OnDraftChanged(SpecificationDraft? value) => OnPropertyChanged(nameof(HasDraft));
     private void Changed()
     {
-        OnPropertyChanged(nameof(Status)); OnPropertyChanged(nameof(Message)); OnPropertyChanged(nameof(Total)); OnPropertyChanged(nameof(Ready)); OnPropertyChanged(nameof(CardTitle)); _changed();
+        OnPropertyChanged(nameof(Status)); OnPropertyChanged(nameof(Message)); OnPropertyChanged(nameof(Total)); OnPropertyChanged(nameof(Ready)); OnPropertyChanged(nameof(CardTitle)); OnPropertyChanged(nameof(ReportSummary)); _changed();
     }
     internal static ReportValues Values(SpecificationDraft d) =>
         new(d.Number, d.Date, d.Material, d.MaterialGroup, d.Thickness, d.BlankSize, d.Quantity, d.Length, d.Pierces, d.Weight, d.Duration);
@@ -204,7 +236,8 @@ public partial class WorkflowReportReviewViewModel : ObservableObject
 {
     private Func<IReadOnlyList<WorkflowReportCandidate>, CancellationToken, Task<string?>> _save;
     private readonly Func<WorkflowReportReviewViewModel, CancellationToken, Task<(WorkflowReportReviewViewModel? Review, string? Error)>>? _refresh;
-    public long PreviewOrderVersion { get; init; }
+    private readonly Func<WorkflowWorkspace>? _pricingSnapshot;
+    public long PreviewOrderVersion { get; internal set; }
     public ObservableCollection<WorkflowReportCandidate> Candidates { get; } = [];
     [ObservableProperty] private WorkflowReportCandidate? _selected;
     [ObservableProperty] private bool _isBusy;
@@ -213,13 +246,14 @@ public partial class WorkflowReportReviewViewModel : ObservableObject
     public bool CanEdit => !IsBusy && !WasSaved;
     private bool CanSave => CanEdit && Candidates.Any(c => c.IsSelected && c.Ready);
     private bool CanRefresh => CanEdit && _refresh is not null;
-    public string SaveCaption => $"Сохранить готовые ({Candidates.Count(c => c.IsSelected && c.Ready)})";
+    public string SaveCaption => $"Принять готовые ({Candidates.Count(c => c.IsSelected && c.Ready)})";
     public string Summary => WasSaved ? "Готовые отчёты сохранены. Остальные проекты можно обновить позже." :
         $"{Candidates.Count(c => c.Ready)} готовы · {Candidates.Count(c => c.Status == "Без изменений")} без изменений · " +
         $"{Candidates.Count(c => !c.Ready && c.Status != "Без изменений")} ожидают или требуют проверки";
     public WorkflowReportReviewViewModel(Func<IReadOnlyList<WorkflowReportCandidate>, CancellationToken, Task<string?>> save,
-        Func<WorkflowReportReviewViewModel, CancellationToken, Task<(WorkflowReportReviewViewModel? Review, string? Error)>>? refresh = null)
-    { _save = save; _refresh = refresh; }
+        Func<WorkflowReportReviewViewModel, CancellationToken, Task<(WorkflowReportReviewViewModel? Review, string? Error)>>? refresh = null,
+        Func<WorkflowWorkspace>? pricingSnapshot = null)
+    { _save = save; _refresh = refresh; _pricingSnapshot = pricingSnapshot; }
     public void Changed()
     { OnPropertyChanged(nameof(SaveCaption)); OnPropertyChanged(nameof(Summary)); SaveCommand.NotifyCanExecuteChanged(); }
     partial void OnIsBusyChanged(bool value) { OnPropertyChanged(nameof(CanEdit)); Changed(); RefreshCommand.NotifyCanExecuteChanged(); }
@@ -240,7 +274,15 @@ public partial class WorkflowReportReviewViewModel : ObservableObject
         catch (OperationCanceledException) { Error = "Подбор отменён; введённые параметры остались в окне."; }
         finally { IsBusy = false; }
     }
-    [RelayCommand] private void RefreshRate() => Selected?.RefreshRate();
+    public void RefreshPricing(bool refreshSelected = true)
+    {
+        if (!CanEdit) return;
+        if (_pricingSnapshot is not { } snapshot) { Selected?.RefreshRate(); return; }
+        var workspace = snapshot();
+        foreach (var candidate in Candidates) candidate.UpdatePricing(workspace,
+            ReferenceEquals(candidate, Selected) && (refreshSelected || candidate.TariffChanged(workspace)));
+    }
+    [RelayCommand] private void RefreshRate() => RefreshPricing();
     [RelayCommand(CanExecute = nameof(CanSave))] private async Task SaveAsync(CancellationToken token)
     {
         IsBusy = true; Error = null;

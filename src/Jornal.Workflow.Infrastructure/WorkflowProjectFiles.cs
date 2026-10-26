@@ -25,6 +25,7 @@ public static class WorkflowProjectFiles
             .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ??
             order.DisplayNumber + "-" + order.Id.ToString("N")[..8] + " " + SafeComponent(customer);
         var claims = Path.Combine(root, ".workflow-names"); Directory.CreateDirectory(claims);
+        WorkflowServiceFiles.TryHide(claims);
         // CreateNew is the reservation, including across orders/clients. Seconds alone do not guarantee uniqueness.
         for (var offset = 0; offset < 3600; offset++)
         {
