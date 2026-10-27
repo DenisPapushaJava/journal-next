@@ -1,6 +1,9 @@
 import importlib.util
 import json
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -13,6 +16,13 @@ spec.loader.exec_module(release)
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_plan_cli_supports_a_windows_console_without_cyrillic(self):
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/release.py'), 'plan', '--version', '2026.1.0-alpha.5'],
+                                env=os.environ | {'PYTHONIOENCODING': 'cp1252'}, capture_output=True)
+        self.assertEqual(0, result.returncode, result.stderr.decode('utf-8', errors='replace'))
+        self.assertEqual('Заявки', json.loads(result.stdout)['displayName'])
+        result.stdout.decode('ascii')
+
     def test_alpha_four_notes_are_exactly_the_three_approved_points(self):
         self.assertEqual(
             '1. Задание в цех: копирование текста по составу заявки.\n'

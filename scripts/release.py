@@ -193,7 +193,7 @@ def main():
         if args.github_output:
             with open(args.github_output, 'a', encoding='utf-8') as stream:
                 stream.write(f"version={p['version']}\ntag={p['tag']}\n")
-        print(json.dumps(p, ensure_ascii=False, indent=2))
+        print(json.dumps(p, ensure_ascii=True, indent=2))
     except (ValueError, OSError, subprocess.CalledProcessError, zipfile.BadZipFile) as error:
         parser.exit(1, str(error) + '\n')
 
