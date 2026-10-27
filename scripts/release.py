@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Windows-only Journal Next packaging; all product and repository identities are fixed."""
+"""Windows-only Заявки packaging; all product and repository identities are fixed."""
 import argparse
 import hashlib
 import json
@@ -26,12 +26,12 @@ def product(root=ROOT):
     required = {"productId": PACKAGE, "settingsFolder": "JournalWorkflow", "channelPrefix": "workflow",
                 "tagPrefix": TAG_PREFIX, "mainExecutable": EXECUTABLE, "updatesRepository": REPOSITORY}
     if any(value.get(k) != v for k, v in required.items()):
-        raise ValueError("Journal Next identity/repository differs; refusing another product's release")
+        raise ValueError("Заявки identity/repository differs; refusing another product's release")
     if value.get("publicationEnabled") is not True:
-        raise ValueError("Journal Next publication is disabled")
+        raise ValueError("Заявки publication is disabled")
     actual = os.environ.get("GITHUB_REPOSITORY")
     if actual and actual.lower() != "denispapushajava/journal-next":
-        raise ValueError("This workflow may run only in the Journal Next repository")
+        raise ValueError("This workflow may run only in the Заявки repository")
     return value
 
 
@@ -39,7 +39,7 @@ def version(value):
     if value.startswith(TAG_PREFIX):
         value = value[len(TAG_PREFIX):]
     if not re.fullmatch(r"202[6-9]\.[1-9]\d*\.(?:0|[1-9]\d*)(?:-(?:alpha|beta|rc)\.[1-9]\d*)?", value):
-        raise ValueError("Expected a Journal Next calendar version")
+        raise ValueError("Expected a Заявки calendar version")
     return value
 
 
@@ -47,7 +47,7 @@ def plan(value, runtime="win-x64", root=ROOT):
     p = product(root)
     value = version(value)
     if runtime != "win-x64":
-        raise ValueError("Journal Next releases are Windows x64 only")
+        raise ValueError("Заявки releases are Windows x64 only")
     return dict(productId=PACKAGE, version=value, tag=TAG_PREFIX + value, channel=CHANNEL,
                 feed=f"releases.{CHANNEL}.json", mainExecutable=EXECUTABLE,
                 repository=REPOSITORY, displayName=p["displayName"])

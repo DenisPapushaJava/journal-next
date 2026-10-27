@@ -7,11 +7,12 @@ public static class WorkflowIdentity
 {
     public const string PackageId = "DenisPapusha.JournalWorkflow";
     // Display branding is independent of the stable package/profile/update identity.
-    public const string Name = "Journal Next";
-    public const string WindowTitle = Name + " · Заявки и расчёты";
+    public const string Name = "Заявки";
+    public const string WindowTitle = Name;
     public const string SettingsTitle = "Настройки · " + Name;
     public const string UpdatesTitle = "Обновления · " + Name;
     public const string TrashTitle = "Корзина заявок · " + Name;
+    public const string ShopTransferTitle = "Задание в цех · " + Name;
     public const string SettingsFolder = "JournalWorkflow";
     public const string ChannelPrefix = "workflow";
     public const string TagPrefix = "workflow-v";

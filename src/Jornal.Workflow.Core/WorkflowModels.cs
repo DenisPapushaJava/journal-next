@@ -75,6 +75,8 @@ public sealed record WorkflowOrder(Guid Id, long Number, Guid CustomerId, Guid M
     public Guid? CreatedById { get; init; }
     public DateTimeOffset? DeletedAt { get; init; }
     public Guid? DeletedBy { get; init; }
+    public WorkflowShopHandoff? ShopHandoff { get; init; }
+    [JsonIgnore] public bool HasCurrentShopHandoff => !IsDeleted && ShopHandoff?.OrderVersion == Version;
     [JsonIgnore] public bool IsDeleted => DeletedAt is not null;
     [JsonIgnore] public IEnumerable<CuttingProject> ActiveProjects => Projects.Where(p => !p.IsDeleted);
     [JsonIgnore] public bool HasProjectRename => Projects.Any(p => p.Rename is not null);
@@ -99,11 +101,12 @@ public sealed record WorkflowWorkspace(int SchemaVersion, long Version, Employee
     public WorkflowMachine[] Machines { get; init; } = [];
     public WorkflowPriceSource? PriceSource { get; init; }
     public string? ProjectRoot { get; init; }
-    public static WorkflowWorkspace Empty => new(11, 0, [], [], [], []) { Machines = WorkflowMachine.Defaults() };
+    public const int CurrentSchema = 12;
+    public static WorkflowWorkspace Empty => new(CurrentSchema, 0, [], [], [], []) { Machines = WorkflowMachine.Defaults() };
 
     public void Validate()
     {
-        if (SchemaVersion != 11 || Version < 0 || Employees is null || Customers is null || Rates is null || Orders is null)
+        if (SchemaVersion != CurrentSchema || Version < 0 || Employees is null || Customers is null || Rates is null || Orders is null)
             throw new WorkflowValidationException("Неизвестная структура локальных данных нового Journal.");
         if (Employees.Any(e => e.ColorArgb is { } color && color >> 24 != 255))
             throw new WorkflowValidationException("Цвет сотрудника должен быть непрозрачным.");
@@ -125,6 +128,9 @@ public sealed record WorkflowWorkspace(int SchemaVersion, long Version, Employee
         foreach (var machine in Machines) WorkflowProjectNames.Extension(machine);
         foreach (var order in Orders)
         {
+            if (order.ShopHandoff is { } handoff && (handoff.OrderVersion < 1 || handoff.OrderVersion > order.Version ||
+                handoff.At == default || !Employees.Any(e => e.Id == handoff.ActorId)))
+                throw new WorkflowValidationException("Повреждена отметка передачи заявки в цех.");
             if (order.CreatedById is { } creator && !Employees.Any(e => e.Id == creator))
                 throw new WorkflowValidationException("Нарушена связь с автором создания заявки.");
             if (order.DeletedAt.HasValue != order.DeletedBy.HasValue || order.DeletedBy is { } deletedBy && !Employees.Any(e => e.Id == deletedBy))

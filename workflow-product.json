@@ -1,6 +1,6 @@
 {
   "productId": "DenisPapusha.JournalWorkflow",
-  "displayName": "Journal Next",
+  "displayName": "Заявки",
   "settingsFolder": "JournalWorkflow",
   "channelPrefix": "workflow",
   "tagPrefix": "workflow-v",

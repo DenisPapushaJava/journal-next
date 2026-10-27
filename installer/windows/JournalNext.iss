@@ -1,11 +1,11 @@
-; Обёртка поставляет зависимости; установкой/удалением/обновлением Journal Next владеет Velopack.
+; Обёртка поставляет зависимости; установкой/удалением/обновлением программы «Заявки» владеет Velopack.
 #ifndef JournalVersion
   #error JournalVersion is required
 #endif
 
 [Setup]
 AppId=DenisPapusha.JournalWorkflow.OfflineBootstrap
-AppName=Journal Next
+AppName=Заявки
 AppVersion={#JournalVersion}
 AppPublisher=DenisPapusha
 AppPublisherURL=https://github.com/DenisPapushaJava/journal-next
@@ -33,18 +33,18 @@ RestartIfNeededByRun=no
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Messages]
-ReadyLabel1=Всё готово к установке Journal Next
+ReadyLabel1=Всё готово к установке программы «Заявки»
 ReadyLabel2a=Нужные компоненты уже включены в установщик. Интернет для установки не требуется.%n%nСуществующая база, старая программа и Office сохраняются. При необходимости Windows запросит разрешение установить среду .NET.
-FinishedLabel=Journal Next установлен. Настройте профиль и папку проектов через «Настройки».
+FinishedLabel=Программа «Заявки» установлена. Настройте профиль и папку проектов через «Настройки».
 
 [Files]
 Source: "{#RuntimeX64}"; DestDir: "{tmp}"; DestName: "runtime-x64.exe"; Flags: dontcopy
 Source: "{#RuntimeX86}"; DestDir: "{tmp}"; DestName: "runtime-x86.exe"; Flags: dontcopy
 Source: "{#AccessHost}\*"; DestDir: "{tmp}\AccessHost"; Flags: dontcopy recursesubdirs
-Source: "{#AppSetup}"; DestDir: "{tmp}"; DestName: "Journal Next-AppSetup.exe"; Flags: dontcopy
+Source: "{#AppSetup}"; DestDir: "{tmp}"; DestName: "Заявки-AppSetup.exe"; Flags: dontcopy
 
 [Run]
-Filename: "{code:LaunchPath}"; Description: "Запустить Journal Next"; Flags: postinstall nowait skipifsilent
+Filename: "{code:LaunchPath}"; Description: "Запустить «Заявки»"; Flags: postinstall nowait skipifsilent
 
 [Code]
 #include "AccessHostDiagnostics.iss"
@@ -109,9 +109,9 @@ begin
   if DefaultRoot = '' then DefaultRoot := ExpandConstant('{localappdata}\DenisPapusha.JournalWorkflow');
   Description := 'Установка для текущего пользователя. Выберите пустую папку с правами записи вне Program Files и Windows. OrderDB.mdb выбирается после установки.';
   if ExistingRoot <> '' then
-    Description := 'Journal Next уже установлен. Повторная установка использует прежнюю папку. Для переноса сначала удалите Journal Next через параметры Windows, затем установите заново; база и личные настройки хранятся отдельно.';
+    Description := 'Программа «Заявки» уже установлена. Повторная установка использует прежнюю папку. Для переноса сначала удалите программу через параметры Windows, затем установите заново; база и личные настройки хранятся отдельно.';
   DirectoryPage := CreateInputDirPage(wpWelcome, 'Папка установки',
-    'Где установить Journal Next?', Description, False, 'Journal Next');
+    'Где установить «Заявки»?', Description, False, 'Заявки');
   DirectoryPage.Add('Папка приложения:');
   RequestedRoot := ExpandConstant('{param:JOURNALNEXTDIR|}');
   if RequestedRoot = '' then RequestedRoot := DefaultRoot;
@@ -137,7 +137,7 @@ var
   Value: String;
   Entry: TFindRec;
 begin
-  Result := 'Выберите отдельную папку на локальном диске, например D:\Journal Next.';
+  Result := 'Выберите отдельную папку на локальном диске, например D:\Заявки.';
   Value := Trim(DirectoryPage.Values[0]);
   Log('Проверка папки установки: [' + Value + ']');
   if (Length(Value) < 4) or (Copy(Value, 2, 2) <> ':\') then begin
@@ -153,7 +153,7 @@ begin
   if IsWithinDirectory(Value, ExpandConstant('{pf64}')) or
     IsWithinDirectory(Value, ExpandConstant('{pf32}')) or
     IsWithinDirectory(Value, ExpandConstant('{win}')) then begin
-    Result := 'Этот установщик устанавливает Journal Next для текущего пользователя. Program Files и папка Windows требуют другого режима установки. Выберите папку в профиле пользователя или другую отдельную папку с правами записи; так обновления смогут работать без запуска Journal Next от администратора.';
+    Result := 'Этот установщик устанавливает программу «Заявки» для текущего пользователя. Program Files и папка Windows требуют другого режима установки. Выберите папку в профиле пользователя или другую отдельную папку с правами записи; так обновления смогут работать без запуска программы от администратора.';
     Exit;
   end;
   if Length(Value) <= 3 then begin Log('Нельзя устанавливать в корень диска.'); Exit; end;
@@ -195,8 +195,8 @@ function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoType
   MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
 begin
   Result := 'Папка приложения:' + NewLine + Space + InstallRoot + NewLine + NewLine +
-    'Компоненты:' + NewLine + Space + 'Journal Next x64, модуль MDB x86, .NET Runtime x64/x86' + NewLine + NewLine +
-    'База данных:' + NewLine + Space + 'Данные Next хранятся отдельно от прежнего Journal; установка не меняет его базу.' + NewLine + NewLine +
+    'Компоненты:' + NewLine + Space + 'Заявки x64, модуль MDB x86, .NET Runtime x64/x86' + NewLine + NewLine +
+    'База данных:' + NewLine + Space + 'Данные программы «Заявки» хранятся отдельно от прежнего Journal; установка не меняет его базу.' + NewLine + NewLine +
     'Сеть:' + NewLine + Space + 'Автопроверка обновлений обращается к GitHub. Её можно отключить в окне колокольчика; скачивание и установка — по вашей команде.';
 end;
 
@@ -243,11 +243,11 @@ begin
   Log('.NET ' + Architecture + ', код завершения: ' + IntToStr(Code));
   if Code = 3010 then RuntimeRestartRequired := True
   else if Code <> 0 then begin
-    Result := 'Не удалось установить .NET, код: ' + IntToStr(Code) + '. Journal Next и база не изменены.';
+    Result := 'Не удалось установить .NET, код: ' + IntToStr(Code) + '. Программа «Заявки» и база не изменены.';
     Exit;
   end;
   if not HasRuntime(Architecture) then
-    Result := '.NET пока недоступна. Перезапустите Windows и повторите установку Journal Next.';
+    Result := '.NET пока недоступна. Перезапустите Windows и повторите установку программы «Заявки».';
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -290,11 +290,11 @@ begin
   if CurStep = ssPostInstall then begin
     Error := DirectoryError;
     if Error <> '' then RaiseException(Error);
-    ExtractTemporaryFile('Journal Next-AppSetup.exe');
-    if not Exec(ExpandConstant('{tmp}\Journal Next-AppSetup.exe'), '--silent --installto "' + InstallRoot + '"', '', SW_SHOW, ewWaitUntilTerminated, Code) then
-      RaiseException('Не удалось запустить установку Journal Next. Код: ' + IntToStr(Code));
-    if Code <> 0 then RaiseException('Установка Journal Next не завершена. Код: ' + IntToStr(Code));
-    if not FileExists(LaunchPath('')) then RaiseException('Не найдена установленная программа Journal Next. Повторите установку.');
+    ExtractTemporaryFile('Заявки-AppSetup.exe');
+    if not Exec(ExpandConstant('{tmp}\Заявки-AppSetup.exe'), '--silent --installto "' + InstallRoot + '"', '', SW_SHOW, ewWaitUntilTerminated, Code) then
+      RaiseException('Не удалось запустить установку программы «Заявки». Код: ' + IntToStr(Code));
+    if Code <> 0 then RaiseException('Установка программы «Заявки» не завершена. Код: ' + IntToStr(Code));
+    if not FileExists(LaunchPath('')) then RaiseException('Не найдена установленная программа «Заявки». Повторите установку.');
   end;
 end;
 

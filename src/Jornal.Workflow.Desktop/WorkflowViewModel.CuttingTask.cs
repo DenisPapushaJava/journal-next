@@ -18,7 +18,7 @@ public partial class WorkflowViewModel
     public bool IsCuttingTaskVisible => ReferenceEquals(_cuttingTaskSource, _store) && CurrentOrder?.Id == _cuttingTaskOrderId;
     public string CuttingTaskText => TaskPreview.Text;
     public bool HasCuttingTaskText => TaskPreview.IsReady;
-    public bool IsCuttingTaskReadyVisible => IsCuttingTaskVisible && HasCuttingTaskText;
+    public bool IsCuttingTaskReadyVisible => IsCuttingTaskVisible && HasCuttingTaskText && ShopTransfer is null;
     public bool IsCuttingTaskProblemVisible => IsCuttingTaskVisible && !HasCuttingTaskText;
     public bool CanGoToCuttingTaskProblem => TaskPreview.Problem is { Target: not CuttingTaskTarget.None };
     public string CuttingTaskNotice => TaskPreview.Problem?.Message ?? _cuttingTaskCopyError ??
@@ -51,10 +51,11 @@ public partial class WorkflowViewModel
     {
         _cuttingTaskPreview = null;
         foreach (var name in new[] { nameof(CanCopyCuttingTask), nameof(IsCuttingTaskVisible), nameof(CuttingTaskText), nameof(HasCuttingTaskText),
-            nameof(IsCuttingTaskReadyVisible), nameof(IsCuttingTaskProblemVisible), nameof(CanGoToCuttingTaskProblem), nameof(CuttingTaskNotice), nameof(CuttingTaskActionCaption) }) OnPropertyChanged(name);
+            nameof(IsCuttingTaskReadyVisible), nameof(IsCuttingTaskProblemVisible), nameof(CanGoToCuttingTaskProblem), nameof(CuttingTaskNotice), nameof(CuttingTaskActionCaption), nameof(HasShopTransfer) }) OnPropertyChanged(name);
     }
     private void ResetCuttingTask()
     {
+        ResetShopTransfer();
         _cuttingTaskEpoch++; _cuttingTaskSource = null; _cuttingTaskOrderId = null; _copiedCuttingTask = null; _cuttingTaskCopyError = null;
         NotifyCuttingTask();
     }

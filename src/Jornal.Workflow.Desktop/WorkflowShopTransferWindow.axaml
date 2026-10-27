@@ -1,0 +1,66 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Workflow.Desktop" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Workflow.Desktop.WorkflowShopTransferWindow" x:DataType="vm:WorkflowShopTransferViewModel"
+        Title="{x:Static vm:WorkflowIdentity.ShopTransferTitle}" Width="1040" Height="650" MinWidth="800" MinHeight="540"
+        WindowStartupLocation="CenterOwner" Background="{DynamicResource JournalBackground}">
+  <Grid Margin="20" RowDefinitions="Auto,12,*,12,Auto,Auto,12,Auto">
+    <Grid ColumnDefinitions="*,12,Auto">
+      <StackPanel Spacing="4">
+        <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding Root}" Classes="muted" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Root}" />
+      </StackPanel>
+      <ui:JournalButton Grid.Column="2" Label="Обновить подбор" Icon="refresh-cw" Command="{Binding RefreshCommand}" IsEnabled="{Binding CanEdit}" />
+    </Grid>
+    <Grid Grid.Row="2" ColumnDefinitions="240,12,*" IsEnabled="{Binding CanEdit}">
+      <ListBox x:Name="ShopProjects" ItemsSource="{Binding Projects}" SelectedItem="{Binding SelectedProject}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" Background="{DynamicResource JournalSurface}">
+        <ListBox.ItemTemplate><DataTemplate x:DataType="vm:WorkflowShopProjectChoice">
+          <StackPanel Spacing="4" Margin="4,6"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Summary}" FontSize="12" TextWrapping="Wrap" Classes="muted" />
+          </StackPanel>
+        </DataTemplate></ListBox.ItemTemplate>
+      </ListBox>
+      <Border Grid.Column="2" Classes="panel" Padding="12">
+        <Grid DataContext="{Binding SelectedProject}" x:DataType="vm:WorkflowShopProjectChoice" RowDefinitions="Auto,8,*,8,Auto,Auto">
+          <Grid ColumnDefinitions="*,8,Auto">
+            <TextBox x:Name="ShopDestination" Text="{Binding Destination, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="80" AutomationProperties.Name="Папка комплекта в цех" />
+            <ui:JournalButton Grid.Column="2" Label="Папка" Click="OnOpenDestination" IsVisible="{Binding HasDestination}" ToolTip.Tip="Открыть папку задания" AutomationProperties.Name="Открыть папку задания" />
+          </Grid>
+          <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="8">
+            <TextBlock Text="{Binding SelectionHelp}" IsVisible="{Binding HasSelectionHelp}" Classes="muted" TextWrapping="Wrap" FontSize="12" />
+            <ItemsControl ItemsSource="{Binding Files}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:WorkflowShopFileChoice">
+              <Grid ColumnDefinitions="*,8,Auto" Margin="0,3">
+                <CheckBox IsChecked="{Binding IsSelected}" IsEnabled="{Binding CanSelect}" HorizontalContentAlignment="Stretch">
+                  <StackPanel Spacing="3"><TextBlock Text="{Binding Name}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Detail}" FontSize="12" Classes="muted" TextWrapping="Wrap" />
+                  </StackPanel>
+                </CheckBox>
+                <Button Grid.Column="2" Content="Открыть" Click="OnOpenFile" IsEnabled="{Binding CanSelect}" Classes="command" VerticalAlignment="Center" ToolTip.Tip="{Binding File.SourcePath}" />
+              </Grid>
+            </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+            </StackPanel>
+          </ScrollViewer>
+          <StackPanel Grid.Row="4" Spacing="6">
+            <TextBlock Text="{Binding BendingText}" IsVisible="{Binding HasBending}" TextWrapping="Wrap" FontSize="12" />
+            <TextBlock Text="{Binding Problem}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
+          </StackPanel>
+          <CheckBox x:Name="ShopReviewed" Grid.Row="5" Content="Состав этого проекта проверен" IsChecked="{Binding Reviewed}" IsVisible="{Binding RequiresReview}" />
+        </Grid>
+      </Border>
+    </Grid>
+    <StackPanel Grid.Row="4" Spacing="6">
+      <CheckBox x:Name="ShopAllowReplacement" HorizontalContentAlignment="Stretch" IsChecked="{Binding AllowReplacement}" IsVisible="{Binding ShowReplacement}" IsEnabled="{Binding CanEdit}">
+        <TextBlock Text="Подтверждаю замену изменённых комплектов: прежние программы могли взять в работу" TextWrapping="Wrap" />
+      </CheckBox>
+      <TextBlock x:Name="ShopStatus" Text="{Binding Status}" TextWrapping="Wrap" />
+      <TextBlock x:Name="ShopError" Text="{Binding Error}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
+    </StackPanel>
+    <ProgressBar Grid.Row="5" IsIndeterminate="True" IsVisible="{Binding IsBusy}" Height="3" Margin="0,8,0,0" />
+    <Grid Grid.Row="7" ColumnDefinitions="*,8,Auto,8,Auto,8,Auto">
+      <TextBlock Text="Исходные файлы сохраняются. После подготовки текст задания попадёт в буфер обмена." TextWrapping="Wrap" Classes="muted" FontSize="12" VerticalAlignment="Center" />
+      <ui:JournalButton Grid.Column="2" Label="Копировать текст" Command="{Binding CopyTextCommand}" IsVisible="{Binding AllPrepared}" IsEnabled="{Binding CanCopyText}" />
+      <ui:JournalButton x:Name="ShopCopy" Grid.Column="4" Label="Подготовить в цех" Classes="primary" Command="{Binding CopyCommand}" IsEnabled="{Binding CanCopy}" IsVisible="{Binding !AllPrepared}" />
+      <ui:JournalButton x:Name="ShopClose" Grid.Column="6" Label="{Binding CloseCaption}" IsEnabled="{Binding CanCloseOrCancel}" Click="OnClose" />
+    </Grid>
+  </Grid>
+</Window>

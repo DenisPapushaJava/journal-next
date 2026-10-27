@@ -137,7 +137,7 @@ public sealed class WorkflowSettingsWindowTests
             Assert.True(settings.FindControl<TextBox>("WorkflowWorkspacePath")!.IsReadOnly);
             Assert.Equal("Хранилище", model.SectionTitle);
             settings.FindControl<ListBox>("WorkflowSettingsNavigation")!.SelectedIndex = 2; Dispatcher.UIThread.RunJobs();
-            Assert.Equal("Программа", model.SectionTitle); Assert.Same(f.Model.Updates, model.Updates);
+            Assert.Equal("Обновления", model.SectionTitle); Assert.Same(f.Model.Updates, model.Updates);
             Assert.False(settings.FindControl<Button>("SaveWorkflowSettings")!.IsVisible);
             SaveFrame(settings, dark, width, "workflow-settings-program");
             model.SelectedSectionIndex = 0; Dispatcher.UIThread.RunJobs(); Click(changeColor);

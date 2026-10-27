@@ -9,12 +9,15 @@ public sealed record WorkflowPreferences(bool DarkTheme = false)
     public Guid? EmployeeId { get; init; }
     public WorkflowEntrySuggestions? EntrySuggestions { get; init; }
     public WorkflowResultPricing? ResultPricing { get; init; }
+    public string? ShopRoot { get; init; }
+    public uint ShopHandoffColorArgb { get; init; } = 0xFF80FFFF;
     public string? DatabasePath { get; init; }
     public Guid? DatabaseId { get; init; }
     public Dictionary<string, Guid?>? DatabaseEmployees { get; init; }
     [System.Text.Json.Serialization.JsonIgnore] public string SourceKey => DatabaseId?.ToString("N") ?? "local";
     public void Validate()
     {
+        if (ShopHandoffColorArgb >> 24 != 255) throw new InvalidDataException("Цвет отметки передачи в цех должен быть непрозрачным.");
         if (EmployeeId == Guid.Empty) throw new InvalidDataException("Проверьте локальный выбор технолога.");
         if (DatabaseId == Guid.Empty || DatabasePath is not null &&
             (!Path.IsPathFullyQualified(DatabasePath) || !Path.GetExtension(DatabasePath).Equals(".mdb", StringComparison.OrdinalIgnoreCase)))
@@ -30,6 +33,7 @@ public sealed class WorkflowPreferencesStore(string path)
 {
     public const int MaximumBytes = 128 * 1024;
     public string DirectoryPath => Path.GetDirectoryName(Path.GetFullPath(path))!;
+    public string ProfileCachePath => Path.Combine(DirectoryPath, Path.GetFileNameWithoutExtension(path) + ".profile-cache.json");
     public WorkflowPreferences Load()
     {
         try

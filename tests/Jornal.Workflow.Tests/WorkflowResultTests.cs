@@ -100,7 +100,7 @@ public sealed class WorkflowResultTests
         await f.Model.SetProjectTrashAsync(project.Id, true); await f.Model.SetProjectTrashAsync(project.Id, false);
         Assert.True(f.Model.SelectedDraft!.HasChamfer); Assert.True(f.Model.SelectedDraft.HasBending);
         var book = await f.Store.ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(11, book.SchemaVersion); Assert.Equal(2105m, book.Orders.Single().CuttingTotal);
+        Assert.Equal(WorkflowWorkspace.CurrentSchema, book.SchemaVersion); Assert.Equal(2105m, book.Orders.Single().CuttingTotal);
         Assert.Equal(saved.Calculation.PricePerMeter, book.Orders.Single().Specifications.Single().Current.Calculation.PricePerMeter);
         var legacy = JsonSerializer.SerializeToNode(book)!.AsObject();
         legacy["Orders"]![0]!["Specifications"]![0]!["Current"]!["Parameters"]!.AsObject().Remove("HasChamfer");

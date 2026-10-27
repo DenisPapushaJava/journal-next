@@ -2,10 +2,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Journal Next: запуск и отладка",
+      "name": "Заявки: запуск и отладка",
       "type": "coreclr",
       "request": "launch",
-      "preLaunchTask": "Journal Next: сборка Debug",
+      "preLaunchTask": "Заявки: сборка Debug",
       "program": "${workspaceFolder}/src/Jornal.Workflow.Desktop/bin/Debug/net10.0/Jornal.Workflow.Desktop.dll",
       "cwd": "${workspaceFolder}",
       "args": [],

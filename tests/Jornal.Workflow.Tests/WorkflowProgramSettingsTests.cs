@@ -20,8 +20,9 @@ public sealed class WorkflowProgramSettingsTests
     [AvaloniaTheory]
     [InlineData(false, 1366)] [InlineData(true, 1366)]
     [InlineData(false, 1180)] [InlineData(true, 1180)]
-    public async Task BellAndGearUseOneSettingsWindowAndThemeKeepsIdentityAndPersonalLists(bool dark, int width)
+    public async Task BellUsesCompactUpdatesAndSettingsPreserveIdentityAndPersonalLists(bool dark, int width)
     {
+        using var bindingLog = new WorkflowWindowTests.BindingLog();
         using var f = new ProjectFixture(); await f.InitializeAsync();
         var preferences = new WorkflowPreferencesStore(Path.Combine(f.DirectoryPath, "preferences.json"));
         preferences.Update(p => p with { DarkTheme = dark, EntrySuggestions = new() { Managers = ["Личный менеджер"] } });
@@ -29,18 +30,28 @@ public sealed class WorkflowProgramSettingsTests
         try
         {
             window.Show(); await ReadyAsync(f.Model); Click(window, "UpdatesBell");
+            var updateWindow = Assert.IsType<WorkflowUpdatesWindow>(Assert.Single(window.OwnedWindows));
+            Assert.Same(f.Model.Updates, updateWindow.DataContext);
+            var panel = updateWindow.FindControl<WorkflowUpdatesPanel>("UpdatesPanel")!;
+            Assert.Equal(640, updateWindow.Width);
+            Assert.Equal("https://github.com/DenisPapushaJava/journal-next", WorkflowIdentity.UpdatesRepository!.AbsoluteUri);
+            Assert.True(panel.FindControl<Button>("OpenWorkflowReleases")!.IsEffectivelyVisible);
+            Assert.False(panel.FindControl<Button>("CheckWorkflowUpdates")!.IsEffectivelyEnabled);
+            Frame(updateWindow, $"workflow-updates-{width}-{(dark ? "dark" : "light")}");
+            Click(window, "UpdatesBell"); Assert.Same(updateWindow, Assert.Single(window.OwnedWindows));
+            Click(window, "WorkflowSettings"); Assert.False(updateWindow.IsVisible);
             var settings = Assert.IsType<WorkflowSettingsWindow>(Assert.Single(window.OwnedWindows));
             if (width == 1180) { settings.Width = 800; settings.Height = 580; Pump(); }
             var model = Assert.IsType<WorkflowSettingsViewModel>(settings.DataContext);
-            Assert.Equal(2, model.SelectedSectionIndex); Assert.Same(f.Model.Updates, model.Updates);
-            Assert.Equal(new[] { "Общие", "Хранилище", "Программа" }, settings.FindControl<ListBox>("WorkflowSettingsNavigation")!.Items.Cast<ListBoxItem>().Select(i => i.Content));
-            Assert.True(model.IsUpdateSourceConfigured); Assert.Equal("https://github.com/DenisPapushaJava/journal-next", WorkflowIdentity.UpdatesRepository!.AbsoluteUri);
-            Assert.True(settings.FindControl<Button>("OpenWorkflowReleases")!.IsEffectivelyVisible);
-            Assert.Contains(WorkflowIdentity.Name, settings.FindControl<TextBlock>("WorkflowUpdateSetupHint")!.Text);
-            Assert.False(settings.FindControl<Button>("CheckWorkflowUpdates")!.IsEffectivelyEnabled);
-            Frame(settings, $"workflow-program-{width}-{(dark ? "dark" : "light")}");
-            Click(window, "WorkflowSettings"); Assert.Same(settings, Assert.Single(window.OwnedWindows));
-            Assert.Equal(0, model.SelectedSectionIndex);
+            Assert.Equal(0, model.SelectedSectionIndex); Assert.Same(f.Model.Updates, model.Updates);
+            Assert.Equal(new[] { "Общие", "Хранилище", "Обновления", "Диагностика", "О программе" }, settings.FindControl<ListBox>("WorkflowSettingsNavigation")!.Items.Cast<ListBoxItem>().Select(i => i.Content));
+            for (var i = 0; i < 5; i++)
+            {
+                model.SelectedSectionIndex = i; Pump();
+                Assert.Equal(i < 2, settings.FindControl<Button>("SaveWorkflowSettings")!.IsEffectivelyVisible);
+                Frame(settings, $"workflow-settings-{i}-{width}-{(dark ? "dark" : "light")}");
+            }
+            model.SelectedSectionIndex = 0; Pump();
             var employee = f.Model.CurrentEmployee!.Id;
             settings.FindControl<CheckBox>("WorkflowDarkTheme")!.IsChecked = !dark; Pump();
             Assert.Equal(!dark, f.Model.IsDarkTheme); Assert.Equal(!dark, preferences.Load().DarkTheme);
@@ -56,6 +67,7 @@ public sealed class WorkflowProgramSettingsTests
             settings.FindControl<CheckBox>("WorkflowDarkTheme")!.IsChecked = !dark; Pump(); Assert.Null(f.Model.ThemeError);
             Frame(settings, $"workflow-general-theme-{width}-{(dark ? "dark" : "light")}");
             Click(window, "UpdatesBell"); Assert.Same(settings, Assert.Single(window.OwnedWindows)); Assert.Equal(2, model.SelectedSectionIndex);
+            Assert.Empty(bindingLog.Errors);
         }
         finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); }
     }
@@ -79,7 +91,7 @@ public sealed class WorkflowProgramSettingsTests
             window.Show(); await ReadyAsync(client);
             client.ResultText = "Ручной текст перед обновлением\n";
             await updates.CheckCommand.ExecuteAsync(null); await updates.DownloadCommand.ExecuteAsync(null); Assert.True(updates.IsDownloaded);
-            Click(window, "UpdatesBell");
+            Click(window, "WorkflowSettings");
             var settings = Assert.IsType<WorkflowSettingsWindow>(Assert.Single(window.OwnedWindows));
             var model = Assert.IsType<WorkflowSettingsViewModel>(settings.DataContext);
             Assert.Same(updates, model.Updates);
@@ -109,6 +121,73 @@ public sealed class WorkflowProgramSettingsTests
             if (failRestart) { Assert.NotNull(updates.Error); Assert.True(model.CanClose); Assert.False(updates.IsApplying); }
         }
         finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); client.Detach(); }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task CompactUpdatesKeepDownloadAcrossReopenAndRestartSafely(bool dark)
+    {
+        using var f = new ProjectFixture(); await f.InitializeAsync();
+        var preferences = new WorkflowPreferencesStore(Path.Combine(f.DirectoryPath, "preferences.json"));
+        preferences.Update(p => p with { DarkTheme = dark });
+        var updater = new InMemoryUpdater();
+        var updates = new AppUpdatesViewModel(updater);
+        var client = new WorkflowViewModel(f.Store, updates, preferences: preferences);
+        var window = new WorkflowWindow(preferences) { DataContext = client };
+        try
+        {
+            window.Show(); await ReadyAsync(client); Click(window, "UpdatesBell");
+            var compact = Assert.IsType<WorkflowUpdatesWindow>(Assert.Single(window.OwnedWindows));
+            compact.Width = 600; compact.Height = 540; Pump();
+            Assert.Equal(dark ? ThemeVariant.Dark : ThemeVariant.Light, compact.ActualThemeVariant);
+            var panel = compact.FindControl<WorkflowUpdatesPanel>("UpdatesPanel")!;
+            await updates.CheckCommand.ExecuteAsync(null); Pump();
+            Assert.True(panel.FindControl<Button>("DownloadWorkflowUpdate")!.IsEffectivelyVisible);
+            Assert.False(panel.FindControl<Button>("InstallWorkflowUpdate")!.IsEffectivelyVisible);
+            Frame(compact, $"workflow-update-available-{dark}");
+            await updates.DownloadCommand.ExecuteAsync(null); Pump();
+            Assert.False(panel.FindControl<Button>("DownloadWorkflowUpdate")!.IsEffectivelyVisible);
+            Assert.True(panel.FindControl<Button>("InstallWorkflowUpdate")!.IsEffectivelyVisible);
+            compact.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null); Pump(); Assert.Empty(window.OwnedWindows);
+            Click(window, "UpdatesBell"); compact = Assert.IsType<WorkflowUpdatesWindow>(Assert.Single(window.OwnedWindows));
+            Assert.Same(updates, compact.DataContext); Assert.True(updates.IsDownloaded);
+            Frame(compact, $"workflow-update-downloaded-{dark}");
+            client.AddLegacySpecificationDraft(); updates.InstallCommand.Execute(null); Assert.Equal(0, updater.Restarts);
+            client.CancelDraftCommand.Execute(null); updates.InstallCommand.Execute(null); Pump();
+            Assert.Equal(1, updater.Restarts); Assert.False(compact.IsVisible); Assert.False(window.IsVisible);
+        }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); client.Detach(); }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task CompactUpdatesConstrainLongNotesAndKeepCancellationAndErrorsVisible(bool dark)
+    {
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var updater = new InMemoryUpdater { DownloadGate = gate, Notes = string.Join("\n", Enumerable.Range(1, 100).Select(i => $"{i}. Проверка длинного описания изменений.")) };
+        var updates = new AppUpdatesViewModel(updater);
+        var window = new WorkflowUpdatesWindow { DataContext = updates, Width = 600, Height = 540, RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light };
+        try
+        {
+            window.Show(); await updates.CheckCommand.ExecuteAsync(null);
+            var downloading = updates.DownloadCommand.ExecuteAsync(null); Pump();
+            var panel = window.FindControl<WorkflowUpdatesPanel>("UpdatesPanel")!;
+            var cancel = panel.FindControl<Button>("CancelWorkflowDownload")!;
+            Assert.True(cancel.IsEffectivelyVisible); Assert.True(cancel.IsEffectivelyEnabled);
+            var point = cancel.TranslatePoint(default, window)!.Value;
+            Assert.InRange(point.X + cancel.Bounds.Width, 0, window.ClientSize.Width);
+            Assert.InRange(point.Y + cancel.Bounds.Height, 0, window.ClientSize.Height);
+            Frame(window, $"workflow-update-downloading-{dark}");
+            updates.DownloadCancelCommand.Execute(null); await downloading;
+            Assert.False(updates.IsDownloading); Assert.False(updates.IsDownloaded);
+            gate.TrySetResult(); updater.FailDownload = true;
+            await updates.DownloadCommand.ExecuteAsync(null); Pump();
+            Assert.NotNull(updates.Error); Assert.False(cancel.IsEffectivelyVisible);
+            Assert.True(panel.FindControl<Button>("DownloadWorkflowUpdate")!.IsEffectivelyVisible);
+            Assert.True(panel.FindControl<Button>("DownloadWorkflowUpdate")!.IsEffectivelyEnabled);
+            Frame(window, $"workflow-update-error-{dark}");
+        }
+        finally { updates.DownloadCommand.Cancel(); gate.TrySetResult(); window.Close(); }
     }
 
     [Fact]
@@ -145,8 +224,15 @@ public sealed class WorkflowProgramSettingsTests
         public bool IsInstalled => true;
         public bool FailRestart { get; init; }
         public int Restarts { get; private set; }
-        public Task<AppUpdate?> CheckAsync(bool preview, CancellationToken cancellationToken) => Task.FromResult<AppUpdate?>(new("2026.1.0-workflow.next", "Проверка интерфейса обновлений Workflow", 1));
-        public Task DownloadAsync(AppUpdate update, IProgress<int> progress, CancellationToken cancellationToken) => Task.CompletedTask;
+        public TaskCompletionSource? DownloadGate { get; init; }
+        public bool FailDownload { get; set; }
+        public string Notes { get; init; } = "Проверка интерфейса обновлений Workflow";
+        public Task<AppUpdate?> CheckAsync(bool preview, CancellationToken cancellationToken) => Task.FromResult<AppUpdate?>(new("2026.1.0-workflow.next", Notes, 1));
+        public async Task DownloadAsync(AppUpdate update, IProgress<int> progress, CancellationToken cancellationToken)
+        {
+            if (DownloadGate is { } gate) await gate.Task.WaitAsync(cancellationToken);
+            if (FailDownload) throw new IOException("Synthetic download failure");
+        }
         public void ScheduleRestart(AppUpdate update)
         { Restarts++; if (FailRestart) throw new IOException("Synthetic restart failure"); }
     }

@@ -16,6 +16,8 @@ public partial class WorkflowSettingsViewModel
     {
         _resultPricing = Journal.ResultPricing; NormalizeResultPriceInput();
     }
+    public bool HasResultPriceError => !string.IsNullOrEmpty(ResultPriceError);
+    partial void OnResultPriceErrorChanged(string? value) => OnPropertyChanged(nameof(HasResultPriceError));
     public void NormalizeResultPriceInput()
     {
         if (!TryMinimum(out _)) ResultPriceError = null;

@@ -15,13 +15,13 @@
     <Grid Grid.Row="1" Margin="24,16" RowDefinitions="*,12,Auto" IsEnabled="{Binding CanEdit}">
       <DataGrid x:Name="WorkflowTrashOrders" ItemsSource="{Binding Orders}" SelectedItem="{Binding Selected}" AutoGenerateColumns="False" IsReadOnly="True" RowHeight="NaN">
         <DataGrid.Columns>
-          <DataGridTextColumn Header="Заявка" Binding="{Binding Number}" Width="190" />
+          <DataGridTextColumn CellTheme="{StaticResource WorkflowTabularCell}" Header="Заявка" Binding="{Binding Number}" Width="190" />
           <DataGridTemplateColumn Header="Заказчик" Width="*" MinWidth="140"><DataGridTemplateColumn.CellTemplate>
             <DataTemplate x:DataType="vm:WorkflowTrashRow"><StackPanel Spacing="4" Margin="4,10">
               <TextBlock Text="{Binding Customer}" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock Text="{Binding Details}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
             </StackPanel></DataTemplate>
           </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-          <DataGridTextColumn Header="Когда удалена" Binding="{Binding DeletedAt}" Width="160" />
+          <DataGridTextColumn CellTheme="{StaticResource WorkflowTabularCell}" Header="Когда удалена" Binding="{Binding DeletedAt}" Width="160" />
           <DataGridTextColumn Header="Кто удалил" Binding="{Binding DeletedBy}" Width="130" />
         </DataGrid.Columns>
       </DataGrid>

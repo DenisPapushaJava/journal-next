@@ -41,17 +41,17 @@
         <DataGrid x:Name="WorkflowMachineRates" Grid.Row="4" ItemsSource="{Binding Rates}" SelectedItem="{Binding SelectedRate}" AutoGenerateColumns="False" IsReadOnly="True">
           <DataGrid.Columns>
             <DataGridTextColumn Header="Категория материала" Binding="{Binding MaterialGroup}" Width="*" />
-            <DataGridTextColumn Header="Толщина, мм" Binding="{Binding Thickness}" Width="120" />
-            <DataGridTextColumn Header="Цена, ₽/м" Binding="{Binding PricePerMeter}" Width="130" />
-            <DataGridTextColumn Header="Пробивка, ₽/шт." Binding="{Binding PricePerPierce}" Width="140" />
+            <DataGridTextColumn CellTheme="{StaticResource WorkflowNumericCell}" Header="Толщина, мм" Binding="{Binding Thickness}" Width="120" />
+            <DataGridTextColumn CellTheme="{StaticResource WorkflowNumericCell}" Header="Цена, ₽/м" Binding="{Binding PricePerMeter}" Width="130" />
+            <DataGridTextColumn CellTheme="{StaticResource WorkflowNumericCell}" Header="Пробивка, ₽/шт." Binding="{Binding PricePerPierce}" Width="140" />
           </DataGrid.Columns>
         </DataGrid>
         <Border Grid.Row="6" Classes="panel" Padding="12" DataContext="{Binding SelectedRate}" x:DataType="vm:WorkflowRateEditor">
           <Grid ColumnDefinitions="*,12,120,12,130,12,140" RowDefinitions="Auto,4,Auto">
             <TextBlock Text="Категория материала" Classes="muted" /><TextBlock Grid.Column="2" Text="Толщина, мм" Classes="muted" />
             <TextBlock Grid.Column="4" Text="Цена, ₽/м" Classes="muted" /><TextBlock Grid.Column="6" Text="Пробивка, ₽/шт." Classes="muted" />
-            <TextBox Grid.Row="2" Text="{Binding MaterialGroup}" MaxLength="255" IsReadOnly="{Binding !UsesMaterialCategories}" /><TextBox Grid.Row="2" Grid.Column="2" Text="{Binding Thickness}" />
-            <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding PricePerMeter}" /><TextBox Grid.Row="2" Grid.Column="6" Text="{Binding PricePerPierce}" />
+            <TextBox Grid.Row="2" Text="{Binding MaterialGroup}" MaxLength="255" IsReadOnly="{Binding !UsesMaterialCategories}" /><TextBox Classes="tabular" Grid.Row="2" Grid.Column="2" Text="{Binding Thickness}" />
+            <TextBox Classes="tabular" Grid.Row="2" Grid.Column="4" Text="{Binding PricePerMeter}" /><TextBox Classes="tabular" Grid.Row="2" Grid.Column="6" Text="{Binding PricePerPierce}" />
           </Grid>
         </Border>
         <TextBlock Grid.Row="8" Text="Выберите тариф для редактирования. Изменения применяются кнопкой «Сохранить». Прежние расчёты сохраняют свои названия и цены." Classes="muted" TextWrapping="Wrap" />

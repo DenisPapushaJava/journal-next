@@ -28,7 +28,7 @@ public sealed class WorkflowSimpleProjectsTests
         await f.Model.SetProjectIncludedAsync(project.Id, false); Assert.Null(f.Model.Error);
         Assert.Same(selected, f.Model.SelectedProject); Assert.Equal(id, f.Model.SelectedDraft!.Id);
         Assert.Equal("Готово 1 из 1", f.Model.CompletenessCaption);
-        var after = await f.Store.ReadAsync(TestContext.Current.CancellationToken); Assert.Equal(11, after.SchemaVersion);
+        var after = await f.Store.ReadAsync(TestContext.Current.CancellationToken); Assert.Equal(WorkflowWorkspace.CurrentSchema, after.SchemaVersion);
         Assert.Single(after.Orders.Single().Projects); Assert.Equal(project.Id, after.Orders.Single().Projects.Single().Id);
         Assert.Equal(2, after.Orders.Single().Specifications.Length); Assert.Equal(1326m, after.Orders.Single().CuttingTotal);
         Assert.False(File.Exists(source)); Assert.True(File.Exists(project.NativePath));

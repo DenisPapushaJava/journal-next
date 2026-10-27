@@ -387,7 +387,7 @@ journal-diagnostics.json
 !/docs/releases/
 !/docs/releases/*.md
 
-# Journal Next private/local data
+# Заявки private/local data
 *.accde
 *.mde
 **/.workflow-reports/

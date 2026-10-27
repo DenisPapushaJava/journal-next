@@ -9,12 +9,12 @@ namespace Jornal.Workflow.Infrastructure;
 [SupportedOSPlatform("windows")]
 public sealed partial class WorkflowMdbDatabase
 {
-    private sealed record Metadata(Guid DatabaseId, long Revision, long CatalogVersion, string? Root, string? PriceSource, DateTimeOffset? PriceLoadedAt);
+    private sealed record Metadata(Guid DatabaseId, long Revision, long CatalogVersion, string? Root, string? PriceSource, DateTimeOffset? PriceLoadedAt, int SchemaVersion);
     private static string PathOf(string path)
     {
         if (!OperatingSystem.IsWindows() || Environment.Is64BitProcess) throw new PlatformNotSupportedException("Для MDB требуется модуль Windows x86.");
         if (!Path.IsPathFullyQualified(path) || !Path.GetExtension(path).Equals(".mdb", StringComparison.OrdinalIgnoreCase))
-            throw new WorkflowValidationException("Выберите полный путь к файлу MDB Journal Next.");
+            throw new WorkflowValidationException("Выберите полный путь к файлу MDB программы «Заявки».");
         return Path.GetFullPath(path);
     }
     public WorkflowAccessResponse Execute(WorkflowAccessRequest request)
@@ -22,12 +22,14 @@ public sealed partial class WorkflowMdbDatabase
         if (request.Protocol != 1 || !Enum.IsDefined(request.Operation)) throw new WorkflowValidationException("Несовместимый запрос MDB.");
         var path = PathOf(request.Path);
         if (request.Operation == WorkflowAccessOperation.Create) return Create(path);
-        if (!File.Exists(path)) throw new WorkflowValidationException("Файл базы Journal Next не найден или недоступен. Проверьте путь и сеть; новая база автоматически не создаётся.");
+        if (!File.Exists(path)) throw new WorkflowValidationException("Файл базы программы «Заявки» не найден или недоступен. Проверьте путь и сеть; новая база автоматически не создаётся.");
+        if (request.Operation == WorkflowAccessOperation.Inspect) UpgradeSchema(path, request.DatabaseId);
         if (request.Operation == WorkflowAccessOperation.Apply) return Apply(path, request);
         if (request.Operation == WorkflowAccessOperation.Purge) return Purge(path, request);
+        if (request.Operation == WorkflowAccessOperation.RecordShopHandoff) return RecordShopHandoff(path, request);
         return ReadSnapshot(path, request);
     }
-    private static Metadata ReadMetadata(WorkflowMdbSession session, Guid? expected)
+    private static Metadata ReadMetadata(WorkflowMdbSession session, Guid? expected, bool allowVersionOne = false)
     {
         try
         {
@@ -36,20 +38,20 @@ public sealed partial class WorkflowMdbDatabase
             if (!reader.Read() || Convert.ToInt32(reader[0], CultureInfo.InvariantCulture) != 1 || Convert.ToString(reader[1], CultureInfo.InvariantCulture) != WorkflowMdbSchema.ProductId)
                 throw WrongDatabase();
             var schema = Convert.ToInt32(reader[2], CultureInfo.InvariantCulture);
-            if (schema != WorkflowMdbSchema.Version) throw new WorkflowValidationException(schema > WorkflowMdbSchema.Version ?
-                "База создана более новой версией Journal Next. Обновите программу." : "Версия этой MDB пока не поддерживается. Файл не изменён.");
+            if (schema != WorkflowMdbSchema.Version && !(allowVersionOne && schema == 1)) throw new WorkflowValidationException(schema > WorkflowMdbSchema.Version ?
+                "База создана более новой версией программы «Заявки». Обновите программу." : "Версия этой MDB пока не поддерживается. Файл не изменён.");
             var id = (Guid)reader[3];
-            if (id == Guid.Empty || expected is { } database && database != id) throw new WorkflowValidationException("По этому пути другая база Journal Next. Подключите её явно в настройках.");
+            if (id == Guid.Empty || expected is { } database && database != id) throw new WorkflowValidationException("По этому пути другая база программы «Заявки». Подключите её явно в настройках.");
             var meta = new Metadata(id, Convert.ToInt64(reader[4], CultureInfo.InvariantCulture), Convert.ToInt64(reader[5], CultureInfo.InvariantCulture),
                 reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null :
-                new DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(8), DateTimeKind.Utc)));
+                new DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(8), DateTimeKind.Utc)), schema);
             if (meta.Revision < 0 || meta.CatalogVersion < 0 || reader.Read()) throw WrongDatabase();
             return meta;
         }
         catch (System.Data.OleDb.OleDbException ex)
-        { throw new WorkflowValidationException("Не удалось проверить MDB Journal Next: файл занят, недоступен либо имеет другую структуру. Проверьте файл и доступ к папке. Код: " + ex.HResult.ToString("X8")); }
+        { throw new WorkflowValidationException("Не удалось проверить MDB программы «Заявки»: файл занят, недоступен либо имеет другую структуру. Проверьте файл и доступ к папке. Код: " + ex.HResult.ToString("X8")); }
     }
-    private static WorkflowValidationException WrongDatabase(string? detail = null) => new("Это не база Journal Next или её структура повреждена. Прежнюю MDB используйте только для импорта цен." +
+    private static WorkflowValidationException WrongDatabase(string? detail = null) => new("Это не база программы «Заявки» или её структура повреждена. Прежнюю MDB используйте только для импорта цен." +
         (detail is null ? "" : " Проверка: " + detail + "."));
 
     private static WorkflowAccessResponse Create(string target)
@@ -68,7 +70,7 @@ public sealed partial class WorkflowMdbDatabase
             using (var session = new WorkflowMdbSession(temporary, true))
             {
                 foreach (var sql in WorkflowMdbSchema.CreateSql()) session.Execute(sql);
-                session.Execute("INSERT INTO [app_metadata] ([singleton],[product_id],[schema_version],[database_id],[revision],[catalog_revision]) VALUES (1,?,1,?,0,0)",
+                session.Execute($"INSERT INTO [app_metadata] ([singleton],[product_id],[schema_version],[database_id],[revision],[catalog_revision]) VALUES (1,?,{WorkflowMdbSchema.Version},?,0,0)",
                     (new("product", null, WorkflowMdbType.Text, true, 64), WorkflowMdbSchema.ProductId), (WorkflowMdbSession.GuidColumn, id));
                 var data = WorkflowMdbMapping.Flatten(WorkflowWorkspace.Empty);
                 foreach (var machine in data["machines"].Values) session.Insert(machine);

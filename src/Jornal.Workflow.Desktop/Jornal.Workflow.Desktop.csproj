@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <Product>Journal Next</Product>
+    <Product>Заявки</Product>
     <VersionSuffix>workflow.dev</VersionSuffix>
     <ApplicationIcon>../../docs/design/assets/journal-next-icon.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>

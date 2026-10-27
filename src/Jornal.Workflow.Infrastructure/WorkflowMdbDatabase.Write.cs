@@ -8,7 +8,7 @@ namespace Jornal.Workflow.Infrastructure;
 public sealed partial class WorkflowMdbDatabase
 {
     private static readonly string[] CatalogTables = ["employees", "customers", "machines", "cutting_rates", "price_import_keys"];
-    private static readonly string[] OrderTables = ["orders", "order_items", "cutting_projects", "order_item_selections", "specifications", "accepted_reports", "project_renames"];
+    private static readonly string[] OrderTables = ["orders", "order_items", "cutting_projects", "order_item_selections", "specifications", "accepted_reports", "project_renames", "order_shop_handoffs"];
 
     private static WorkflowAccessResponse Apply(string path, WorkflowAccessRequest request)
     {
@@ -90,7 +90,7 @@ public sealed partial class WorkflowMdbDatabase
                 session.Execute("DELETE FROM [order_item_selections] WHERE [id]=?", (WorkflowMdbSession.GuidColumn, selected.Id));
                 oldRows["order_item_selections"].Remove(selected.Id);
             }
-            foreach (var table in new[] { "accepted_reports", "specifications", "project_renames", "cutting_projects", "order_items", "orders" })
+            foreach (var table in new[] { "order_shop_handoffs", "accepted_reports", "specifications", "project_renames", "cutting_projects", "order_items", "orders" })
                 foreach (var row in oldRows[table].Values.Where(r => !newRows[table].ContainsKey(r.Id)).OrderBy(r => r.Id))
                     session.Execute($"DELETE FROM [{table}] WHERE [id]=?", (WorkflowMdbSession.GuidColumn, row.Id));
             if (patch.Catalog is not null)

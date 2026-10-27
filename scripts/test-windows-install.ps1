@@ -75,7 +75,7 @@ try {
     Remove-Item (Join-Path $baseline 'Jornal.Workflow.Desktop.exe') -ErrorAction SilentlyContinue
     Move-Item (Join-Path $baseline 'Journal.Next.UpdateProbe.exe') (Join-Path $baseline 'Jornal.Workflow.Desktop.exe')
     $baseRelease = Join-Path $root 'baseline-release'
-    & dotnet tool run vpk pack --packId DenisPapusha.JournalWorkflow --packTitle 'Journal Next test baseline' --packVersion 2026.0.0 --packDir $baseline --mainExe Jornal.Workflow.Desktop.exe --runtime win-x64 --channel workflow-win-x64 --outputDir $baseRelease --noPortable --framework net10.0-x64-runtime,net10.0-x86-runtime
+    & dotnet tool run vpk pack --packId DenisPapusha.JournalWorkflow --packTitle 'Заявки test baseline' --packVersion 2026.0.0 --packDir $baseline --mainExe Jornal.Workflow.Desktop.exe --runtime win-x64 --channel workflow-win-x64 --outputDir $baseRelease --noPortable --framework net10.0-x64-runtime,net10.0-x86-runtime
     if ($LASTEXITCODE -ne 0) { throw 'Baseline packaging failed.' }
     $baseSetup = Get-ChildItem $baseRelease -Filter '*Setup.exe' | Select-Object -First 1
     $second = Join-Path $root 'Обновлённый Next'

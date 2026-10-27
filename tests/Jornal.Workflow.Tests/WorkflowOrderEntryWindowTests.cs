@@ -58,7 +58,7 @@ public sealed class WorkflowOrderEntryWindowTests
             var settings = Assert.IsType<WorkflowSettingsWindow>(Assert.Single(window.OwnedWindows));
             if (width == 1180) { settings.Width = 800; settings.Height = 580; Pump(); }
             var parent = Assert.IsType<WorkflowSettingsViewModel>(settings.DataContext);
-            Assert.Equal(3, settings.FindControl<ListBox>("WorkflowSettingsNavigation")!.Items.Count);
+            Assert.Equal(5, settings.FindControl<ListBox>("WorkflowSettingsNavigation")!.Items.Count);
             Assert.Equal("Общие", parent.SectionTitle);
             var profileInput = settings.FindControl<EntrySuggestionComboBox>("WorkflowProfileName")!;
             var swatch = settings.FindControl<Border>("WorkflowCurrentProfileColor")!;

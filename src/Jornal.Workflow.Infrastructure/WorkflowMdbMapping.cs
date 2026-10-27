@@ -12,6 +12,10 @@ public sealed record WorkflowMdbRow(string Table, Guid Id, Dictionary<string, ob
 // JSON nodes are only a typed object mapper here. MDB columns contain scalar values, not JSON documents.
 public static class WorkflowMdbMapping
 {
+    public static WorkflowMdbRow HandoffRow(Guid orderId, WorkflowShopHandoff stamp) => new("order_shop_handoffs", orderId, new()
+    {
+        ["id"] = orderId, ["order_version"] = (decimal)stamp.OrderVersion, ["actor_id"] = stamp.ActorId, ["transferred_at"] = stamp.At.UtcDateTime
+    });
     public static IReadOnlyDictionary<string, Dictionary<Guid, WorkflowMdbRow>> Flatten(WorkflowWorkspace workspace, bool includeCatalog = true)
     {
         var result = WorkflowMdbSchema.Tables.ToDictionary(t => t.Name, _ => new Dictionary<Guid, WorkflowMdbRow>());
@@ -41,6 +45,7 @@ public static class WorkflowMdbMapping
         foreach (var order in workspace.Orders)
         {
             Add("orders", order);
+            if (order.ShopHandoff is { } handoff) result["order_shop_handoffs"].Add(order.Id, HandoffRow(order.Id, handoff));
             foreach (var item in order.Items)
             {
                 Add("order_items", item, order.Id);
@@ -73,6 +78,7 @@ public static class WorkflowMdbMapping
         return data["orders"].Values.Select(row =>
         {
             var json = ToObject(row);
+            if (data["order_shop_handoffs"].TryGetValue(row.Id, out var handoff)) json["ShopHandoff"] = ToObject(handoff);
             json["Items"] = Array(items[row.Id].OrderBy(r => r.Values["item_number"]).Select(item =>
             {
                 if (!data["order_item_selections"].TryGetValue(item.Id, out var selected) ||

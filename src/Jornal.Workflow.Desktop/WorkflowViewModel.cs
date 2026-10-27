@@ -23,11 +23,20 @@ public sealed class WorkflowOrderRow(WorkflowOrder order, string customer, strin
     public IBrush? CreatorBrush => Creator?.ColorArgb is { } color ? new SolidColorBrush(Color.FromUInt32(color)) : null;
     public string CreatorDescription => Creator is { } creator ? "Создал: " + creator.Name +
         (creator.ColorArgb is null ? " · цвет не выбран" : "") : "Автор создания не указан";
+    public Employee? ShopHandoffActor { get; set; }
+    public bool HasShopHandoff => !IsMissing && Order.HasCurrentShopHandoff;
+    public string ShopHandoffHint => HasShopHandoff && Order.ShopHandoff is { } stamp ?
+        "Передано в цех · " + stamp.At.ToLocalTime().ToString("dd.MM.yyyy HH:mm") + "\nТехнолог: " + (ShopHandoffActor?.Name ?? "не указан") +
+        "\nПоследняя успешная передача сохранённой версии заявки." : "";
+    private uint _shopHandoffColor = 0xFF80FFFF;
+    public IBrush ShopHandoffBrush => new SolidColorBrush(Color.FromUInt32(_shopHandoffColor));
+    internal void ApplyShopHandoffColor(uint color)
+    { if (_shopHandoffColor != color) { _shopHandoffColor = color; OnPropertyChanged(nameof(ShopHandoffBrush)); } }
     public string Number => Order.DisplayNumber;
     public string NumberDate => Number[..10];
     public string NumberTime => Number[11..13] + ":" + Number[13..15] + ":" + Number[15..17] + Number[17..];
     public string NumberCaption => "Заявка " + Number;
-    public string NumberHint => NumberCaption + "\n" + CreatorDescription;
+    public string NumberHint => NumberCaption + "\n" + CreatorDescription + (HasShopHandoff ? "\n" + ShopHandoffHint : "");
     public string Blcb => Order.Blcb ?? "—";
     public int SpecificationCount => Order.ActiveSpecifications.Count();
     public string Total => !Order.ActiveSpecifications.Any() ? "—" : SpecificationDraft.Money(Order.CuttingTotal);
@@ -41,14 +50,15 @@ public sealed class WorkflowOrderRow(WorkflowOrder order, string customer, strin
     {
         var changed = Order.Version != incoming.Order.Version || Customer != incoming.Customer || Manager != incoming.Manager ||
             Technologist != incoming.Technologist || Creator != incoming.Creator || HasDraft != incoming.HasDraft ||
-            IsMissing != incoming.IsMissing || SearchDetail != incoming.SearchDetail;
+            IsMissing != incoming.IsMissing || SearchDetail != incoming.SearchDetail || Order.ShopHandoff != incoming.Order.ShopHandoff || ShopHandoffActor != incoming.ShopHandoffActor;
         Order = incoming.Order; Customer = incoming.Customer; Manager = incoming.Manager; Technologist = incoming.Technologist;
         Creator = incoming.Creator; HasDraft = incoming.HasDraft; IsMissing = incoming.IsMissing; SearchDetail = incoming.SearchDetail;
+        ShopHandoffActor = incoming.ShopHandoffActor; ApplyShopHandoffColor(incoming._shopHandoffColor);
         if (!changed) return;
         foreach (var name in new[] { nameof(Order), nameof(Customer), nameof(Manager), nameof(Technologist), nameof(Creator),
             nameof(CreatorBrush), nameof(CreatorDescription), nameof(Number), nameof(NumberDate), nameof(NumberTime), nameof(NumberCaption),
             nameof(NumberHint), nameof(Blcb), nameof(SpecificationCount), nameof(Total), nameof(Updated), nameof(HasDraft), nameof(IsMissing),
-            nameof(SearchDetail), nameof(HasSearchDetail), nameof(Details) }) OnPropertyChanged(name);
+            nameof(SearchDetail), nameof(HasSearchDetail), nameof(Details), nameof(HasShopHandoff), nameof(ShopHandoffHint) }) OnPropertyChanged(name);
     }
 }
 public partial class WorkflowViewModel : ObservableObject
@@ -99,11 +109,19 @@ public partial class WorkflowViewModel : ObservableObject
         (_loadedOrderSnapshot?.Id == id ? _loadedOrderSnapshot : null) : null;
 
     public WorkflowViewModel(IWorkflowWorkspaceStore store, AppUpdatesViewModel updates, DiagnosticService? diagnostics = null,
-        WorkflowPreferencesStore? preferences = null, IWorkflowDatabaseService? databases = null)
+        WorkflowPreferencesStore? preferences = null, IWorkflowDatabaseService? databases = null, WorkflowPreferences? initialPreferences = null)
     {
         _connection = new(store); Updates = updates; Diagnostics = diagnostics;
         _preferences = preferences ?? new(store is WorkflowMdbStore ? WorkflowIdentity.PreferencesPath : Path.Combine(Path.GetDirectoryName(store.FilePath)!, "preferences.json"));
         _databases = databases ?? new WorkflowDatabaseService();
+        _startupProfile = new WorkflowStartupProfileStore(_preferences.ProfileCachePath).Load();
+        try
+        {
+            ApplyLocalPreferences(_preferences, initialPreferences ?? _preferences.Load());
+            _startupPreferencesPrepared = initialPreferences is not null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException or WorkflowValidationException)
+        { /* Reload reports local settings errors while keeping connection recovery available. */ }
     }
 
     [RelayCommand]
@@ -115,12 +133,16 @@ public partial class WorkflowViewModel : ObservableObject
         {
             CaptureCard(); var restore = RequiresDatabaseRefresh && _openOrderId is { } oldId ? _cards.GetValueOrDefault(oldId) : null;
             _loadedOrderSnapshot = CurrentOrder; ConfigureDatabaseQuery();
-            var workspace = await _store.ReadAsync();
-            _reportReview = null; _reportImportOrderId = null;
-            ResetCuttingTask();
-            try { LoadLocalPreferences(_preferences); }
+            try { if (!_startupPreferencesPrepared) LoadLocalPreferences(_preferences); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException)
             { Error = "Не удалось прочитать локальные настройки. Данные заявок доступны; проверьте профиль и списки."; }
+            finally { _startupPreferencesPrepared = false; }
+            _initialProfileReadFinished = false; NotifyProfile();
+            WorkflowWorkspace workspace;
+            try { workspace = await _store.ReadAsync(); }
+            finally { _initialProfileReadFinished = true; NotifyProfile(); }
+            _reportReview = null; _reportImportOrderId = null;
+            ResetCuttingTask();
             _workspace = workspace; _hasLoadedOrders = true;
             if (IsCurrentOrderMissing && string.IsNullOrEmpty(ResultText)) ForgetOpenCard();
             RefreshEmployees(_connection.EmployeeId);
@@ -132,6 +154,7 @@ public partial class WorkflowViewModel : ObservableObject
             else if (CurrentOrder is { } order) { LoadOrder(order); if (restore is not null) RestoreCard(order, restore); }
             else if (SelectedOrder is { } selected) LoadOrder(selected.Order);
             NotifyDatabase();
+            await RememberStartupProfileAsync();
         });
     }
     [RelayCommand] private void NewOrder()
@@ -350,8 +373,10 @@ public partial class WorkflowViewModel : ObservableObject
                 {
                     HasDraft = HasDraftForOrder(order.Id),
                     SearchDetail = detail,
-                    Creator = _workspace.Employees.SingleOrDefault(e => e.Id == order.CreatedById)
+                    Creator = _workspace.Employees.SingleOrDefault(e => e.Id == order.CreatedById),
+                    ShopHandoffActor = _workspace.Employees.SingleOrDefault(e => e.Id == order.ShopHandoff?.ActorId)
                 };
+                row.ApplyShopHandoffColor(ShopHandoffColorArgb);
                 if (preserveRows) rows.Add(row); else Orders.Add(row);
             }
             foreach (var state in _cards.Where(pair => !_workspace.Orders.Any(o => o.Id == pair.Key) &&
@@ -423,6 +448,7 @@ public partial class WorkflowViewModel : ObservableObject
     private string EmployeeName(Guid id) => _workspace.Employees.Single(e => e.Id == id).Name;
     private void NotifyOrder()
     {
+        NotifyShopFolderPaths();
         NotifyCompleteness();
         NotifyBendingFolders();
         foreach (var name in new[] { nameof(IsJournal), nameof(IsOrderOpen), nameof(IsCardVisible), nameof(IsNoCardSelected), nameof(HeaderSummary),
@@ -447,7 +473,7 @@ public partial class WorkflowViewModel : ObservableObject
         }
         finally { IsBusy = false; NotifyDatabase(); }
     }
-    public void Detach() { _cuttingTaskDetached = true; _copiedCuttingTask = null; _cuttingTaskPreview = null; _bendingFolderFailures = null; CancelDatabaseSearch(); _reportReview = null; if (SelectedDraft is { } draft) draft.PropertyChanged -= DraftChanged; }
+    public void Detach() { _cuttingTaskDetached = true; StopShopFolderChecks(); ResetShopTransfer(); _copiedCuttingTask = null; _cuttingTaskPreview = null; _bendingFolderFailures = null; CancelDatabaseSearch(); _reportReview = null; if (SelectedDraft is { } draft) draft.PropertyChanged -= DraftChanged; }
     public WorkflowRestartDraft CreateRestartDraft()
     {
         CaptureCard();

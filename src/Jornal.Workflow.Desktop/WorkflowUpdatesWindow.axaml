@@ -1,0 +1,6 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:Jornal.Workflow.Desktop" x:Class="Jornal.Workflow.Desktop.WorkflowUpdatesWindow"
+        Title="{x:Static local:WorkflowIdentity.UpdatesTitle}" Width="640" Height="580" MinWidth="600" MinHeight="540"
+        Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
+  <local:WorkflowUpdatesPanel x:Name="UpdatesPanel" />
+</Window>

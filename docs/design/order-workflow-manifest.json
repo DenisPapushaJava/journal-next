@@ -92,7 +92,7 @@
       ],
       "overflow": [],
       "unstyled": [],
-      "status": "Retired 2026-10-25: no history screen in Journal Next; concept provenance only, do not implement"
+      "status": "Retired 2026-10-25: no history screen in Заявки; concept provenance only, do not implement"
     },
     {
       "key": "editor",
@@ -131,7 +131,7 @@
   ],
   "localPrototype": {
     "date": "2026-10-25",
-    "product": "Journal Next",
+    "product": "Заявки",
     "status": "Local Avalonia prototype, JSON schema 11; current-state-only implementation supersedes original Figma history concepts",
     "folderActions": "Per-row folder icons in Projects and Specifications; native project folder or imported report folder; disabled for manual rows without a path",
     "screenshots": ".local/workflow-settings-program-ui/",
@@ -148,7 +148,7 @@
     "trash": "Schema 8: confirmed soft deletion/restore plus selected or all trashed orders permanently removed from application data after a separate confirmation; immutable ID/version scope, atomic batch validation, no project-file operations; no automatic purge or expiry",
     "orderEntry": "Two fields: manager and customer, using personal editable suggestions; 600px left-aligned form, 320px manager, about 560px customer; active profile at Save provides creator and initial technologist",
     "technologistDirectory": {
-      "status": "Local Journal Next prototype 2026-10-25, JSON schema 10; no commit/release",
+      "status": "Local Заявки prototype 2026-10-25, JSON schema 10; no commit/release",
       "roles": "One Employees identity can hold manager and technologist roles; explicit IsTechnologist/IsTechnologistArchived; new manager names are not technologists, explicit profile save assigns/restores role with same ID/color; personal suggestions remain local and independent",
       "removal": "28px X in profile suggestion rows, disabled for current local identity or ambiguous name; separate confirmation, Cancel focus, Escape/mouse/Enter/Space and input focus return; X never selects row or commits completion; logical role archive only, no physical deletion even when unused",
       "preservation": "Conditional compare of employee snapshot; keep creator/responsible/IDs/color/calculations/files and unrelated profile/root/card/letter drafts; archived currently assigned responsible stays visible; stale profile save cannot silently reactivate; retyping name and explicitly saving profile restores same ID",
@@ -165,7 +165,7 @@
       "screenshots": ".local/workflow-manager-ui/"
     },
     "responsibleEmployee": {
-      "status": "Local Journal Next UI change, 2026-10-25; JSON schema 9 unchanged; no commit/release",
+      "status": "Local Заявки UI change, 2026-10-25; JSON schema 9 unchanged; no commit/release",
       "card": "Manager, BLCB and Save button in one row; fields flex up to 320px and shrink in compact windows; no responsible picker or technologist name in header summary; title ellipsis menu opens Change Responsible dialog",
       "write": "Independent conditional write with captured order ID/version; unchanged choice is a no-op; cancellation/Escape does not mutate drafts; preserve unsaved manager/BLCB/calculations, stable row/draft selection and manual letter; advance loaded version; reject stale/other-card request, no automatic retry",
       "identity": "Creator and author stripe, current local employee/profile, calculations, project files and reports unchanged",
@@ -179,13 +179,13 @@
     "updates": "Same AppUpdatesViewModel and isolated WorkflowAppUpdater/preferences; no legacy AppUpdatesPanel or WorkflowUpdatesWindow; ReleasesPageFor validates and normalizes only the configured Workflow repository; source is still null and release link is hidden; restart blocks all card/settings drafts, nested list editors and diagnostics export",
     "diagnostics": "Program actions export allowed events from the injected Workflow DiagnosticService to Journal-Workflow-report ZIP or open WorkflowIdentity.DiagnosticsDirectory; no sender endpoint; closing/restart blocked during export; legacy profile never copied",
     "deferredSettings": "Startup period and automatic shared-journal refresh after Access adapter, with draft preservation; no nonfunctional toggles added",
-    "displayName": "Journal Next",
+    "displayName": "Заявки",
     "branding": "Working UI name is centralized in WorkflowIdentity.Name; package/profile/channel/EXE/tag identities remain isolated and unchanged; repository separation and Windows-only release are planned, not executed",
     "brandingVerification": "18 focused main/settings/trash/update-boundary tests and 3 Python release-identity checks passed; build without warnings/errors; display name changed, stable technical identity unchanged; full suite from the preceding stage not repeated",
     "brandingScreenshots": ".local/journal-next-branding-ui/",
-    "colorPickerVerification": "Local Journal Next change: Release build without warnings/errors; 8 existing settings/order-entry window cases passed; both themes and settings 900x660/800x580 visually inspected headless; screenshots .local/workflow-color-button-ui/; no commit or release",
+    "colorPickerVerification": "Local Заявки change: Release build without warnings/errors; 8 existing settings/order-entry window cases passed; both themes and settings 900x660/800x580 visually inspected headless; screenshots .local/workflow-color-button-ui/; no commit or release",
     "projectMaintenance": {
-      "status": "Local Journal Next prototype, JSON schema 8; no commit or release",
+      "status": "Local Заявки prototype, JSON schema 8; no commit or release",
       "actions": "Row menu: edit empty project parameters with actual directory/native filename rename and stable ID/time, another variant, confirmed logical trash, restore; trash performs no physical file operations",
       "inclusion": "Per-position IsIncluded checkbox shared by variants; excluded projects stay visible but are omitted from totals, letter, readiness and report lookup; selected variant is chosen separately; handwritten letter is preserved and marked stale",
       "recovery": "Durable Rename intent; workspace lock released before filesystem work; per-project lease and ownership receipt; no overwrite or implicit write replay; explicit resume after partial rename",
@@ -234,7 +234,7 @@
       "screenshots": ".local/workflow-search-ui/"
     },
     "journalPeriod": {
-      "status": "Local Journal Next prototype after alpha.1; no commit or release; JSON schema 8 unchanged",
+      "status": "Local Заявки prototype after alpha.1; no commit or release; JSON schema 8 unchanged",
       "controls": "Today / compact date button and rounded Russian calendar / All Dates; local creation day; startup Today; new search is global, subsequent day selection narrows search",
       "preservation": "Period changes only filter the in-memory list; open card, planning, unsaved fields and letters remain; no store I/O, timers or subscriptions",
       "calendar": "Monday-first; theme semantic colors; day/month/year navigation; adjacent months subdued; today outline; arrows, Home/End, PageUp/PageDown, Enter selection and Escape with focus return",
@@ -243,7 +243,7 @@
       "limits": "Headless Linux verification; native Windows unverified; shared Access query implementation and startup-period settings remain deferred"
     },
     "trashPurge": {
-      "status": "Implemented locally in Journal Next; no commit or release",
+      "status": "Implemented locally in Заявки; no commit or release",
       "controls": "Purge Selected at the bottom; Empty Trash in the header; separate modal with IDs/customer labels and order/project/specification counts, cancellation focus and Escape; mutations disabled until explicit refresh after error",
       "data": "Only confirmed trashed IDs/versions; validate entire scope before one JSON write; restored/changed/missing rows reject all; newly trashed rows remain; no CAM/HTML/PDF/archive deletion or scanning; shared catalogs untouched; schema 8 unchanged",
       "drafts": "Local and inactive drafts/letters of remotely purged orders remain visible as local-only snapshots, cannot save or recreate the deleted order, and disappear only on explicit discard; a deleted machine label falls back to the saved calculation snapshot",

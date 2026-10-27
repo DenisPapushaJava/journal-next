@@ -50,7 +50,7 @@ public sealed class WorkflowFolderWindowTests
     {
         grid.ScrollIntoView(row, null); Dispatcher.UIThread.RunJobs();
         var button = grid.GetVisualDescendants().OfType<Button>().Single(b => ReferenceEquals(b.DataContext, row) &&
-            AutomationProperties.GetName(b)?.StartsWith("Открыть папку", StringComparison.Ordinal) == true);
+            AutomationProperties.GetName(b) == "Открыть папку проекта");
         var point = button.TranslatePoint(default, window)!.Value;
         Assert.InRange(point.X, 0, window.ClientSize.Width - button.Bounds.Width);
         Assert.InRange(point.Y, 0, window.ClientSize.Height - button.Bounds.Height);

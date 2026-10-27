@@ -269,7 +269,7 @@ public sealed class ProjectWorkflowTests
         var schema2 = book with { SchemaVersion = 2, Orders = book.Orders.Select(o => o with { Items = [], Projects = [] }).ToArray() };
         var path = Path.Combine(f.DirectoryPath, "old-workspace.json"); var json = JsonSerializer.Serialize(schema2); await File.WriteAllTextAsync(path, json, TestContext.Current.CancellationToken);
         var migrated = await new LocalWorkflowWorkspaceStore(path).ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(11, migrated.SchemaVersion); var project = Assert.Single(migrated.Orders[0].Projects);
+        Assert.Equal(WorkflowWorkspace.CurrentSchema, migrated.SchemaVersion); var project = Assert.Single(migrated.Orders[0].Projects);
         Assert.Equal(old.Id, project.Id); Assert.Null(project.NativePath);
         Assert.Equal(old.Current, migrated.Orders[0].Specifications[0].Current);
         Assert.Equal(book.Orders[0].CuttingTotal, migrated.Orders[0].CuttingTotal);

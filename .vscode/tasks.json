@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Journal Next: сборка Debug",
+      "label": "Заявки: сборка Debug",
       "type": "process",
       "command": "dotnet",
       "linux": {

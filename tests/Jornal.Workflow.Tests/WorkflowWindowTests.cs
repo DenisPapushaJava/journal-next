@@ -170,7 +170,7 @@ public sealed class WorkflowWindowTests
         }
         finally { editor.Reload(); window.Close(); model.Detach(); Directory.Delete(dir, true); }
     }
-    private sealed class BindingLog : ILogSink, IDisposable
+    internal sealed class BindingLog : ILogSink, IDisposable
     {
         private readonly ILogSink? _previous = Logger.Sink;
         public List<string> Errors { get; } = [];

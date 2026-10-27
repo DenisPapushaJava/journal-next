@@ -14,7 +14,7 @@
                     IsEnabled="{Binding CanEdit}" HorizontalAlignment="Stretch" AutomationProperties.Name="Станок проекта">
             <ComboBox.ItemTemplate><DataTemplate x:DataType="core:WorkflowMachine"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
           </ComboBox>
-          <ui:EntrySuggestionComboBox x:Name="EditWorkflowProjectThickness" Grid.Row="2" Grid.Column="2" Value="{Binding Thickness}"
+          <ui:EntrySuggestionComboBox Classes="tabular" x:Name="EditWorkflowProjectThickness" Grid.Row="2" Grid.Column="2" Value="{Binding Thickness}"
                     Suggestions="{Binding ThicknessSuggestions}" IsEnabled="{Binding CanEdit}" HorizontalAlignment="Stretch" AutomationProperties.Name="Толщина проекта, мм" />
         </Grid>
         <Border Classes="panel" Padding="12">

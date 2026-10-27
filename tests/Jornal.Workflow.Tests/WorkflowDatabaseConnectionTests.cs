@@ -57,6 +57,7 @@ public sealed class WorkflowDatabaseConnectionTests
         var preferences = new WorkflowPreferencesStore(Path.Combine(f.DirectoryPath, "preferences.json"));
         var path = Path.Combine(f.DirectoryPath, "missing.mdb");
         var transport = new MissingTransport();
+        preferences.Save(new() { DatabasePath = path, DatabaseId = memory.Id });
         var model = new WorkflowViewModel(new WorkflowMdbStore(path, transport, memory.Id), new(new WorkflowAppUpdater()), preferences: preferences);
         await model.ReloadCommand.ExecuteAsync(null); Assert.Contains("не найден", model.Error);
         Assert.Equal(path, model.WorkspacePath); Assert.False(File.Exists(f.Store.FilePath)); Assert.Empty(model.Orders);

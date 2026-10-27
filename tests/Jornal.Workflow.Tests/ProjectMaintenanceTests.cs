@@ -233,7 +233,7 @@ public sealed class ProjectMaintenanceTests
         }
         var json = node.ToJsonString(); await File.WriteAllTextAsync(path, json, Token);
         var after = await new LocalWorkflowWorkspaceStore(path).ReadAsync(Token);
-        Assert.Equal(11, after.SchemaVersion); Assert.Equal(before.Version, after.Version);
+        Assert.Equal(WorkflowWorkspace.CurrentSchema, after.SchemaVersion); Assert.Equal(before.Version, after.Version);
         Assert.Equal(before.Orders[0].Projects[0], after.Orders[0].Projects[0]); Assert.True(after.Orders[0].Items[0].IsIncluded);
         Assert.Equal(json, await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(f.DirectoryPath, "schema7.json.*.bak")), Token));
     }

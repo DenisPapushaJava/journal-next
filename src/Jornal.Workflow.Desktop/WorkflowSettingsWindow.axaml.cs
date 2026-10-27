@@ -78,9 +78,9 @@ public partial class WorkflowSettingsWindow : Window
         try
         {
             if (!await Launcher.LaunchUriAsync(WorkflowIdentity.ReleasesPageFor(repository)))
-                model.Error = $"Не удалось открыть выпуски {WorkflowIdentity.Name}.";
+                model.Error = $"Не удалось открыть выпуски программы «{WorkflowIdentity.Name}».";
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { model.Error = $"Не удалось открыть выпуски {WorkflowIdentity.Name}."; }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { model.Error = $"Не удалось открыть выпуски программы «{WorkflowIdentity.Name}»."; }
     }
     private async void OnOpenWorkflowDiagnostics(object? sender, RoutedEventArgs e)
     {
@@ -88,9 +88,9 @@ public partial class WorkflowSettingsWindow : Window
         try
         {
             if (!Directory.Exists(model.DiagnosticsDirectory) || !await Launcher.LaunchDirectoryInfoAsync(new DirectoryInfo(model.DiagnosticsDirectory)))
-                model.DiagnosticsStatus = $"Папка диагностики {WorkflowIdentity.Name} недоступна.";
+                model.DiagnosticsStatus = $"Папка диагностики программы «{WorkflowIdentity.Name}» недоступна.";
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { model.DiagnosticsStatus = $"Не удалось открыть папку диагностики {WorkflowIdentity.Name}."; }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { model.DiagnosticsStatus = $"Не удалось открыть папку диагностики программы «{WorkflowIdentity.Name}»."; }
     }
     private async void OnExportWorkflowDiagnostics(object? sender, RoutedEventArgs e)
     {
@@ -99,15 +99,25 @@ public partial class WorkflowSettingsWindow : Window
         {
             var file = await StorageProvider.SaveFilePickerAsync(new()
             {
-                Title = $"Сохранить диагностический отчёт {WorkflowIdentity.Name}", SuggestedFileName = $"Journal-Workflow-report-{DateTime.Now:yyyyMMdd-HHmmss}.zip",
+                Title = $"Сохранить диагностический отчёт программы «{WorkflowIdentity.Name}»", SuggestedFileName = $"Journal-Workflow-report-{DateTime.Now:yyyyMMdd-HHmmss}.zip",
                 DefaultExtension = "zip", FileTypeChoices = [new FilePickerFileType("Архив ZIP") { Patterns = ["*.zip"] }]
             });
             token.ThrowIfCancellationRequested();
             return file is null ? null : await file.OpenWriteAsync();
         });
     }
+    private Button? _colorMenuAnchor;
+    private void OnProfileColorClick(object? sender, RoutedEventArgs e)
+    { _colorMenuAnchor = ChangeWorkflowProfileColor; Model?.BeginColorPicker(false); }
+    private void OnShopColorClick(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { CanEdit: true } model) return;
+        _colorMenuAnchor = ChangeWorkflowShopColor; model.BeginColorPicker(true);
+        ChangeWorkflowProfileColor.Flyout?.ShowAt(ChangeWorkflowShopColor);
+    }
     private void OnProfileColorMenuOpened(object? sender, EventArgs e) => ShowColorPalette();
-    private void OnProfileColorMenuClosed(object? sender, EventArgs e) => ShowColorPalette();
+    private void OnProfileColorMenuClosed(object? sender, EventArgs e)
+    { ShowColorPalette(); Model?.BeginColorPicker(false); }
     private void ShowColorPalette()
     { WorkflowProfilePalette.IsVisible = true; WorkflowPreciseColorMenu.IsVisible = false; }
     private void OnShowPreciseColor(object? sender, RoutedEventArgs e)
@@ -115,18 +125,23 @@ public partial class WorkflowSettingsWindow : Window
     private void OnShowColorPalette(object? sender, RoutedEventArgs e)
     { ShowColorPalette(); MoreWorkflowProfileColors.Focus(); e.Handled = true; }
     private void OnConfirmProfileColor(object? sender, RoutedEventArgs e)
-    { CloseColorMenu(); e.Handled = true; }
+    { if (Model is not { IsEditingShopColor: true } model || model.CommitShopColor()) CloseColorMenu(); e.Handled = true; }
     private void CloseColorMenu()
     {
+        var anchor = _colorMenuAnchor ?? ChangeWorkflowProfileColor;
         ChangeWorkflowProfileColor.Flyout?.Hide();
-        if (ChangeWorkflowProfileColor.IsEffectivelyVisible && ChangeWorkflowProfileColor.IsEffectivelyEnabled) ChangeWorkflowProfileColor.Focus();
+        if (anchor.IsEffectivelyVisible && anchor.IsEffectivelyEnabled) anchor.Focus();
     }
     private void OnProfileColorMenuKeyDown(object? sender, KeyEventArgs e)
     { if (e.Key == Key.Escape) { CloseColorMenu(); e.Handled = true; } }
     private void OnSelectProfileColor(object? sender, RoutedEventArgs e)
     {
         if (Model is { CanEdit: true } model && (sender as Control)?.DataContext is WorkflowProfileColorOption color)
-        { model.SelectProfileColorCommand.Execute(color); CloseColorMenu(); }
+        {
+            if (model.IsEditingShopColor)
+            { model.PickerSpectrumColor = new(Avalonia.Media.Color.FromUInt32(color.Argb)); if (model.CommitShopColor()) CloseColorMenu(); }
+            else { model.SelectProfileColorCommand.Execute(color); CloseColorMenu(); }
+        }
         e.Handled = true;
     }
     private async void OnBrowseProjects(object? sender, RoutedEventArgs e)
@@ -140,6 +155,17 @@ public partial class WorkflowSettingsWindow : Window
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is not OutOfMemoryException) { model.Error = "Не удалось открыть выбор папки."; }
     }
+    private async void OnBrowseShopRoot(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { CanEdit: true } model || !StorageProvider.CanPickFolder) return;
+        try
+        {
+            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Папка заданий в цех", AllowMultiple = false });
+            if (IsVisible && folders.FirstOrDefault()?.TryGetLocalPath() is { } path) model.ShopRoot = path;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { model.Error = "Не удалось открыть выбор папки цеха. Можно ввести полный путь вручную."; }
+    }
     private async void OnConnectDatabase(object? sender, RoutedEventArgs e) => await ChooseDatabaseAsync(false);
     private async void OnCreateDatabase(object? sender, RoutedEventArgs e) => await ChooseDatabaseAsync(true);
     private async Task ChooseDatabaseAsync(bool create)
@@ -149,19 +175,19 @@ public partial class WorkflowSettingsWindow : Window
         try
         {
             string? path;
-            var type = new FilePickerFileType("База Journal Next (*.mdb)") { Patterns = ["*.mdb"] };
+            var type = new FilePickerFileType($"База программы «{WorkflowIdentity.Name}» (*.mdb)") { Patterns = ["*.mdb"] };
             if (create)
             {
                 if (!StorageProvider.CanSave) return;
                 var file = await StorageProvider.SaveFilePickerAsync(new()
-                { Title = "Создать базу Journal Next", SuggestedFileName = "JournalNext.mdb", DefaultExtension = "mdb", FileTypeChoices = [type], ShowOverwritePrompt = true });
+                { Title = $"Создать базу программы «{WorkflowIdentity.Name}»", SuggestedFileName = "Заявки.mdb", DefaultExtension = "mdb", FileTypeChoices = [type], ShowOverwritePrompt = true });
                 path = file?.TryGetLocalPath();
             }
             else
             {
                 if (!StorageProvider.CanOpen) return;
                 var files = await StorageProvider.OpenFilePickerAsync(new()
-                { Title = "Подключить базу Journal Next", AllowMultiple = false, FileTypeFilter = [type] });
+                { Title = $"Подключить базу программы «{WorkflowIdentity.Name}»", AllowMultiple = false, FileTypeFilter = [type] });
                 path = files.FirstOrDefault()?.TryGetLocalPath();
             }
             if (IsVisible && path is not null) await model.ChooseDatabaseAsync(path, create);

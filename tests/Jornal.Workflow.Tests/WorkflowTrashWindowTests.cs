@@ -27,9 +27,11 @@ public sealed class WorkflowTrashWindowTests
         try
         {
             window.Show(); await Until(() => !f.Model.IsBusy); Dispatcher.UIThread.RunJobs();
-            InWindow(window.FindControl<Button>("MoveWorkflowOrderToTrash")!, window);
+            var actions = window.FindControl<Button>("WorkflowOrderActions")!;
+            InWindow(actions, window);
             InWindow(window.FindControl<Button>("OpenWorkflowTrash")!, window);
-            Click(window, "MoveWorkflowOrderToTrash");
+            Save(window, dark, width, "workflow-orders-toolbar");
+            OpenTrashAction();
             var confirmation = Assert.IsType<WorkflowTrashConfirmationWindow>(Assert.Single(window.OwnedWindows));
             Assert.True(confirmation.FindControl<Button>("CancelWorkflowTrash")!.IsFocused);
             var request = Assert.IsType<WorkflowTrashConfirmationViewModel>(confirmation.DataContext);
@@ -37,8 +39,9 @@ public sealed class WorkflowTrashWindowTests
             InWindow(confirmation.FindControl<Button>("ConfirmWorkflowTrash")!, confirmation);
             Save(confirmation, dark, width, "workflow-trash-confirmation");
             confirmation.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null); Dispatcher.UIThread.RunJobs();
-            Assert.Empty(window.OwnedWindows); Assert.Equal(before.Version, (await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Version);
-            Click(window, "MoveWorkflowOrderToTrash");
+            Assert.Empty(window.OwnedWindows); Assert.True(actions.IsFocused);
+            Assert.Equal(before.Version, (await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Version);
+            OpenTrashAction();
             confirmation = Assert.IsType<WorkflowTrashConfirmationWindow>(Assert.Single(window.OwnedWindows));
             Click(confirmation, "ConfirmWorkflowTrash"); await Until(() => window.OwnedWindows.Count == 0);
             Assert.Empty(f.Model.Orders); Assert.False(f.Model.IsOrderOpen);
@@ -71,6 +74,15 @@ public sealed class WorkflowTrashWindowTests
             Click(window, "DiscardWorkflowCardChanges"); Dispatcher.UIThread.RunJobs();
             Assert.False(f.Model.HasCardReview); Assert.Equal("1", f.Model.SelectedDraft!.Coefficient);
             Assert.True(log.Errors.Count == 0, string.Join("\n", log.Errors.Distinct().Take(12)));
+
+            void OpenTrashAction()
+            {
+                Click(window, "WorkflowOrderActions");
+                var menu = Assert.IsType<MenuFlyout>(actions.Flyout); Assert.True(menu.IsOpen);
+                var item = menu.Items.OfType<MenuItem>().Single(i => i.Name == "MoveWorkflowOrderToTrash");
+                Save(TopLevel.GetTopLevel(item)!, dark, width, "workflow-order-actions");
+                Click(item);
+            }
         }
         finally
         {
@@ -87,8 +99,14 @@ public sealed class WorkflowTrashWindowTests
     private static void Click(Window window, string name)
     {
         var control = window.FindControl<Control>(name)!; InWindow(control, window);
-        var point = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), window)!.Value;
-        window.MouseDown(point, MouseButton.Left); window.MouseUp(point, MouseButton.Left); Dispatcher.UIThread.RunJobs();
+        Click(control);
+    }
+    private static void Click(Control control)
+    {
+        Assert.True(control.IsEffectivelyVisible);
+        var root = TopLevel.GetTopLevel(control)!;
+        var point = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), root)!.Value;
+        root.MouseDown(point, MouseButton.Left); root.MouseUp(point, MouseButton.Left); Dispatcher.UIThread.RunJobs();
     }
     private static void InWindow(Control control, Window window)
     {
@@ -96,7 +114,7 @@ public sealed class WorkflowTrashWindowTests
         Assert.InRange(point.X, 0, window.ClientSize.Width - control.Bounds.Width);
         Assert.InRange(point.Y, 0, window.ClientSize.Height - control.Bounds.Height);
     }
-    private static void Save(Window window, bool dark, int width, string name)
+    private static void Save(TopLevel window, bool dark, int width, string name)
     {
         if (Environment.GetEnvironmentVariable("JOURNAL_WORKFLOW_SCREENSHOTS") is not { } output) return;
         Directory.CreateDirectory(output); var image = window.CaptureRenderedFrame(); Assert.NotNull(image);

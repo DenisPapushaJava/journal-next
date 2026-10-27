@@ -98,7 +98,8 @@ public sealed class WorkflowProfileTests
         Assert.Equal(before.Orders.Single().ManagerId, after.Orders.Single().ManagerId);
         Assert.Equal(employee.Id, preferences.Load().EmployeeId); Assert.True(preferences.Load().DarkTheme);
         var json = await File.ReadAllTextAsync(Path.Combine(f.DirectoryPath, "preferences.json"), TestContext.Current.CancellationToken);
-        Assert.DoesNotContain("Кузнецов", json); Assert.DoesNotContain("Color", json);
+        Assert.DoesNotContain("Кузнецов", json);
+        using (var local = JsonDocument.Parse(json)) Assert.False(local.RootElement.TryGetProperty(nameof(Employee.ColorArgb), out _));
 
         var restarted = Client(f, Path.Combine(f.DirectoryPath, "preferences.json"));
         await restarted.ReloadCommand.ExecuteAsync(null); Assert.Equal(employee, restarted.CurrentEmployee);
@@ -153,7 +154,7 @@ public sealed class WorkflowProfileTests
         var path = Path.Combine(f.DirectoryPath, "schema-five.json"); var original = old.ToJsonString();
         await File.WriteAllTextAsync(path, original, TestContext.Current.CancellationToken);
         var upgraded = await new LocalWorkflowWorkspaceStore(path).ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(11, upgraded.SchemaVersion); Assert.Equal(book.Version, upgraded.Version);
+        Assert.Equal(WorkflowWorkspace.CurrentSchema, upgraded.SchemaVersion); Assert.Equal(book.Version, upgraded.Version);
         Assert.Equal(book.Orders.Single().ReferenceNumber, upgraded.Orders.Single().ReferenceNumber);
         Assert.Equal(book.Orders.Single().CreatedById, upgraded.Orders.Single().CreatedById);
         Assert.Equal(original, await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(f.DirectoryPath, "schema-five.json.*.bak")), TestContext.Current.CancellationToken));
