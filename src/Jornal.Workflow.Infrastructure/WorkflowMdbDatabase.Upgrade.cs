@@ -14,9 +14,9 @@ public sealed partial class WorkflowMdbDatabase
         var backup = path + ".schema-v1-" + Guid.NewGuid().ToString("N") + ".bak";
         try
         {
-            // Deny all readers/writers while preparing an independent copy. Delete sharing permits
-            // our final atomic replacement without reopening an unprotected source file.
-            using var original = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Delete);
+            // ReadWrite ownership excludes another upgrader or writer. ReplaceFile needs
+            // read/delete sharing so the guarded source can be replaced without a gap.
+            using var original = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read | FileShare.Delete);
             if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
                 throw new WorkflowValidationException("Для обновления MDB выберите сам файл базы, а не ссылку на него.");
             using (var output = new FileStream(stage, FileMode.CreateNew, FileAccess.Write, FileShare.None))
