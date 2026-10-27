@@ -40,7 +40,7 @@
               </DataTemplate>
             </DataGridTemplateColumn.CellTemplate>
           </DataGridTemplateColumn>
-          <DataGridTextColumn Header="Резка" Binding="{Binding Total}" Width="108" />
+          <DataGridTextColumn CellTheme="{StaticResource WorkflowNumericCell}" Header="Резка" Binding="{Binding Total}" Width="108" />
         </DataGrid.Columns>
       </DataGrid>
       <GridSplitter x:Name="ReviewPaneSplitter" Classes="workflow-splitter columns" Grid.Column="1" Width="6" HorizontalAlignment="Center"
@@ -84,13 +84,13 @@
                 <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,4,Auto,12,Auto,4,Auto,12,Auto,4,Auto,12,Auto,4,Auto">
                   <TextBlock Text="Материал" Classes="muted" /><TextBlock Grid.Column="2" Text="Толщина, мм" Classes="muted" />
                   <TextBox Grid.Row="2" Text="{Binding Material}" AutomationProperties.Name="Материал спецификации" />
-                  <TextBox Grid.Row="2" Grid.Column="2" Text="{Binding Thickness}" AutomationProperties.Name="Толщина спецификации, мм" />
+                  <TextBox Classes="tabular" Grid.Row="2" Grid.Column="2" Text="{Binding Thickness}" AutomationProperties.Name="Толщина спецификации, мм" />
                   <TextBlock Grid.Row="4" Text="Заготовка" Classes="muted" /><TextBlock Grid.Row="4" Grid.Column="2" Text="Количество, шт." Classes="muted" />
-                  <TextBox Grid.Row="6" Text="{Binding BlankSize}" /><TextBox Grid.Row="6" Grid.Column="2" Text="{Binding Quantity}" />
+                  <TextBox Classes="tabular" Grid.Row="6" Text="{Binding BlankSize}" /><TextBox Classes="tabular" Grid.Row="6" Grid.Column="2" Text="{Binding Quantity}" />
                   <TextBlock Grid.Row="8" Text="Длина реза, м" Classes="muted" /><TextBlock Grid.Row="8" Grid.Column="2" Text="Пробивки, шт." Classes="muted" />
-                  <TextBox x:Name="ReviewCutLength" Grid.Row="10" Text="{Binding Length}" /><TextBox Grid.Row="10" Grid.Column="2" Text="{Binding Pierces}" />
+                  <TextBox Classes="tabular" x:Name="ReviewCutLength" Grid.Row="10" Text="{Binding Length}" /><TextBox Classes="tabular" Grid.Row="10" Grid.Column="2" Text="{Binding Pierces}" />
                   <TextBlock Grid.Row="12" Text="Общий вес, кг" Classes="muted" /><TextBlock Grid.Row="12" Grid.Column="2" Text="Время резки" Classes="muted" />
-                  <TextBox Grid.Row="14" Text="{Binding Weight}" /><TextBox Grid.Row="14" Grid.Column="2" Text="{Binding Duration}" />
+                  <TextBox Classes="tabular" Grid.Row="14" Text="{Binding Weight}" /><TextBox Classes="tabular" Grid.Row="14" Grid.Column="2" Text="{Binding Duration}" />
                 </Grid>
                 <StackPanel Spacing="4" IsVisible="{Binding UsesMaterialCategories}">
                   <TextBlock Text="Категория тарифа HansLaser" Classes="muted" />
@@ -99,7 +99,7 @@
                 <Expander Header="Номер и дата спецификации" HorizontalAlignment="Stretch">
                   <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,4,Auto" Margin="0,8,0,0">
                     <TextBlock Text="Номер спецификации" Classes="muted" /><TextBlock Grid.Column="2" Text="Дата" Classes="muted" />
-                    <TextBox Grid.Row="2" Text="{Binding Number}" /><TextBox Grid.Row="2" Grid.Column="2" Text="{Binding Date}" />
+                    <TextBox Classes="tabular" Grid.Row="2" Text="{Binding Number}" /><TextBox Classes="tabular" Grid.Row="2" Grid.Column="2" Text="{Binding Date}" />
                   </Grid>
                 </Expander>
               </StackPanel>
@@ -118,9 +118,9 @@
           <Border Grid.Row="4" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
             <Grid ColumnDefinitions="*,16,150" RowDefinitions="Auto,4,Auto,8,Auto">
               <TextBlock Text="Стоимость резки" Classes="muted" /><TextBlock Grid.Column="2" Text="Ручной коэффициент" Classes="muted" IsVisible="{Binding Selected.HasDraft}" />
-              <TextBlock Grid.Row="2" Text="{Binding Selected.Total}" FontSize="26" FontWeight="SemiBold" VerticalAlignment="Center" />
+              <TextBlock Classes="tabular" Grid.Row="2" Text="{Binding Selected.Total}" FontSize="26" FontWeight="SemiBold" VerticalAlignment="Center" />
               <Grid Grid.Row="2" Grid.Column="2" IsVisible="{Binding Selected.HasDraft}" IsEnabled="{Binding CanEdit}">
-                <TextBox x:Name="ReviewCoefficient" DataContext="{Binding Selected.Draft}" x:DataType="vm:SpecificationDraft"
+                <TextBox Classes="tabular" x:Name="ReviewCoefficient" DataContext="{Binding Selected.Draft}" x:DataType="vm:SpecificationDraft"
                          Text="{Binding Coefficient}" AutomationProperties.Name="Ручной коэффициент" />
               </Grid>
               <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8" IsVisible="{Binding Selected.HasDraft}" IsEnabled="{Binding CanEdit}">

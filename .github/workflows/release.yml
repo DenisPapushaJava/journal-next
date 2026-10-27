@@ -7,7 +7,7 @@ on:
       version:
         description: 'Версия Windows-выпуска'
         required: true
-        default: '2026.1.0-alpha.4'
+        default: '2026.1.0-alpha.5'
         type: string
       create_draft:
         description: 'После проверок создать тег и черновик выпуска'
@@ -116,5 +116,5 @@ jobs:
           & python scripts/release.py notes --version $env:NEXT_VERSION --notes-output (Join-Path $env:RUNNER_TEMP 'next-notes.txt')
           if ($LASTEXITCODE -ne 0) { throw 'Reading approved release notes failed.' }
           $assets = @(Get-ChildItem artifacts/release -File | Select-Object -ExpandProperty FullName)
-          & gh release create $env:NEXT_TAG @assets --draft --verify-tag --prerelease --title "Journal Next $env:NEXT_VERSION" --notes-file (Join-Path $env:RUNNER_TEMP 'next-notes.txt')
+          & gh release create $env:NEXT_TAG @assets --draft --verify-tag --prerelease --title "Заявки $env:NEXT_VERSION" --notes-file (Join-Path $env:RUNNER_TEMP 'next-notes.txt')
           if ($LASTEXITCODE -ne 0) { throw 'Draft creation failed.' }

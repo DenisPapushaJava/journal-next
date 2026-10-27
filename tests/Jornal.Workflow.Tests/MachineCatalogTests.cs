@@ -85,7 +85,7 @@ public sealed class MachineCatalogTests
             var path = Path.Combine(dir, "workspace.json"); var bytes = System.Text.Encoding.UTF8.GetBytes(node.ToJsonString());
             await File.WriteAllBytesAsync(path, bytes, TestContext.Current.CancellationToken);
             var store = new LocalWorkflowWorkspaceStore(path); var migrated = await store.ReadAsync(TestContext.Current.CancellationToken);
-            Assert.Equal(11, migrated.SchemaVersion); Assert.Equal(book.Orders[0].CuttingTotal, migrated.Orders[0].CuttingTotal);
+            Assert.Equal(WorkflowWorkspace.CurrentSchema, migrated.SchemaVersion); Assert.Equal(book.Orders[0].CuttingTotal, migrated.Orders[0].CuttingTotal);
             var id = migrated.Machines.Single(m => m.Name == "Лазер").Id; Assert.NotEqual(Guid.Empty, id);
             Assert.Equal(id, migrated.Rates[0].MachineId); Assert.Equal(id, migrated.Orders[0].Specifications[0].Current.Parameters.MachineId);
             var backup = Assert.Single(Directory.GetFiles(dir, "*.bak")); Assert.Equal(bytes, await File.ReadAllBytesAsync(backup, TestContext.Current.CancellationToken));

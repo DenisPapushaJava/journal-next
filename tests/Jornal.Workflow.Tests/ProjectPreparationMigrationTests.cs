@@ -1,3 +1,4 @@
+using Jornal.Workflow.Core;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Jornal.Workflow.Infrastructure;
@@ -27,7 +28,7 @@ public sealed class ProjectPreparationMigrationTests
         var path = Path.Combine(f.DirectoryPath, "schema-three.json"); var original = legacy.ToJsonString();
         await File.WriteAllTextAsync(path, original, TestContext.Current.CancellationToken);
         var migrated = await new LocalWorkflowWorkspaceStore(path).ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(11, migrated.SchemaVersion); Assert.Equal(before.Version, migrated.Version);
+        Assert.Equal(WorkflowWorkspace.CurrentSchema, migrated.SchemaVersion); Assert.Equal(before.Version, migrated.Version);
         Assert.Equal(before.Machines, migrated.Machines); Assert.Equal(before.Rates, migrated.Rates);
         var oldOrder = before.Orders[0]; var order = migrated.Orders[0];
         Assert.Equal(oldOrder.Version, order.Version); Assert.Equal(oldOrder.Items, order.Items);

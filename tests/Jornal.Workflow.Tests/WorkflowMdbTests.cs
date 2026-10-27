@@ -28,6 +28,14 @@ internal sealed class MemoryMdb : IWorkflowAccessTransport, IWorkflowDatabaseSer
         token.ThrowIfCancellationRequested(); Requests.Add(r);
         if (r.DatabaseId is { } id && id != Id) throw new WorkflowValidationException("Другая база");
         var ids = r.OrderIds ?? []; Guid[] page = []; bool more = false; int total = 0;
+        if (r.Operation == WorkflowAccessOperation.RecordShopHandoff)
+        {
+            var mark = r.ShopHandoff!;
+            var next = WorkflowChanges.RecordShopHandoff(Book, mark.OrderId, mark.ExpectedOrderVersion, mark.ActorId, mark.At);
+            if (!ReferenceEquals(next, Book)) Book = next with { Version = Book.Version + 1 };
+            if (LoseNextWriteReply) { LoseNextWriteReply = false; throw new WorkflowOutcomeUnknownException(); }
+            ids = [mark.OrderId];
+        }
         if (r.Operation == WorkflowAccessOperation.Purge)
         {
             Book = WorkflowChanges.PurgeTrashedOrders(Book, r.TrashTargets!, r.ActorId!.Value) with { Version = Book.Version + 1 };

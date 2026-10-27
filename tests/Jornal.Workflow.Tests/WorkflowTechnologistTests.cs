@@ -40,7 +40,7 @@ public sealed class WorkflowTechnologistTests
         var original = node.ToJsonString(); var path = Path.Combine(f.DirectoryPath, "schema9.json");
         await File.WriteAllTextAsync(path, original, TestContext.Current.CancellationToken);
         var store = new LocalWorkflowWorkspaceStore(path); var after = await store.ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(11, after.SchemaVersion); Assert.Equal(before.Version, after.Version);
+        Assert.Equal(WorkflowWorkspace.CurrentSchema, after.SchemaVersion); Assert.Equal(before.Version, after.Version);
         Assert.Equal(JsonSerializer.Serialize(before.Orders), JsonSerializer.Serialize(after.Orders));
         Assert.Equal(before.Employees.Select(e => (e.Id, e.Name, e.ColorArgb)), after.Employees.Select(e => (e.Id, e.Name, e.ColorArgb)));
         Assert.False(after.Employees.Single(e => e.Name == "Только менеджер").IsTechnologist);

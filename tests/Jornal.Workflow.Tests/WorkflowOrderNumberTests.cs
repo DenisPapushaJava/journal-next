@@ -49,7 +49,7 @@ public sealed class WorkflowOrderNumberTests
         await File.WriteAllTextAsync(path, original, TestContext.Current.CancellationToken);
         var store = new LocalWorkflowWorkspaceStore(path);
         var migrated = await store.ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(11, migrated.SchemaVersion); Assert.Equal(before.Version, migrated.Version);
+        Assert.Equal(WorkflowWorkspace.CurrentSchema, migrated.SchemaVersion); Assert.Equal(before.Version, migrated.Version);
         var stem = first.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd-HHmmss", CultureInfo.InvariantCulture);
         Assert.Equal(stem, migrated.Orders.Single(o => o.Id == first.Id).ReferenceNumber);
         Assert.Equal(stem + "-02", migrated.Orders.Single(o => o.Id == secondId).ReferenceNumber);

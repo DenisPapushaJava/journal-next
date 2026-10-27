@@ -6,6 +6,8 @@ using Jornal.Workflow.Infrastructure;
 
 namespace Jornal.Workflow.Desktop;
 
+internal enum ShopFolderAvailability { Checking, Available, NotFound, Unavailable }
+
 public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, string machine, bool isCurrent,
     SpecificationState? saved, bool included = true, bool legacyCalculation = false, bool hasAlternatives = false,
     bool hasLocalChanges = false) : ObservableObject
@@ -63,6 +65,31 @@ public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, s
     public string? FolderPath => Path.GetDirectoryName(Project.NativePath ?? Saved?.SourcePath);
     public bool HasFolder => !string.IsNullOrWhiteSpace(FolderPath);
     public string FolderHint => HasFolder ? "Открыть папку проекта" : "Папка проекта не задана";
+    private string? _shopFolderPath;
+    private ShopFolderAvailability _shopFolderAvailability;
+    public string? ShopFolderPath => _shopFolderPath;
+    public bool HasShopFolderPath => ShopFolderPath is not null;
+    public bool CanOpenShopFolder => HasShopFolderPath && _shopFolderAvailability == ShopFolderAvailability.Available;
+    public string ShopFolderHint => ShopFolderPath is not { } path ? "Для папки цеха нужны БЛЦБ, путь в настройках и рабочий проект" :
+        (_shopFolderAvailability switch
+        {
+            ShopFolderAvailability.Available => "Открыть папку задания в цехе",
+            ShopFolderAvailability.Checking => "Проверяем папку задания в цехе…",
+            ShopFolderAvailability.NotFound => "Папка задания пока не найдена. Подготовьте задание или обновите заявку (F5).",
+            _ => "Папка задания недоступна или её принадлежность не подтверждена. Обновите заявку (F5)."
+        }) + "\n" + path;
+    internal void ApplyShopFolderPath(string? path)
+    {
+        if (!SetProperty(ref _shopFolderPath, path, nameof(ShopFolderPath))) return;
+        _shopFolderAvailability = ShopFolderAvailability.Checking;
+        OnPropertyChanged(nameof(HasShopFolderPath)); OnPropertyChanged(nameof(CanOpenShopFolder)); OnPropertyChanged(nameof(ShopFolderHint));
+    }
+    internal void ApplyShopFolderAvailability(ShopFolderAvailability availability)
+    {
+        if (_shopFolderAvailability == availability) return;
+        _shopFolderAvailability = availability;
+        OnPropertyChanged(nameof(CanOpenShopFolder)); OnPropertyChanged(nameof(ShopFolderHint));
+    }
     public string DetailsHint => Name + "\nМатериал: " + Material + "\n" + State;
 }
 
@@ -223,6 +250,7 @@ public partial class WorkflowViewModel
             SelectedProject = Projects.SingleOrDefault(p => p.Project.Id == id) ?? Projects.FirstOrDefault();
         }
         finally { _refreshingProjects = false; }
+        NotifyShopFolderPaths();
         SelectedDraft = SelectedProject is { IsDeleted: false } selected ? Drafts.SingleOrDefault(d => d.Id == selected.Project.Id) : null;
         OnPropertyChanged(nameof(ProjectMachines)); OnPropertyChanged(nameof(ProjectsStatus)); NotifyCompleteness();
         OnPropertyChanged(nameof(IsProjectListEmpty)); OnPropertyChanged(nameof(NeedsProjectRoot));

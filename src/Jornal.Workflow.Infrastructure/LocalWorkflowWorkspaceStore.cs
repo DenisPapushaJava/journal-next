@@ -117,9 +117,9 @@ public sealed class LocalWorkflowWorkspaceStore(string path) : IWorkflowWorkspac
             if (source.Length > MaximumSize) throw new IOException("Локальные данные разработки превышают допустимый размер.");
             var data = JsonNode.Parse(source) as JsonObject ?? throw new WorkflowValidationException("Файл локальных данных пуст.");
             var schema = data["SchemaVersion"]?.GetValue<int>() ?? 0;
-            value = schema == 11 ? data.Deserialize<WorkflowWorkspace>() ?? throw new WorkflowValidationException("Файл локальных данных пуст.") :
+            value = schema == WorkflowWorkspace.CurrentSchema ? data.Deserialize<WorkflowWorkspace>() ?? throw new WorkflowValidationException("Файл локальных данных пуст.") :
                 WorkflowWorkspaceMigration.Upgrade(data);
-            if (schema != 11)
+            if (schema != WorkflowWorkspace.CurrentSchema)
             {
                 value.Validate();
                 source.Dispose(); Backup(); Save(value);

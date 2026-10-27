@@ -4,6 +4,12 @@
     <ResourceDictionary>
       <ResourceDictionary.MergedDictionaries><ResourceInclude Source="avares://Jornal.Desktop/Themes/Palette.axaml" /></ResourceDictionary.MergedDictionaries>
       <FontFamily x:Key="JournalFont">avares://Avalonia.Fonts.Inter/Assets#Inter</FontFamily>
+      <ControlTheme x:Key="WorkflowTabularCell" TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}">
+        <Setter Property="FontFeatures" Value="tnum" />
+      </ControlTheme>
+      <ControlTheme x:Key="WorkflowNumericCell" TargetType="DataGridCell" BasedOn="{StaticResource WorkflowTabularCell}">
+        <Setter Property="HorizontalContentAlignment" Value="Right" />
+      </ControlTheme>
     </ResourceDictionary>
   </Application.Resources>
   <Application.Styles>
@@ -13,6 +19,9 @@
     <StyleInclude Source="avares://Jornal.Desktop/Themes/Inputs.axaml" />
     <StyleInclude Source="avares://Jornal.Desktop/Themes/Settings.axaml" />
     <StyleInclude Source="avares://Jornal.Desktop/Themes/Scrollbars.axaml" />
+    <Style Selector="TextBlock.tabular, TextBox.tabular, Button.tabular, ComboBox.tabular">
+      <Setter Property="TextElement.FontFeatures" Value="tnum" />
+    </Style>
     <Style Selector="DataGrid"><Setter Property="Background" Value="{DynamicResource JournalSurface}" /><Setter Property="RowHeight" Value="32" /></Style>
     <Style Selector="DataGridRow"><Setter Property="Background" Value="{DynamicResource JournalSurface}" /><Setter Property="Foreground" Value="{DynamicResource JournalText}" /></Style>
     <Style Selector="DataGridRow:pointerover"><Setter Property="Background" Value="{DynamicResource JournalRaised}" /></Style>

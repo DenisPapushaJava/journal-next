@@ -55,7 +55,7 @@ class ReleaseTests(unittest.TestCase):
     def test_repository_or_identity_cannot_be_changed_by_manifest(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            original = json.loads((ROOT / 'workflow-product.json').read_text())
+            original = json.loads((ROOT / 'workflow-product.json').read_text(encoding='utf-8'))
             for key, value in [('productId', 'DenisPapusha.Journal'), ('updatesRepository', 'https://github.com/DenisPapushaJava/journal-v2.0'), ('publicationEnabled', False)]:
                 (root / 'workflow-product.json').write_text(json.dumps(original | {key: value}))
                 with self.assertRaises(ValueError): release.product(root)

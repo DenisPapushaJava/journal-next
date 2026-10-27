@@ -23,7 +23,7 @@ public sealed record WorkflowMdbForeignKey(string Name, string Table, string[] C
 public static class WorkflowMdbSchema
 {
     public const string ProductId = "DenisPapusha.JournalWorkflow";
-    public const int Version = 1;
+    public const int Version = 2;
     private static WorkflowMdbColumn C(string name, string? path, WorkflowMdbType type, bool required = true, int size = 255) => new(name, path, type, required, size);
     private static WorkflowMdbColumn Id() => C("id", "Id", WorkflowMdbType.Guid);
     private static WorkflowMdbColumn Owner(string name) => C(name, null, WorkflowMdbType.Guid);
@@ -52,6 +52,8 @@ public static class WorkflowMdbSchema
             C("blcb","Blcb",WorkflowMdbType.Text,false), C("row_version","Version",WorkflowMdbType.Int64),
             C("created_at","CreatedAt",WorkflowMdbType.Utc), C("updated_at","UpdatedAt",WorkflowMdbType.Utc),
             C("created_by","CreatedById",WorkflowMdbType.Guid,false), C("deleted_at","DeletedAt",WorkflowMdbType.Utc,false), C("deleted_by","DeletedBy",WorkflowMdbType.Guid,false)]),
+        new("order_shop_handoffs", [Id(), C("order_version", "OrderVersion", WorkflowMdbType.Int64),
+            C("actor_id", "ActorId", WorkflowMdbType.Guid), C("transferred_at", "At", WorkflowMdbType.Utc)]),
         new("order_items", [Id(), Owner("order_id"), C("item_number","Number",WorkflowMdbType.Int32),
             C("reviewed_variant","ReviewedThroughVariant",WorkflowMdbType.Int32), C("is_included","IsIncluded",WorkflowMdbType.Boolean)]),
         new("cutting_projects", [Id(), Owner("order_id"), C("item_id","ItemId",WorkflowMdbType.Guid), C("variant_number","Variant",WorkflowMdbType.Int32),
@@ -119,6 +121,7 @@ public static class WorkflowMdbSchema
         result.Add(new("fk_spec_project", "specifications", ["order_id", "id"], "cutting_projects", ["order_id", "id"]));
         F("specifications", "author_id", "employees"); F("specifications", "machine_id", "machines"); F("accepted_reports", "specification_id", "specifications");
         F("project_renames", "project_id", "cutting_projects"); F("project_renames", "machine_id", "machines"); F("project_renames", "actor_id", "employees");
+        F("order_shop_handoffs", "id", "orders"); F("order_shop_handoffs", "actor_id", "employees");
         return result.ToArray();
     }
     public static IEnumerable<string> CreateSql()

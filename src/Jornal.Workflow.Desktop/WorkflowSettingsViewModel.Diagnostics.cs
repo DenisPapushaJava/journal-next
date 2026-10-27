@@ -4,9 +4,6 @@ namespace Jornal.Workflow.Desktop;
 
 public partial class WorkflowSettingsViewModel
 {
-    public bool IsUpdateSourceConfigured => WorkflowIdentity.UpdatesRepository is not null;
-    public string UpdateSetupHint => !IsUpdateSourceConfigured ? $"Отдельный канал выпусков {WorkflowIdentity.Name} ещё не подключён." : !Updates.IsInstalled ? $"Обновления {WorkflowIdentity.Name} доступны после установки через OfflineSetup." : "";
-    public bool HasUpdateSetupHint => !string.IsNullOrEmpty(UpdateSetupHint);
     public bool HasDiagnostics => Journal.Diagnostics is not null;
     public string DiagnosticsDirectory => WorkflowIdentity.DiagnosticsDirectory;
     public bool CanExportDiagnostics => CanEdit && HasDiagnostics;
@@ -27,7 +24,7 @@ public partial class WorkflowSettingsViewModel
             await diagnostics.FlushLocalAsync(timeout.Token);
             if (stream.CanSeek) stream.SetLength(0);
             await Task.Run(() => diagnostics.Store.Export(stream), token);
-            DiagnosticsStatus = $"Отчёт {WorkflowIdentity.Name} сохранён.";
+            DiagnosticsStatus = $"Отчёт программы «{WorkflowIdentity.Name}» сохранён.";
         }
         catch (OperationCanceledException) { DiagnosticsStatus = "Сохранение отчёта отменено."; }
         catch (Exception ex) when (ex is not OutOfMemoryException)

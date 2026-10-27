@@ -34,7 +34,7 @@ public sealed class WorkflowCurrentStateTests
         await File.WriteAllTextAsync(path, original, TestContext.Current.CancellationToken);
         var archiveBytes = await File.ReadAllBytesAsync(current.Report!.ArchivePath, TestContext.Current.CancellationToken);
         var store = new LocalWorkflowWorkspaceStore(path); var after = await store.ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(11, after.SchemaVersion); Assert.Equal(before.Version, after.Version);
+        Assert.Equal(WorkflowWorkspace.CurrentSchema, after.SchemaVersion); Assert.Equal(before.Version, after.Version);
         var migrated = after.Orders.Single(); Assert.Equal(order.Id, migrated.Id); Assert.Equal(order.Version, migrated.Version);
         Assert.Equal(order.ReferenceNumber, migrated.ReferenceNumber); Assert.Equal(order.CreatedById, migrated.CreatedById);
         Assert.Equal(order.CreatedAt, migrated.CreatedAt); Assert.Equal(order.UpdatedAt, migrated.UpdatedAt);

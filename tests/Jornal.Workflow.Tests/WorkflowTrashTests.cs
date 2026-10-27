@@ -141,7 +141,7 @@ public sealed class WorkflowTrashTests
         var path = Path.Combine(f.DirectoryPath, "schema-six.json"); var original = legacy.ToJsonString();
         await File.WriteAllTextAsync(path, original, TestContext.Current.CancellationToken);
         var migrated = await new LocalWorkflowWorkspaceStore(path).ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(11, migrated.SchemaVersion); Assert.Equal(before.Version, migrated.Version);
+        Assert.Equal(WorkflowWorkspace.CurrentSchema, migrated.SchemaVersion); Assert.Equal(before.Version, migrated.Version);
         Assert.All(migrated.Orders, o => Assert.False(o.IsDeleted));
         var old = before.Orders.Single(); var order = migrated.Orders.Single();
         Assert.Equal(old.ReferenceNumber, order.ReferenceNumber); Assert.Equal(old.Version, order.Version);

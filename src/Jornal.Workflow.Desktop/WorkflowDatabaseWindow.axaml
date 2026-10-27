@@ -22,8 +22,8 @@
         <DataGrid.Columns>
           <DataGridTextColumn Header="Станок" Binding="{Binding Machine}" Width="*" />
           <DataGridTextColumn Header="Категория материала" Binding="{Binding MaterialGroup}" Width="*" />
-          <DataGridTextColumn Header="Толщина, мм" Binding="{Binding Thickness}" Width="110" />
-          <DataGridTextColumn Header="Цена, ₽/м" Binding="{Binding MeterPrice}" Width="110" />
+          <DataGridTextColumn CellTheme="{StaticResource WorkflowNumericCell}" Header="Толщина, мм" Binding="{Binding Thickness}" Width="110" />
+          <DataGridTextColumn CellTheme="{StaticResource WorkflowNumericCell}" Header="Цена, ₽/м" Binding="{Binding MeterPrice}" Width="110" />
         </DataGrid.Columns>
       </DataGrid>
       <TextBlock Grid.Row="8" Text="{Binding Status}" TextWrapping="Wrap" />

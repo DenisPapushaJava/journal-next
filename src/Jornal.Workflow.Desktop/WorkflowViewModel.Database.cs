@@ -16,8 +16,8 @@ public partial class WorkflowViewModel
     public bool IsMdb => _store is WorkflowMdbStore;
     public bool CanConnectDatabase => _databases.IsAvailable && CanUse;
     public bool RequiresDatabaseRefresh => _store is WorkflowMdbStore { RequiresRefresh: true };
-    public string DatabaseDescription => IsMdb ? "Общая база Journal Next. Другие компьютеры подключаются к этому же файлу MDB." :
-        "Локальные данные прототипа. На Windows можно создать общую MDB или подключить существующую базу Journal Next.";
+    public string DatabaseDescription => IsMdb ? $"Общая база программы «{WorkflowIdentity.Name}». Другие компьютеры подключаются к этому же файлу MDB." :
+        $"Локальные данные прототипа. На Windows можно создать общую MDB или подключить существующую базу программы «{WorkflowIdentity.Name}».";
     public bool HasMoreOrders => !RequiresDatabaseRefresh && _store is IWorkflowQueryStore { HasMore: true };
     private string SourceKey => _store.DatabaseId?.ToString("N") ?? "local";
     public async Task<bool> RestoreRestartDraftAsync(WorkflowRestartDraft draft, CancellationToken token = default)
@@ -85,6 +85,7 @@ public partial class WorkflowViewModel
             RefreshOrders(); NotifyPriceCatalog(); NotifyDatabase();
             if (letters is not null) RestoreRestartDraft(letters);
             switched = true;
+            await RememberStartupProfileAsync();
         }, "Не удалось завершить подключение MDB. Проверьте файл и локальные настройки. Если новая база уже появилась в выбранной папке, используйте «Подключить БД…».");
         return switched ? null : Error ?? "Подключение не изменено. Проверьте файл и повторите выбор.";
     }
@@ -154,6 +155,7 @@ public partial class WorkflowViewModel
             if (!IsCreating && CurrentOrder is { } order)
             { LoadOrder(order); if (state is not null) RestoreCard(order, state); }
             NotifyDatabase();
+            await RememberStartupProfileAsync();
         }
         finally { _readingDatabase = false; OnPropertyChanged(nameof(CanUse)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList(); NotifyCuttingTask(); }
     }

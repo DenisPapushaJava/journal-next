@@ -65,7 +65,7 @@ public sealed partial class WorkflowMdbStore
         private readonly HashSet<Guid> _machines = catalog.Machines.Select(m => m.Id).ToHashSet();
         private bool Employee(Guid? id) => id is null || _employees.Contains(id.Value);
         public bool Contains(WorkflowOrder order) => _customers.Contains(order.CustomerId) &&
-            Employee(order.ManagerId) && Employee(order.TechnologistId) && Employee(order.CreatedById) && Employee(order.DeletedBy) &&
+            Employee(order.ManagerId) && Employee(order.TechnologistId) && Employee(order.CreatedById) && Employee(order.DeletedBy) && Employee(order.ShopHandoff?.ActorId) &&
             order.Projects.All(p => _machines.Contains(p.MachineId) && Employee(p.DeletedBy) &&
                 (p.Rename is not { } rename || _machines.Contains(rename.MachineId) && Employee(rename.ActorId))) &&
             order.Specifications.All(s => _machines.Contains(s.Current.Parameters.MachineId) && Employee(s.Current.AuthorId));

@@ -5,14 +5,14 @@ namespace Jornal.Workflow.Core;
 
 public static class WorkflowWorkspaceMigration
 {
-    public static WorkflowWorkspace Upgrade(WorkflowWorkspace workspace) => workspace.SchemaVersion == 11 ? workspace :
+    public static WorkflowWorkspace Upgrade(WorkflowWorkspace workspace) => workspace.SchemaVersion == WorkflowWorkspace.CurrentSchema ? workspace :
         Upgrade(JsonSerializer.SerializeToNode(workspace)!.AsObject());
 
     // Legacy history exists only at this read boundary. The store backs up the original bytes before saving.
     public static WorkflowWorkspace Upgrade(JsonObject source)
     {
         var schema = source["SchemaVersion"]?.GetValue<int>() ?? 0;
-        if (schema is < 1 or > 11) throw new WorkflowValidationException("Неизвестная версия локальных данных. Файл не изменён.");
+        if (schema is < 1 or > WorkflowWorkspace.CurrentSchema) throw new WorkflowValidationException("Неизвестная версия локальных данных. Файл не изменён.");
         var data = source.DeepClone().AsObject();
         var technicalActors = new HashSet<Guid>();
         var employeeIds = (data["Employees"] as JsonArray ?? throw Invalid()).Select(e => e!["Id"]!.GetValue<Guid>()).ToHashSet();
@@ -47,7 +47,7 @@ public static class WorkflowWorkspaceMigration
                 Remember(current, "AuthorId"); current.Remove("Id"); current.Remove("Number");
             }
         }
-        data["SchemaVersion"] = 11;
+        data["SchemaVersion"] = WorkflowWorkspace.CurrentSchema;
         var next = data.Deserialize<WorkflowWorkspace>() ?? throw Invalid();
         if (schema == 1) next = UpgradeMachines(next);
         if (schema <= 2) next = UpgradeProjects(next);

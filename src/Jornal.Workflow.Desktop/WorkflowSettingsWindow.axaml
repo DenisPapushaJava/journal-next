@@ -20,6 +20,7 @@
     <Style Selector="ListBox.settings-nav ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource JournalSelection}" /><Setter Property="Foreground" Value="{DynamicResource JournalText}" />
     </Style>
+    <Style Selector="Border.workflow-settings-group"><Setter Property="BorderBrush" Value="{DynamicResource JournalBorder}" /><Setter Property="BorderThickness" Value="0,1,0,0" /><Setter Property="Padding" Value="0,20,0,0" /></Style>
     <Style Selector="Button.workflow-profile-color"><Setter Property="BorderBrush" Value="{DynamicResource JournalControlBorder}" /></Style>
     <Style Selector="Button.workflow-profile-color:pointerover:not(:disabled), Button.workflow-profile-color:focus-visible">
       <Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" />
@@ -31,21 +32,22 @@
         <TextBlock Text="Настройки" FontSize="20" FontWeight="SemiBold" Margin="12,20,0,24" />
         <ListBox x:Name="WorkflowSettingsNavigation" Grid.Row="1" Classes="settings-nav" SelectionMode="AlwaysSelected"
                  SelectedIndex="{Binding SelectedSectionIndex, Mode=TwoWay}" IsEnabled="{Binding CanEdit}" AutomationProperties.Name="Разделы настроек">
-          <ListBoxItem Content="Общие" /><ListBoxItem Content="Хранилище" /><ListBoxItem Content="Программа" />
+          <ListBoxItem Content="Общие" /><ListBoxItem Content="Хранилище" /><ListBoxItem Content="Обновления" /><ListBoxItem Content="Диагностика" /><ListBoxItem Content="О программе" />
         </ListBox>
       </Grid>
     </Border>
     <Grid Grid.Column="1" RowDefinitions="Auto,*">
-      <Border Classes="settings-page-header"><TextBlock Text="{Binding SectionTitle}" Classes="settings-page-title" /></Border>
-      <Grid Grid.Row="1" Margin="24,16">
+      <Border Classes="settings-page-header" IsVisible="{Binding !IsUpdates}"><TextBlock Text="{Binding SectionTitle}" Classes="settings-page-title" /></Border>
+      <Grid Grid.RowSpan="2" IsVisible="{Binding IsUpdates}"><vm:WorkflowUpdatesPanel x:Name="WorkflowUpdatesPage" DataContext="{Binding Updates}" /></Grid>
+      <Grid Grid.Row="1" Margin="24,16" IsVisible="{Binding !IsUpdates}">
         <ScrollViewer x:Name="WorkflowProfilePage" IsVisible="{Binding IsProfile}" IsEnabled="{Binding CanEdit}" VerticalScrollBarVisibility="Auto">
-          <Border Classes="panel" Padding="16" VerticalAlignment="Top">
-            <StackPanel Spacing="12">
-              <TextBlock Text="Технолог" FontWeight="SemiBold" FontSize="16" />
+          <StackPanel Spacing="20">
+            <StackPanel Spacing="10">
+              <TextBlock Text="Технолог" FontWeight="SemiBold" FontSize="15" />
               <Grid x:Name="WorkflowProfileRow" ColumnDefinitions="*,12,36">
                 <ui:EntrySuggestionComboBox x:Name="WorkflowProfileName" Value="{Binding ProfileName}" Suggestions="{Binding EmployeeSuggestions}"
                                             HorizontalAlignment="Stretch" VerticalAlignment="Center" AutomationProperties.Name="Фамилия технолога" />
-                <Button x:Name="ChangeWorkflowProfileColor" Grid.Column="2" Classes="command workflow-profile-color"
+                <Button x:Name="ChangeWorkflowProfileColor" Grid.Column="2" Classes="command workflow-profile-color" Click="OnProfileColorClick"
                         Width="36" Height="36" MinWidth="36" MinHeight="36" Padding="1" VerticalAlignment="Center" Cursor="Hand"
                         AutomationProperties.Name="Изменить цвет технолога" AutomationProperties.HelpText="{Binding ProfileColorName}">
                     <ToolTip.Tip>
@@ -73,10 +75,10 @@
                           </StackPanel>
                           <StackPanel x:Name="WorkflowPreciseColorMenu" Spacing="10" IsVisible="False">
                             <ui:JournalButton x:Name="BackToWorkflowProfilePalette" Label="← Палитра" Click="OnShowColorPalette" HorizontalAlignment="Left" />
-                            <ui:ColorWheel x:Name="WorkflowProfileColor" Width="244" Height="244" HsvColor="{Binding ProfileSpectrumColor, Mode=TwoWay}" HorizontalAlignment="Center"
-                                           AutomationProperties.Name="Личный цвет технолога" AutomationProperties.HelpText="Стрелки влево и вправо — оттенок, вверх и вниз — яркость. Shift и стрелки влево и вправо — насыщенность." />
+                            <ui:ColorWheel x:Name="WorkflowProfileColor" Width="244" Height="244" HsvColor="{Binding PickerSpectrumColor, Mode=TwoWay}" HorizontalAlignment="Center"
+                                           AutomationProperties.Name="{Binding PickerCaption}" AutomationProperties.HelpText="Стрелки влево и вправо — оттенок, вверх и вниз — яркость. Shift и стрелки влево и вправо — насыщенность." />
                             <Grid ColumnDefinitions="*,8,Auto">
-                              <TextBlock Text="{Binding ProfileColorHex}" VerticalAlignment="Center" />
+                              <TextBlock Text="{Binding PickerColorHex}" VerticalAlignment="Center" />
                               <ui:JournalButton x:Name="ConfirmWorkflowProfileColor" Grid.Column="2" Label="Выбрать" Click="OnConfirmProfileColor" />
                             </Grid>
                           </StackPanel>
@@ -85,30 +87,41 @@
                     </Button.Flyout>
                 </Button>
               </Grid>
-              <TextBlock Text="Выбор технолога запоминается на этом компьютере. Цвет видят коллеги." Classes="muted" TextWrapping="Wrap" />
-              <Border Height="1" Background="{DynamicResource JournalBorder}" Margin="0,4" />
+              <TextBlock Text="Выбор — на этом компьютере. Цвет видят коллеги." Classes="muted" TextWrapping="Wrap" />
               <ui:JournalButton x:Name="WorkflowEntrySuggestionsButton" Label="Данные для выпадающих списков" Icon="list-plus" Click="OnEntrySuggestions" HorizontalAlignment="Left" />
               <TextBlock Text="{Binding EntrySuggestionsSummary}" Classes="muted" FontSize="12" />
-              <Border Height="1" Background="{DynamicResource JournalBorder}" Margin="0,4" />
-              <CheckBox x:Name="WorkflowDarkTheme" Content="Тёмная тема" IsChecked="{Binding Journal.IsDarkTheme, Mode=TwoWay}" />
-              <TextBlock x:Name="WorkflowThemeError" Text="{Binding Journal.ThemeError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
-              <Border Height="1" Background="{DynamicResource JournalBorder}" Margin="0,4" />
-              <TextBlock Text="Результат для письма" FontWeight="SemiBold" FontSize="16" />
-              <CheckBox x:Name="WorkflowResultUseMinimum" Content="Использовать минимальную цену" IsChecked="{Binding UseResultMinimum}" />
-              <Grid ColumnDefinitions="Auto,12,120">
-                <TextBlock Text="Минимальная цена, ₽" VerticalAlignment="Center" />
-                <TextBox x:Name="WorkflowResultMinimum" Grid.Column="2" Text="{Binding ResultMinimumText}" IsEnabled="{Binding UseResultMinimum}"
-                         LostFocus="OnResultMinimumLostFocus" AutomationProperties.Name="Минимальная цена для письма, рублей" />
-              </Grid>
-              <TextBlock Text="Только для нового текста письма. Расчёт и готовый текст не меняются. Сохраняется на этом компьютере."
-                         Classes="muted" TextWrapping="Wrap" />
-              <TextBlock Text="{Binding ResultPriceError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
             </StackPanel>
-          </Border>
+            <Border Classes="workflow-settings-group">
+              <StackPanel Spacing="8">
+                <CheckBox x:Name="WorkflowDarkTheme" Content="Тёмная тема" IsChecked="{Binding Journal.IsDarkTheme, Mode=TwoWay}" />
+                <TextBlock x:Name="WorkflowThemeError" Text="{Binding Journal.ThemeError}" IsVisible="{Binding Journal.HasThemeError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                <Grid ColumnDefinitions="*,12,Auto" Margin="0,4,0,0">
+                  <TextBlock Text="Цвет отметки «Передано в цех»" VerticalAlignment="Center" />
+                  <Button x:Name="ChangeWorkflowShopColor" Grid.Column="2" Classes="command workflow-profile-color" Width="36" Height="36" MinHeight="36" Padding="1" Cursor="Hand"
+                          Click="OnShopColorClick" AutomationProperties.Name="Изменить цвет отметки передачи в цех" ToolTip.Tip="Изменить цвет отметки «Передано в цех». Выбор сохраняется на этом компьютере.">
+                    <Border Width="32" Height="32" CornerRadius="4" Background="{Binding Journal.ShopHandoffBrush}" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="1" IsHitTestVisible="False" />
+                  </Button>
+                </Grid>
+              </StackPanel>
+            </Border>
+            <Border Classes="workflow-settings-group">
+              <StackPanel Spacing="10">
+                <TextBlock Text="Результат для письма" FontWeight="SemiBold" FontSize="15" />
+                <CheckBox x:Name="WorkflowResultUseMinimum" Content="Использовать минимальную цену" IsChecked="{Binding UseResultMinimum}" />
+                <Grid ColumnDefinitions="Auto,12,120">
+                  <TextBlock Text="Минимальная цена, ₽" VerticalAlignment="Center" />
+                  <TextBox Classes="tabular" x:Name="WorkflowResultMinimum" Grid.Column="2" Text="{Binding ResultMinimumText}" IsEnabled="{Binding UseResultMinimum}"
+                           LostFocus="OnResultMinimumLostFocus" AutomationProperties.Name="Минимальная цена для письма, рублей" />
+                </Grid>
+                <TextBlock Text="Для нового текста письма. Сохраняется на этом компьютере." Classes="muted" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding ResultPriceError}" IsVisible="{Binding HasResultPriceError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
         </ScrollViewer>
         <ScrollViewer x:Name="WorkflowStoragePage" IsVisible="{Binding IsStorage}" IsEnabled="{Binding CanEdit}" VerticalScrollBarVisibility="Auto">
-          <StackPanel Spacing="16">
-            <Border Classes="panel" Padding="16">
+          <StackPanel Spacing="20">
+            <Border>
               <StackPanel Spacing="8">
                 <TextBlock Text="База данных заявок" FontWeight="SemiBold" FontSize="16" />
                 <TextBox x:Name="WorkflowWorkspacePath" Text="{Binding WorkspacePath}" IsReadOnly="True" AutomationProperties.Name="Текущий файл данных заявок" />
@@ -120,7 +133,7 @@
                 <TextBlock Text="{Binding DatabasePlatformHint}" Classes="muted" TextWrapping="Wrap" />
               </StackPanel>
             </Border>
-            <Border Classes="panel" Padding="16">
+            <Border Classes="workflow-settings-group">
               <StackPanel Spacing="8">
                 <TextBlock Text="Общая папка проектов" FontWeight="SemiBold" FontSize="16" />
                 <Grid ColumnDefinitions="*,8,Auto">
@@ -128,72 +141,55 @@
                   <ui:JournalButton Grid.Column="2" Label="Выбрать…" Click="OnBrowseProjects" />
                 </Grid>
                 <TextBlock Text="Новые проекты создаются в этой папке. Уже созданные проекты остаются на прежних местах." Classes="muted" TextWrapping="Wrap" />
-                <TextBlock Text="Принятые HTML/PDF-отчёты сохраняются в служебной подпапке проекта .workflow-reports." Classes="muted" TextWrapping="Wrap" />
+                <TextBlock Text="Принятые отчёты сохраняются в папке проекта." Classes="muted" TextWrapping="Wrap" />
               </StackPanel>
             </Border>
-            <Border Classes="panel" Padding="16">
+            <Border Classes="workflow-settings-group">
               <StackPanel Spacing="8">
-                <TextBlock Text="Источник прежних цен" FontWeight="SemiBold" FontSize="16" />
-                <TextBox Text="{Binding PriceSourcePath}" IsReadOnly="True" AutomationProperties.Name="Источник прежних цен" />
-                <TextBlock Text="{Binding PriceSourceStatus}" Classes="muted" />
-                <TextBlock Text="Загрузить или обновить цены можно через «Станки и цены → Импорт цен из прежней БД»." Classes="muted" TextWrapping="Wrap" />
+                <TextBlock Text="Папка заданий в цех" FontWeight="SemiBold" FontSize="16" />
+                <Grid ColumnDefinitions="*,8,Auto">
+                  <TextBox x:Name="WorkflowShopRoot" Text="{Binding ShopRoot}" PlaceholderText="Начальная папка, например «Принтер на складе»"
+                           AutomationProperties.Name="Начальная папка заданий в цех на этом компьютере" />
+                  <ui:JournalButton x:Name="BrowseWorkflowShopRoot" Grid.Column="2" Label="Выбрать…" Click="OnBrowseShopRoot" />
+                </Grid>
+                <TextBlock Text="Путь на этом компьютере. Файлы копируются после проверки через «Задание в цех» в карточке заявки."
+                           Classes="muted" TextWrapping="Wrap" />
+                <TextBlock Text="Станок → менеджер → БЛЦБ и заказчик → полное имя проекта" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                <TextBlock Text="Пример по сохранённой заявке" FontWeight="SemiBold" FontSize="12" />
+                <TextBox x:Name="WorkflowShopFolderPreview" Text="{Binding ShopFolderPreview, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                         MinHeight="56" MaxHeight="100" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         AutomationProperties.Name="Предпросмотр путей задания в цех" />
               </StackPanel>
             </Border>
           </StackPanel>
         </ScrollViewer>
-        <ScrollViewer x:Name="WorkflowProgramPage" IsVisible="{Binding IsProgram}" VerticalScrollBarVisibility="Auto">
-          <StackPanel Spacing="16">
-            <Border Classes="panel" Padding="16">
-              <StackPanel Spacing="10">
-                <TextBlock Text="{x:Static vm:WorkflowIdentity.Name}" FontWeight="SemiBold" FontSize="16" />
-                <TextBlock Text="{Binding Updates.CurrentVersion, StringFormat='Версия: {0}'}" Classes="muted" />
-                <TextBlock x:Name="WorkflowUpdateSetupHint" Text="{Binding UpdateSetupHint}" IsVisible="{Binding HasUpdateSetupHint}" Classes="muted" TextWrapping="Wrap" />
-                <Border Height="1" Background="{DynamicResource JournalBorder}" Margin="0,4" />
-                <TextBlock Text="Обновления" FontWeight="SemiBold" FontSize="16" />
-                <CheckBox x:Name="WorkflowAutomaticUpdates" Content="Проверять обновления автоматически" IsChecked="{Binding Updates.CheckAutomatically, Mode=TwoWay}" IsEnabled="{Binding !Updates.IsApplying}" />
-                <CheckBox x:Name="WorkflowPreviewUpdates" Content="Получать тестовые версии" IsChecked="{Binding Updates.IncludePreview, Mode=TwoWay}" IsEnabled="{Binding !Updates.IsBusy}" />
-                <TextBlock Text="{Binding Updates.PreferencesWarning}" IsVisible="{Binding Updates.HasPreferencesWarning}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
-                <TextBlock Text="{Binding Updates.Status}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
-                <TextBlock Text="{Binding Updates.Error}" IsVisible="{Binding Updates.HasError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
-                <ProgressBar IsVisible="{Binding Updates.IsDownloading}" Value="{Binding Updates.DownloadProgress}" Maximum="100" Height="6" />
-                <WrapPanel>
-                  <ui:JournalButton x:Name="CheckWorkflowUpdates" Label="Проверить обновления" Command="{Binding Updates.CheckCommand}" Margin="0,0,8,8" />
-                  <ui:JournalButton x:Name="DownloadWorkflowUpdate" Label="Скачать" Command="{Binding Updates.DownloadCommand}" IsVisible="{Binding Updates.HasUpdate}" Margin="0,0,8,8" />
-                  <ui:JournalButton x:Name="InstallWorkflowUpdate" Label="Установить и перезапустить" Command="{Binding Updates.InstallCommand}" IsVisible="{Binding Updates.IsDownloaded}" Margin="0,0,8,8" />
-                  <ui:JournalButton x:Name="CancelWorkflowDownload" Label="Отменить загрузку" Command="{Binding Updates.DownloadCancelCommand}" IsVisible="{Binding Updates.IsDownloading}" Margin="0,0,8,8" />
-                  <ui:JournalButton x:Name="OpenWorkflowReleases" Label="Открыть выпуски" Click="OnOpenWorkflowReleases" IsVisible="{Binding IsUpdateSourceConfigured}" Margin="0,0,8,8" />
-                </WrapPanel>
-                <StackPanel IsVisible="{Binding Updates.HasUpdate}" Spacing="8">
-                  <TextBlock Text="{Binding Updates.AvailableVersion, StringFormat='Что нового в {0}'}" FontWeight="SemiBold" />
-                  <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto"><TextBlock Text="{Binding Updates.ReleaseNotes}" TextWrapping="Wrap" /></ScrollViewer>
-                </StackPanel>
-              </StackPanel>
-            </Border>
-            <Border Classes="panel" Padding="16">
-              <StackPanel Spacing="10">
-                <TextBlock Text="Диагностика" FontWeight="SemiBold" FontSize="16" />
-                <TextBlock Text="Технические отчёты хранятся локально. Автоотправка не подключена." Classes="muted" TextWrapping="Wrap" />
-                <WrapPanel>
-                  <ui:JournalButton x:Name="ExportWorkflowDiagnostics" Label="Сохранить отчёт…" Icon="folder-plus" Click="OnExportWorkflowDiagnostics" IsEnabled="{Binding CanExportDiagnostics}" Margin="0,0,8,8" />
-                  <ui:JournalButton x:Name="OpenWorkflowDiagnostics" Label="Открыть папку" Click="OnOpenWorkflowDiagnostics" IsEnabled="{Binding CanEdit}" Margin="0,0,8,8" />
-                </WrapPanel>
-                <TextBlock Text="{Binding DiagnosticsStatus}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
-              </StackPanel>
-            </Border>
+        <ScrollViewer x:Name="WorkflowDiagnosticsPage" IsVisible="{Binding IsDiagnostics}" VerticalScrollBarVisibility="Auto">
+          <StackPanel Spacing="12">
+            <TextBlock Text="Технические отчёты хранятся на этом компьютере. При необходимости сохраните отчёт и передайте разработчику."
+                       Classes="muted" TextWrapping="Wrap" />
+            <WrapPanel>
+              <ui:JournalButton x:Name="ExportWorkflowDiagnostics" Label="Сохранить отчёт…" Icon="folder-plus" Click="OnExportWorkflowDiagnostics" IsEnabled="{Binding CanExportDiagnostics}" Margin="0,0,8,8" />
+              <ui:JournalButton x:Name="OpenWorkflowDiagnostics" Label="Открыть папку" Click="OnOpenWorkflowDiagnostics" IsEnabled="{Binding CanEdit}" Margin="0,0,8,8" />
+            </WrapPanel>
+            <TextBlock Text="{Binding DiagnosticsStatus}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
           </StackPanel>
         </ScrollViewer>
+        <StackPanel x:Name="WorkflowAboutPage" IsVisible="{Binding IsAbout}" Spacing="12">
+          <TextBlock Text="{x:Static vm:WorkflowIdentity.Name}" FontWeight="SemiBold" FontSize="20" />
+          <TextBlock Text="{Binding Updates.CurrentVersion, StringFormat='Версия: {0}'}" Classes="muted" />
+          <ui:JournalButton x:Name="WorkflowAboutReleases" Label="Выпуски на GitHub" Click="OnOpenWorkflowReleases" HorizontalAlignment="Left" IsEnabled="{Binding CanEdit}" />
+        </StackPanel>
       </Grid>
     </Grid>
     <Border Grid.Row="1" Grid.ColumnSpan="2" Padding="24,12" Background="{DynamicResource JournalSurface}" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource JournalBorder}">
-      <Grid RowDefinitions="Auto,6,Auto,6,4">
-        <TextBlock Text="{Binding Error}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
-        <Grid Grid.Row="2" ColumnDefinitions="*,12,Auto,8,Auto">
-          <TextBlock Text="{Binding Status}" TextWrapping="Wrap" VerticalAlignment="Center" />
+      <StackPanel Spacing="8">
+        <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+        <Grid ColumnDefinitions="*,12,Auto,8,Auto">
+          <TextBlock Text="{Binding Status}" IsVisible="{Binding HasStatus}" TextWrapping="Wrap" VerticalAlignment="Center" />
           <ui:JournalButton x:Name="SaveWorkflowSettings" Grid.Column="2" Label="{Binding SaveLabel}" IsVisible="{Binding IsSaveVisible}" Classes="primary" Command="{Binding SaveCommand}" />
           <ui:JournalButton x:Name="CloseWorkflowSettings" Grid.Column="4" Label="{Binding CloseLabel}" Click="OnClose" IsEnabled="{Binding CanClose}" />
         </Grid>
-        <ProgressBar Grid.Row="4" Height="4" IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
-      </Grid>
+      </StackPanel>
     </Border>
   </Grid>
 </Window>

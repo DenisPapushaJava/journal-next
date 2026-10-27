@@ -23,6 +23,7 @@
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
       <StreamGeometry x:Key="WorkflowFolderIcon">M3,4 H9 L11,6 H21 V9 H7 L3,18 Z M7,11 H23 L19,20 H3 Z</StreamGeometry>
+      <StreamGeometry x:Key="WorkflowShopIcon">F0 M2,21 V10 L8,13 V8 L14,11 V3 H20 V21 Z M5,16 H7 V19 H5 Z M10,16 H12 V19 H10 Z M15,16 H17 V19 H15 Z</StreamGeometry>
     </ResourceDictionary>
   </Window.Resources>
   <Window.Styles>
@@ -63,7 +64,7 @@
       <Setter Property="Padding" Value="12,4" />
     </Style>
   </Window.Styles>
-  <Grid RowDefinitions="56,Auto,*,4,24">
+  <Grid RowDefinitions="56,Auto,*,Auto,24">
     <Border Background="{DynamicResource JournalSurface}" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="0,0,0,1" Padding="20,8">
       <Grid ColumnDefinitions="*,Auto,*">
         <StackPanel Spacing="1" VerticalAlignment="Center">
@@ -97,21 +98,21 @@
         <ColumnDefinition Width="12" />
         <ColumnDefinition Width="6*" MinWidth="760" />
       </Grid.ColumnDefinitions>
-      <Grid RowDefinitions="Auto,10,Auto,10,Auto,10,*">
-        <Grid ColumnDefinitions="*,8,Auto">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <ui:JournalButton Label="Новая заявка" Icon="plus" Classes="primary" Command="{Binding NewOrderCommand}" Click="OnFocusNewOrder" />
-            <ui:JournalButton x:Name="OpenWorkflowTrash" Label="{Binding TrashCaption}" Click="OnTrash" />
-          </StackPanel>
-          <ui:JournalButton Grid.Column="2" Icon="refresh-cw" IconOnly="True" Width="36" Command="{Binding ReloadCommand}" ToolTip.Tip="Обновить заявки · F5" AutomationProperties.Name="Обновить заявки" />
+      <Grid RowDefinitions="Auto,8,Auto,8,Auto,8,*">
+        <Grid ColumnDefinitions="*,8,Auto,8,32">
+          <ui:JournalButton Label="Новая заявка" Icon="plus" Classes="primary" Height="32" HorizontalAlignment="Left" Command="{Binding NewOrderCommand}" Click="OnFocusNewOrder" />
+          <ui:JournalButton x:Name="OpenWorkflowTrash" Grid.Column="2" Label="{Binding TrashCaption}" Icon="trash" Height="32" Click="OnTrash" ToolTip.Tip="Открыть корзину заявок" />
+          <ui:JournalButton Grid.Column="4" Icon="refresh-cw" IconOnly="True" Width="32" Height="32" Padding="0" Command="{Binding ReloadCommand}" ToolTip.Tip="Обновить заявки · F5" AutomationProperties.Name="Обновить заявки" />
         </Grid>
-        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6">
+        <Grid Grid.Row="2" ColumnDefinitions="96,8,*,8,96">
           <RadioButton x:Name="WorkflowToday" Classes="filter" Content="Сегодня" GroupName="WorkflowPeriod"
+                       Height="32" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                        IsChecked="{Binding IsTodaySelected, Mode=TwoWay}" Command="{Binding TodayCommand}" />
-          <vm:WorkflowDatePicker x:Name="WorkflowPeriodPicker" SelectedDate="{Binding FilterDate, Mode=TwoWay}" Width="142" />
-          <RadioButton x:Name="WorkflowAllDates" Classes="filter" Content="Все даты" GroupName="WorkflowPeriod"
+          <vm:WorkflowDatePicker x:Name="WorkflowPeriodPicker" Grid.Column="2" SelectedDate="{Binding FilterDate, Mode=TwoWay}" Height="32" HorizontalAlignment="Stretch" />
+          <RadioButton x:Name="WorkflowAllDates" Grid.Column="4" Classes="filter" Content="Все даты" GroupName="WorkflowPeriod"
+                       Height="32" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                        IsChecked="{Binding IsAllDatesSelected, Mode=TwoWay}" Command="{Binding AllDatesCommand}" />
-        </StackPanel>
+        </Grid>
         <TextBox x:Name="WorkflowSearchInput" Grid.Row="4" Text="{Binding Search, Mode=TwoWay}"
                  PlaceholderText="Поиск по заявкам" KeyDown="OnSearchKeyDown" AutomationProperties.Name="Поиск заявок и спецификаций"
                  ToolTip.Tip="По части номера, спецификации, заказчика, менеджера, БЛЦБ, проекта или материала. Несколько слов уточняют поиск.">
@@ -134,13 +135,16 @@
           <DataGrid.Columns>
             <DataGridTemplateColumn Header="Заявка" Width="112" SortMemberPath="Number"><DataGridTemplateColumn.CellTemplate>
               <DataTemplate x:DataType="vm:WorkflowOrderRow">
-                <Grid ColumnDefinitions="6,8,*" Margin="0,8,4,8" ToolTip.Tip="{Binding NumberHint}"
+                <Grid ColumnDefinitions="6,2,4,8,*" Margin="0,8,4,8" ToolTip.Tip="{Binding NumberHint}"
                       AutomationProperties.Name="{Binding NumberCaption}" AutomationProperties.HelpText="{Binding CreatorDescription}">
                   <Border x:Name="WorkflowCreatorMarker" Width="6" MinHeight="26" CornerRadius="2" Background="{Binding CreatorBrush}"
                           BorderBrush="{DynamicResource JournalBorder}" BorderThickness="1" IsHitTestVisible="False" />
-                  <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding NumberDate}" FontSize="12" TextTrimming="None" />
-                    <TextBlock Text="{Binding NumberTime}" Classes="muted" FontSize="12" TextWrapping="Wrap" TextTrimming="None" />
+                  <Border x:Name="WorkflowShopHandoffMarker" Grid.Column="2" Width="4" MinHeight="26" CornerRadius="2"
+                          Background="{Binding ShopHandoffBrush}" IsVisible="{Binding HasShopHandoff}" ToolTip.Tip="{Binding ShopHandoffHint}"
+                          AutomationProperties.Name="{Binding ShopHandoffHint}" />
+                  <StackPanel Grid.Column="4" Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Classes="tabular" Text="{Binding NumberDate}" FontSize="12" TextTrimming="None" />
+                    <TextBlock Text="{Binding NumberTime}" Classes="tabular muted" FontSize="12" TextWrapping="Wrap" TextTrimming="None" />
                   </StackPanel>
                 </Grid>
               </DataTemplate>
@@ -150,13 +154,13 @@
                 <StackPanel Spacing="4" Margin="4,10,8,10">
                   <TextBlock Text="{Binding Customer}" FontWeight="SemiBold" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding Details}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-                  <TextBlock Text="{Binding Updated}" Classes="muted" FontSize="12" />
+                  <TextBlock Text="{Binding Updated}" Classes="tabular muted" FontSize="12" />
                   <TextBlock Text="{Binding SearchDetail}" IsVisible="{Binding HasSearchDetail}" Classes="muted" FontSize="12"
                              MaxLines="1" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SearchDetail}" />
                 </StackPanel>
               </DataTemplate></DataGridTemplateColumn.CellTemplate>
             </DataGridTemplateColumn>
-            <DataGridTextColumn Header="Резка, ₽" Binding="{Binding Total}" Width="110" />
+            <DataGridTextColumn CellTheme="{StaticResource WorkflowNumericCell}" Header="Резка, ₽" Binding="{Binding Total}" Width="110" />
           </DataGrid.Columns>
         </DataGrid>
         <TextBlock x:Name="WorkflowEmptyPeriod" Text="{Binding EmptyOrderListText}" IsVisible="{Binding IsOrderListEmpty}"
@@ -188,16 +192,19 @@
         <StackPanel Spacing="8">
           <Grid ColumnDefinitions="*,8,Auto">
             <TextBlock x:Name="WorkflowOrderTitle" Text="{Binding OrderTitle}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding OrderTitle}" />
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsCurrentOrderActive}">
-              <ui:JournalButton x:Name="MoveWorkflowOrderToTrash" Label="В корзину…" Icon="trash" Click="OnMoveToTrash" />
-              <Button x:Name="WorkflowOrderActions" Classes="command" Width="32" Height="32" Padding="0" VerticalAlignment="Center"
-                      IsEnabled="{Binding CanUse}" ToolTip.Tip="Действия с заявкой" AutomationProperties.Name="Действия с заявкой">
-                <TextBlock Text="⋯" FontSize="20" />
-                <Button.Flyout>
-                  <MenuFlyout><MenuItem Header="Сменить ответственного…" Click="OnChangeResponsible" /></MenuFlyout>
-                </Button.Flyout>
-              </Button>
-            </StackPanel>
+            <Button x:Name="WorkflowOrderActions" Grid.Column="2" Classes="command" Width="32" Height="32" Padding="0" VerticalAlignment="Center"
+                    IsVisible="{Binding IsCurrentOrderActive}" IsEnabled="{Binding CanUse}" ToolTip.Tip="Действия с заявкой" AutomationProperties.Name="Действия с заявкой">
+              <TextBlock Text="⋮" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              <Button.Flyout>
+                <MenuFlyout>
+                  <MenuItem x:Name="ReviewWorkflowShopTransfer" Header="Проверить файлы для цеха…" Click="OnReviewShopTransfer" />
+                  <MenuItem x:Name="CopyWorkflowCuttingTaskText" Header="Скопировать текст задания в цех" Click="OnCopyCuttingTask" />
+                  <MenuItem Header="Сменить ответственного…" Click="OnChangeResponsible" />
+                  <Separator />
+                  <MenuItem x:Name="MoveWorkflowOrderToTrash" Header="В корзину…" Foreground="{DynamicResource JournalDangerForeground}" Click="OnMoveToTrash" />
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
           </Grid>
           <Border x:Name="WorkflowCardReview" Classes="panel" Padding="12" IsVisible="{Binding HasCardReview}">
             <StackPanel Spacing="8">
@@ -219,7 +226,7 @@
               </Grid.ColumnDefinitions>
               <TextBlock Text="Менеджер" Classes="muted" /><TextBlock Grid.Column="2" Text="БЛЦБ" Classes="muted" />
               <ui:EntrySuggestionComboBox x:Name="WorkflowManagerInput" Grid.Row="2" Value="{Binding ManagerName}" Suggestions="{Binding ManagerSuggestions}" HorizontalAlignment="Stretch" AutomationProperties.Name="Менеджер заявки" />
-              <TextBox x:Name="WorkflowBlcbInput" Grid.Row="2" Grid.Column="2" Text="{Binding Blcb, Mode=TwoWay}" HorizontalAlignment="Stretch" AutomationProperties.Name="Номер БЛЦБ" />
+              <TextBox Classes="tabular" x:Name="WorkflowBlcbInput" Grid.Row="2" Grid.Column="2" Text="{Binding Blcb, Mode=TwoWay}" HorizontalAlignment="Stretch" AutomationProperties.Name="Номер БЛЦБ" />
               <ui:JournalButton x:Name="SaveWorkflowHeader" Grid.Row="2" Grid.Column="4" Label="Сохранить" Command="{Binding SaveHeaderCommand}" VerticalAlignment="Center" />
             </Grid>
           </Border>
@@ -243,7 +250,7 @@
                   <ComboBox x:Name="WorkflowProjectMachine" Grid.Row="4" ItemsSource="{Binding ProjectMachines}" SelectedItem="{Binding PlanMachine}" HorizontalAlignment="Stretch" IsEnabled="{Binding CanEditPlan}" AutomationProperties.Name="Станок проекта">
                     <ComboBox.ItemTemplate><DataTemplate x:DataType="core:WorkflowMachine"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
                   </ComboBox>
-                  <ui:EntrySuggestionComboBox x:Name="WorkflowProjectThickness" Grid.Row="4" Grid.Column="2" Value="{Binding PlanThickness}" Suggestions="{Binding PlanThicknessSuggestions}" HorizontalAlignment="Stretch" IsEnabled="{Binding CanEditPlan}" AutomationProperties.Name="Толщина проекта, мм" />
+                  <ui:EntrySuggestionComboBox Classes="tabular" x:Name="WorkflowProjectThickness" Grid.Row="4" Grid.Column="2" Value="{Binding PlanThickness}" Suggestions="{Binding PlanThicknessSuggestions}" HorizontalAlignment="Stretch" IsEnabled="{Binding CanEditPlan}" AutomationProperties.Name="Толщина проекта, мм" />
                   <ui:JournalButton Grid.Row="4" Grid.Column="4" Label="Создать проект" Classes="primary" Command="{Binding CreateProjectCommand}" />
                   <ui:JournalButton Grid.Row="4" Grid.Column="6" Label="Отмена" Command="{Binding CancelPlanningCommand}" />
                 </Grid>
@@ -267,9 +274,9 @@
                                 ToolTip.Tip="{Binding InclusionHint}" AutomationProperties.Name="{Binding InclusionHint}" Click="OnProjectIncluded" />
                     </DataTemplate>
                   </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                  <DataGridTemplateColumn Header="Поз." Width="48" SortMemberPath="Position"><DataGridTemplateColumn.CellTemplate>
+                  <DataGridTemplateColumn Header="№" Width="40" SortMemberPath="Position"><DataGridTemplateColumn.CellTemplate>
                     <DataTemplate x:DataType="vm:WorkflowProjectRow">
-                      <TextBlock Text="{Binding Position}" Classes="workflowProjectInfo" Classes.excluded="{Binding IsExcluded}"
+                      <TextBlock Text="{Binding Position}" Classes="tabular workflowProjectInfo" Classes.excluded="{Binding IsExcluded}"
                                  Margin="4,4" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Position}" />
                     </DataTemplate>
                   </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
@@ -306,13 +313,14 @@
                                  FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding BendingHint}" AutomationProperties.Name="{Binding BendingHint}" />
                     </DataTemplate>
                   </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                  <DataGridTemplateColumn Header="Резка" Width="96" SortMemberPath="Total"><DataGridTemplateColumn.CellTemplate>
+                  <DataGridTemplateColumn Header="Резка" Width="72" SortMemberPath="Total"><DataGridTemplateColumn.CellTemplate>
                     <DataTemplate x:DataType="vm:WorkflowProjectRow">
-                      <TextBlock Text="{Binding Total}" Classes="workflowProjectInfo" Classes.excluded="{Binding IsExcluded}"
-                                 Margin="4,8" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Total}" />
+                      <TextBlock Text="{Binding Total}" Classes="tabular workflowProjectInfo" Classes.excluded="{Binding IsExcluded}"
+                                 Margin="4,8" VerticalAlignment="Center" HorizontalAlignment="Stretch" TextAlignment="Right"
+                                 TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Total}" />
                     </DataTemplate>
                   </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                  <DataGridTemplateColumn Header="" Width="48" CanUserSort="False" CanUserResize="False"><DataGridTemplateColumn.CellTemplate>
+                  <DataGridTemplateColumn Header="" Width="40" CanUserSort="False" CanUserResize="False"><DataGridTemplateColumn.CellTemplate>
                     <DataTemplate x:DataType="vm:WorkflowProjectRow">
                       <Button Classes="command" Width="36" Height="32" HorizontalAlignment="Center" VerticalAlignment="Center"
                               IsEnabled="{Binding HasFolder}" ToolTip.Tip="{Binding FolderHint}" AutomationProperties.Name="Открыть папку проекта" Click="OnOpenFolder">
@@ -320,7 +328,15 @@
                       </Button>
                     </DataTemplate>
                   </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                  <DataGridTemplateColumn Header="" Width="40" CanUserSort="False" CanUserResize="False"><DataGridTemplateColumn.CellTemplate>
+                  <DataGridTemplateColumn Header="" Width="72" CanUserSort="False" CanUserResize="False"><DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate x:DataType="vm:WorkflowProjectRow">
+                      <Button Classes="command" Height="32" Padding="6,0" HorizontalAlignment="Center" VerticalAlignment="Center"
+                              IsEnabled="{Binding CanOpenShopFolder}" ToolTip.Tip="{Binding ShopFolderHint}" ToolTip.ShowOnDisabled="True" AutomationProperties.Name="Открыть папку задания в цехе" Click="OnOpenShopFolder">
+                        <StackPanel Orientation="Horizontal" Spacing="4"><PathIcon Width="16" Height="16" Data="{StaticResource WorkflowShopIcon}" /><TextBlock Text="Цех" VerticalAlignment="Center" /></StackPanel>
+                      </Button>
+                    </DataTemplate>
+                  </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                  <DataGridTemplateColumn Header="" Width="36" CanUserSort="False" CanUserResize="False"><DataGridTemplateColumn.CellTemplate>
                     <DataTemplate x:DataType="vm:WorkflowProjectRow">
                       <Button Classes="command" Width="32" Height="32" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center"
                               ToolTip.Tip="Действия с проектом" AutomationProperties.Name="Действия с проектом" IsVisible="{Binding HasProjectActions}">
@@ -363,9 +379,9 @@
                           <TextBlock Text="Материал" Classes="muted" /><TextBlock Grid.Column="2" Text="Длина реза, м" Classes="muted" />
                           <TextBlock Grid.Column="4" Text="Пробивки, шт." Classes="muted" /><TextBlock Grid.Column="6" Text="Время резки" Classes="muted" />
                           <TextBox x:Name="WorkflowCalculationMaterial" Grid.Row="2" Text="{Binding Material}" AutomationProperties.Name="Материал расчёта" />
-                          <TextBox x:Name="WorkflowCalculationLength" Grid.Row="2" Grid.Column="2" Text="{Binding Length}" AutomationProperties.Name="Длина реза, м" />
-                          <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding Pierces}" AutomationProperties.Name="Пробивки, шт." />
-                          <TextBox Grid.Row="2" Grid.Column="6" Text="{Binding Duration}" />
+                          <TextBox Classes="tabular" x:Name="WorkflowCalculationLength" Grid.Row="2" Grid.Column="2" Text="{Binding Length}" AutomationProperties.Name="Длина реза, м" />
+                          <TextBox Classes="tabular" Grid.Row="2" Grid.Column="4" Text="{Binding Pierces}" AutomationProperties.Name="Пробивки, шт." />
+                          <TextBox Classes="tabular" Grid.Row="2" Grid.Column="6" Text="{Binding Duration}" />
                         </Grid>
                         <CheckBox Content="Материал проверен" IsVisible="{Binding MaterialNeedsReview}" IsChecked="{Binding MaterialConfirmed}" />
                         <Grid ColumnDefinitions="Auto,12,*">
@@ -384,7 +400,7 @@
                             <Grid ColumnDefinitions="*,8,*,8,*,8,*" RowDefinitions="Auto,3,Auto">
                           <TextBlock Grid.Row="0" Text="Заготовка" Classes="muted" /><TextBlock Grid.Row="0" Grid.Column="2" Text="Количество, шт." Classes="muted" />
                           <TextBlock Grid.Row="0" Grid.Column="4" Text="Вес, кг" Classes="muted" /><TextBlock Grid.Row="0" Grid.Column="6" Text="Категория тарифа" Classes="muted" IsVisible="{Binding UsesMaterialCategories}" />
-                          <TextBox Grid.Row="2" Text="{Binding BlankSize}" /><TextBox Grid.Row="2" Grid.Column="2" Text="{Binding Quantity}" /><TextBox Grid.Row="2" Grid.Column="4" Text="{Binding Weight}" />
+                          <TextBox Classes="tabular" Grid.Row="2" Text="{Binding BlankSize}" /><TextBox Classes="tabular" Grid.Row="2" Grid.Column="2" Text="{Binding Quantity}" /><TextBox Classes="tabular" Grid.Row="2" Grid.Column="4" Text="{Binding Weight}" />
                           <ui:EntrySuggestionComboBox Grid.Row="2" Grid.Column="6" Value="{Binding MaterialGroup}" Suggestions="{Binding MaterialGroupSuggestions}" HorizontalAlignment="Stretch" IsVisible="{Binding UsesMaterialCategories}" />
                             </Grid>
                             <TextBlock Text="{Binding RateSummary}" Classes="muted" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Breakdown}" />
@@ -395,9 +411,9 @@
                     <Grid Grid.Row="4" ColumnDefinitions="*,8,Auto,6,72,8,Auto,6,Auto,6,Auto" RowDefinitions="Auto,Auto">
                       <TextBlock Grid.ColumnSpan="11" DataContext="{Binding SelectedDraft}" x:DataType="vm:SpecificationDraft" Text="{Binding CalculationError}" IsVisible="{Binding HasCalculationError}"
                                  TextWrapping="Wrap" Foreground="{DynamicResource JournalDangerForeground}" />
-                      <TextBlock Grid.Row="1" DataContext="{Binding SelectedDraft}" x:DataType="vm:SpecificationDraft" Text="{Binding TotalText}" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" ToolTip.Tip="{Binding Breakdown}" />
+                      <TextBlock Classes="tabular" Grid.Row="1" DataContext="{Binding SelectedDraft}" x:DataType="vm:SpecificationDraft" Text="{Binding TotalText}" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" ToolTip.Tip="{Binding Breakdown}" />
                       <TextBlock Grid.Row="1" Grid.Column="2" Text="Коэффициент" Classes="muted" VerticalAlignment="Center" />
-                      <TextBox x:Name="WorkflowCalculationCoefficient" Grid.Row="1" Grid.Column="4" DataContext="{Binding SelectedDraft}" x:DataType="vm:SpecificationDraft"
+                      <TextBox Classes="tabular" x:Name="WorkflowCalculationCoefficient" Grid.Row="1" Grid.Column="4" DataContext="{Binding SelectedDraft}" x:DataType="vm:SpecificationDraft"
                                Text="{Binding Coefficient}" AutomationProperties.Name="Ручной коэффициент спецификации" />
                       <ui:JournalButton x:Name="RefreshWorkflowCalculationPrices" Grid.Row="1" Grid.Column="6" Icon="refresh-cw" IconOnly="True" Width="32" Label="Обновить цены" ToolTip.Tip="Обновить цены расчёта из каталога" Click="OnRefreshCalculationPrices" />
                       <ui:JournalButton x:Name="SaveWorkflowSpecification" Grid.Row="1" Grid.Column="8" Label="Сохранить" Classes="primary" Command="{Binding SaveSpecificationCommand}" />
@@ -416,13 +432,13 @@
         </TabControl>
         <Border x:Name="WorkflowOrderTotal" Grid.Row="6" Classes="panel" Padding="8">
           <Grid ColumnDefinitions="*,12,Auto,8,Auto,8,Auto" RowDefinitions="Auto,Auto,Auto">
-            <StackPanel Spacing="2"><TextBlock Text="{Binding TotalText}" FontWeight="SemiBold" TextWrapping="Wrap" /><WrapPanel>
+            <StackPanel Spacing="2"><TextBlock Classes="tabular" Text="{Binding TotalText}" FontWeight="SemiBold" TextWrapping="Wrap" /><WrapPanel>
                 <TextBlock x:Name="WorkflowReportImportNotice" Text="{Binding AcceptedReportsCaption}" IsVisible="{Binding HasReportImportNotice}" Margin="0,0,10,0" FontSize="12" VerticalAlignment="Center" ToolTip.Tip="{Binding ReportImportNotice}" AutomationProperties.Name="{Binding ReportImportNotice}" />
                 <TextBlock x:Name="WorkflowCompleteness" Text="{Binding CompletenessCaption}" Classes="muted" Margin="0,0,10,0" VerticalAlignment="Center" ToolTip.Tip="{Binding ProjectsStatus}" />
                 <Button x:Name="WorkflowWaitingProjects" Content="{Binding WaitingProjectsCaption}" IsVisible="{Binding HasWaitingProjects}" Command="{Binding GoToWaitingProjectCommand}" Click="OnGoToProject" Classes="progress-link" />
                 <Button x:Name="WorkflowReviewProjects" Content="{Binding ReviewProjectsCaption}" IsVisible="{Binding HasReviewProjects}" Command="{Binding GoToReviewProjectCommand}" Click="OnGoToProject" Classes="progress-link" />
                 <TextBlock x:Name="WorkflowCuttingTaskCopiedNotice" Text="{Binding CuttingTaskNotice}" IsVisible="{Binding IsCuttingTaskReadyVisible}" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"
-                           ToolTip.Tip="Только текст: вставьте его в рабочий чат. Файлы в цех ещё не копируются." />
+                           ToolTip.Tip="Текст задания для рабочего чата" />
                 <Button x:Name="ToggleWorkflowCuttingTaskPreview" Content="Текст…" IsVisible="{Binding IsCuttingTaskReadyVisible}" Classes="progress-link" ToolTip.Tip="Предпросмотр задания на резку">
                   <Button.Flyout>
                     <Flyout Placement="TopEdgeAlignedRight">
@@ -430,7 +446,7 @@
                         <TextBlock Text="Задание на резку" FontWeight="SemiBold" />
                         <TextBox x:Name="WorkflowCuttingTaskPreview" Text="{Binding CuttingTaskText, Mode=OneWay}" IsReadOnly="True" MaxHeight="200"
                                  AcceptsReturn="True" TextWrapping="Wrap" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Предпросмотр задания на резку" />
-                        <TextBlock Text="Это текст сообщения для рабочего чата. Файлы в цех ещё не копируются." Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                        <TextBlock Text="Текст сообщения для рабочего чата. Комплект файлов готовится через «Задание в цех»." Classes="muted" FontSize="12" TextWrapping="Wrap" />
                       </StackPanel>
                     </Flyout>
                   </Button.Flyout>
@@ -439,8 +455,8 @@
               <TextBlock Text="Данные изменились — сформируйте результат заново" TextWrapping="Wrap" IsVisible="{Binding ResultIsStale}" Foreground="{DynamicResource JournalDangerForeground}" />
             </StackPanel>
             <ui:JournalButton Grid.Column="2" Label="Результат" Command="{Binding GenerateResultCommand}" /><ui:JournalButton Grid.Column="4" Icon="copy" IconOnly="True" Width="36" Click="OnCopyResult" ToolTip.Tip="Копировать результат" AutomationProperties.Name="Копировать результат" />
-            <ui:JournalButton x:Name="CopyWorkflowCuttingTask" Grid.Column="6" Label="Задание в цех" Icon="copy" Click="OnCopyCuttingTask" IsEnabled="{Binding CanCopyCuttingTask}"
-                              ToolTip.Tip="Скопировать задание на резку по сохранённому составу заявки" />
+            <ui:JournalButton x:Name="CopyWorkflowCuttingTask" Grid.Column="6" Label="Задание в цех" Icon="clipboard-copy" Click="OnPrepareShopTransfer" IsEnabled="{Binding CanCopyCuttingTask}"
+                              ToolTip.Tip="Проверить УП и карты, подготовить файлы и скопировать текст задания" />
             <StackPanel Grid.Row="1" Grid.ColumnSpan="7" IsVisible="{Binding IsCuttingTaskProblemVisible}" Spacing="4" Margin="0,6,0,0">
               <WrapPanel>
                 <TextBlock x:Name="WorkflowCuttingTaskNotice" Text="{Binding CuttingTaskNotice}" TextWrapping="Wrap" MaxWidth="440" VerticalAlignment="Center" FontSize="12" Margin="0,0,8,0" />
@@ -456,7 +472,18 @@
       </Grid>
       </Grid>
     </Grid>
-    <ProgressBar Grid.Row="3" IsIndeterminate="True" IsVisible="{Binding IsBusy}" Height="4" />
+    <StackPanel Grid.Row="3" Spacing="4">
+      <Grid x:Name="WorkflowShopTransferNotice" Margin="20,0" IsVisible="{Binding HasShopTransfer}">
+        <Grid DataContext="{Binding ShopTransfer}" x:DataType="vm:WorkflowShopTransferViewModel" ColumnDefinitions="*,8,Auto,8,Auto,8,Auto" RowDefinitions="Auto,Auto">
+          <TextBlock x:Name="WorkflowShopTransferStatus" Text="{Binding Status}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Status}" VerticalAlignment="Center" FontSize="12" />
+          <Button x:Name="CancelWorkflowShopTransfer" Grid.Column="2" Content="Отменить" Click="OnCancelShopTransfer" IsVisible="{Binding CanCancel}" Classes="progress-link" />
+          <Button x:Name="RetryWorkflowShopTransferText" Grid.Column="4" Content="Копировать текст" Click="OnRetryShopTransferText" IsVisible="{Binding NeedsClipboardRetry}" IsEnabled="{Binding CanEdit}" Classes="progress-link" />
+          <Button x:Name="WorkflowShopTransferDetails" Grid.Column="6" Content="Подробнее…" Click="OnShopTransferDetails" IsVisible="{Binding !IsBusy}" IsEnabled="{Binding CanEdit}" Classes="progress-link" />
+          <TextBlock x:Name="WorkflowShopTransferError" Grid.Row="1" Grid.ColumnSpan="7" Text="{Binding Error}" TextWrapping="Wrap" Foreground="{DynamicResource JournalDangerForeground}" FontSize="12" />
+        </Grid>
+      </Grid>
+      <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" Height="4" />
+    </StackPanel>
     <TextBlock Grid.Row="4" Margin="20,0" Text="{Binding PriceSourceDescription}" Classes="muted" VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip.Tip="Тарифы загружаются вручную через Станки и цены → Импорт цен из прежней БД. Заявки нового журнала хранятся отдельно." />
   </Grid>
 </Window>

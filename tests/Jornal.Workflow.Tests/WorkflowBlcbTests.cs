@@ -44,7 +44,7 @@ public sealed class WorkflowBlcbTests
         var original = node.ToJsonString(); var path = Path.Combine(f.DirectoryPath, "old-blcb.json");
         await File.WriteAllTextAsync(path, original, TestContext.Current.CancellationToken);
         var store = new LocalWorkflowWorkspaceStore(path); var after = await store.ReadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(11, after.SchemaVersion); Assert.Equal(JsonSerializer.Serialize(before), JsonSerializer.Serialize(after));
+        Assert.Equal(WorkflowWorkspace.CurrentSchema, after.SchemaVersion); Assert.Equal(JsonSerializer.Serialize(before), JsonSerializer.Serialize(after));
         Assert.Equal("00017-А/5", after.Orders[0].Blcb);
         var persisted = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
         Assert.DoesNotContain("BlcbYear", persisted);

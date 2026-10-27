@@ -8,6 +8,7 @@
       <Setter Property="BorderBrush" Value="{DynamicResource JournalControlBorder}" />
     </Style>
     <Style Selector="Button.calendarDay">
+      <Setter Property="FontFeatures" Value="tnum" />
       <Setter Property="Height" Value="38" /><Setter Property="Margin" Value="1" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="8" />
@@ -23,7 +24,7 @@
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
   </UserControl.Styles>
-  <ui:JournalButton x:Name="DateButton" Icon="calendar-days" Label="{Binding Calendar.Caption, ElementName=Picker}"
+  <ui:JournalButton Classes="tabular" x:Name="DateButton" Icon="calendar-days" Label="{Binding Calendar.Caption, ElementName=Picker}"
                     HorizontalAlignment="Stretch" AutomationProperties.Name="Выбрать дату заявок" ToolTip.Tip="Выбрать дату создания заявок">
     <Button.Flyout>
       <Flyout Placement="BottomEdgeAlignedLeft" FlyoutPresenterClasses="workflowCalendar" Opened="OnOpened" Closed="OnClosed">
@@ -32,7 +33,7 @@
           <Grid ColumnDefinitions="38,*,38">
             <ui:JournalButton x:Name="PreviousMonth" Icon="chevron-left" IconOnly="True" Width="36" Height="36"
                               IsEnabled="{Binding CanPrevious}" Click="OnPrevious" AutomationProperties.Name="Предыдущий период" />
-            <Button x:Name="CalendarHeading" Grid.Column="1" Classes="command" Content="{Binding Title}" Click="OnHeading"
+            <Button x:Name="CalendarHeading" Grid.Column="1" Classes="command tabular" Content="{Binding Title}" Click="OnHeading"
                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" FontWeight="SemiBold" Background="Transparent"
                     AutomationProperties.Name="Выбрать месяц или год" />
             <ui:JournalButton x:Name="NextMonth" Grid.Column="2" Icon="chevron-right" IconOnly="True" Width="36" Height="36"

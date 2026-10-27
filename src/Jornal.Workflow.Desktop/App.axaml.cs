@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Styling;
 using Jornal.Desktop.ViewModels;
 using Jornal.Desktop.Updates;
 using Jornal.Workflow.Infrastructure;
@@ -20,9 +21,10 @@ public partial class App : Application
             var preferences = new WorkflowPreferencesStore(WorkflowIdentity.PreferencesPath);
             IWorkflowWorkspaceStore store = new LocalWorkflowWorkspaceStore(WorkflowIdentity.WorkspacePath);
             string? error = null;
+            WorkflowPreferences connection = new();
             try
             {
-                var connection = preferences.Load();
+                connection = preferences.Load();
                 if (connection.DatabasePath is { } path) store = new WorkflowMdbStore(path, databaseId: connection.DatabaseId);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException)
@@ -30,8 +32,9 @@ public partial class App : Application
                 error = "Не удалось прочитать настройки подключения. Восстановите локальный файл «" + WorkflowIdentity.PreferencesPath + "» и перезапустите программу.";
                 store = new WorkflowUnavailableStore(WorkflowIdentity.PreferencesPath, error);
             }
-            var model = new WorkflowViewModel(store, updates, AppDiagnostics.Current, preferences);
-            desktop.MainWindow = new WorkflowWindow(preferences)
+            RequestedThemeVariant = connection.DarkTheme ? ThemeVariant.Dark : ThemeVariant.Light;
+            var model = new WorkflowViewModel(store, updates, AppDiagnostics.Current, preferences, initialPreferences: connection);
+            desktop.MainWindow = new WorkflowWindow(preferences, connection)
             { DataContext = model, WindowState = Avalonia.Controls.WindowState.Maximized };
             if (error is not null) model.Error = error;
         }

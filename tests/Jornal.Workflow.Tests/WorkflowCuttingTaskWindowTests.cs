@@ -28,6 +28,7 @@ public sealed class WorkflowCuttingTaskWindowTests
             window.Show(); await Until(() => !f.Model.IsBusy); Pump();
             var preview = window.FindControl<TextBox>("WorkflowCuttingTaskPreview")!;
             var copy = window.FindControl<Button>("CopyWorkflowCuttingTask")!;
+            var copyText = window.FindControl<MenuItem>("CopyWorkflowCuttingTaskText")!;
             var toggle = window.FindControl<Button>("ToggleWorkflowCuttingTaskPreview")!;
             var flyout = Assert.IsType<Flyout>(toggle.Flyout);
             var grid = window.FindControl<DataGrid>("WorkflowProjectsGrid")!;
@@ -43,7 +44,7 @@ public sealed class WorkflowCuttingTaskWindowTests
             Assert.True(window.FindControl<TextBox>("WorkflowBlcbInput")!.IsKeyboardFocusWithin);
             f.Model.Blcb = "БЛЦБ-009337"; await f.Model.SaveHeaderCommand.ExecuteAsync(null);
             window.FindControl<Expander>("OrderHeaderExpander")!.IsExpanded = false;
-            Click(copy); await Until(() => window.Copied is not null);
+            copyText.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await Until(() => window.Copied is not null);
             Assert.StartsWith("9337  Иванов", window.Copied); Assert.Contains("Задание скопировано", f.Model.CuttingTaskNotice); Assert.False(flyout.IsOpen);
             var calculation = window.FindControl<Border>("WorkflowProjectCalculation")!; var beforePreview = Bounds(calculation, window);
             Click(toggle);
@@ -58,8 +59,8 @@ public sealed class WorkflowCuttingTaskWindowTests
             }
             SaveFrame(window, $"task-preview-{width}-{dark}");
             flyout.Hide(); Pump(); Assert.False(flyout.IsOpen);
-            window.FailCopy = true; Click(copy); await Until(() => f.Model.CuttingTaskNotice.Contains("Не удалось", StringComparison.Ordinal));
-            Assert.True(copy.IsEffectivelyEnabled); window.FailCopy = false; Click(copy); await Until(() => f.Model.CuttingTaskNotice.Contains("Задание скопировано", StringComparison.Ordinal));
+            window.FailCopy = true; copyText.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await Until(() => f.Model.CuttingTaskNotice.Contains("Не удалось", StringComparison.Ordinal));
+            Assert.True(copy.IsEffectivelyEnabled); window.FailCopy = false; copyText.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await Until(() => f.Model.CuttingTaskNotice.Contains("Задание скопировано", StringComparison.Ordinal));
             SaveFrame(window, $"task-compact-{width}-{dark}");
             Assert.True(log.Errors.Count == 0, string.Join("\n", log.Errors));
         }

@@ -8,6 +8,6 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <VersionPrefix>2026.1.0</VersionPrefix>
     <VersionSuffix>dev</VersionSuffix>
-    <Product>Journal Next</Product>
+    <Product>Заявки</Product>
   </PropertyGroup>
 </Project>

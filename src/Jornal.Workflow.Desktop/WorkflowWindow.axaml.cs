@@ -19,19 +19,22 @@ public partial class WorkflowWindow : Window
     private bool _loadingTheme = true;
     private WorkflowViewModel? Model => DataContext as WorkflowViewModel;
     public WorkflowWindow() : this(new WorkflowPreferencesStore(WorkflowIdentity.PreferencesPath)) { }
-    public WorkflowWindow(WorkflowPreferencesStore preferences)
+    public WorkflowWindow(WorkflowPreferencesStore preferences, WorkflowPreferences? initialPreferences = null)
     {
-        _preferences = preferences; _restart = new(Path.Combine(preferences.DirectoryPath, "update-restart.json")); InitializeComponent();
-        try { ThemeSwitch.IsChecked = preferences.Load().DarkTheme; ApplyTheme(); }
+        _preferences = preferences; _restart = new(Path.Combine(preferences.DirectoryPath, "update-restart.json"));
+        WorkflowPreferences settings;
+        try { settings = initialPreferences ?? preferences.Load(); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException)
-        { RequestedThemeVariant = ThemeVariant.Light; }
+        { settings = new(); }
+        RequestedThemeVariant = settings.DarkTheme ? ThemeVariant.Dark : ThemeVariant.Light;
+        InitializeComponent(); ThemeSwitch.IsChecked = settings.DarkTheme; ApplyTheme();
         _loadingTheme = false;
     }
     protected override async void OnOpened(EventArgs e)
     {
         base.OnOpened(e); if (Model is not { } model) return;
         model.UseLocalPreferencesStore(_preferences);
-        model.Updates.ConfigureRestart(() => model.CanUse && !model.IsCopyingCuttingTask && !model.HasPendingEdits && OwnedWindows.All(w => w is WorkflowSettingsWindow { CanRestart: true }),
+        model.Updates.ConfigureRestart(() => model.CanUse && !model.IsCopyingCuttingTask && !model.HasPendingEdits && OwnedWindows.All(w => w is WorkflowSettingsWindow { CanRestart: true } or WorkflowUpdatesWindow { CanClose: true }),
             () => _restart.Save(model.CreateRestartDraft()), Close);
         await model.ReloadCommand.ExecuteAsync(null);
         if (model.Error is null)
@@ -41,13 +44,13 @@ public partial class WorkflowWindow : Window
                 if (_restart.Take(model.DatabaseId, remove: false) is { } draft && await model.RestoreRestartDraftAsync(draft, _lifetime.Token))
                     _restart.Take(model.DatabaseId, expected: draft);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException)
             { model.Error = "Не удалось восстановить результат после обновления. Сохранённые заявки доступны."; }
         }
         await model.Updates.RunAutomaticChecksAsync(_lifetime.Token);
     }
     protected override void OnClosing(WindowClosingEventArgs e)
-    { if (Model?.IsBusy == true || OwnedWindows.OfType<WorkflowProjectEditorWindow>().Any() || Model?.Updates is { IsApplying: true, RestartScheduled: false }) e.Cancel = true; base.OnClosing(e); }
+    { if (Model?.IsBusy == true || OwnedWindows.Any(w => w is WorkflowProjectEditorWindow or WorkflowShopTransferWindow) || Model?.Updates is { IsApplying: true, RestartScheduled: false }) e.Cancel = true; base.OnClosing(e); }
     protected override void OnClosed(EventArgs e)
     {
         _lifetime.Cancel(); Model?.Updates.ClearRestart(); Model?.Updates.CheckCommand.Cancel(); Model?.Updates.DownloadCommand.Cancel();
@@ -77,7 +80,12 @@ public partial class WorkflowWindow : Window
         if (_loadingTheme) return;
         ApplyTheme();
     }
-    private void ApplyTheme() => RequestedThemeVariant = ThemeSwitch.IsChecked == true ? ThemeVariant.Dark : ThemeVariant.Light;
+    private void ApplyTheme()
+    {
+        var theme = ThemeSwitch.IsChecked == true ? ThemeVariant.Dark : ThemeVariant.Light;
+        RequestedThemeVariant = theme;
+        if (Avalonia.Application.Current is { } app) app.RequestedThemeVariant = theme;
+    }
     private void OnOpenOrder(object? sender, TappedEventArgs e) => Model?.OpenOrderCommand.Execute(null);
     private void OnFocusNewOrder(object? sender, RoutedEventArgs e) => Dispatcher.UIThread.Post(() =>
     { if (IsVisible && Model is { IsCreating: true, CanUse: true }) NewManagerInput.Focus(); });
@@ -96,6 +104,8 @@ public partial class WorkflowWindow : Window
         if (Model is not { } model) return;
         if (OwnedWindows.OfType<WorkflowSettingsWindow>().FirstOrDefault() is { } existing)
         { if (existing.OwnedWindows.Count == 0) { existing.SelectSection(section); existing.Activate(); } return; }
+        if (OwnedWindows.OfType<WorkflowUpdatesWindow>().FirstOrDefault() is { } updates)
+        { if (!updates.CanClose) return; updates.Close(); }
         if (OwnedWindows.Count > 0 || !model.CanUse && section != 2) return;
         var window = new WorkflowSettingsWindow { DataContext = model.CreateGeneralSettings(), RequestedThemeVariant = ActualThemeVariant };
         window.SelectSection(section);
@@ -103,9 +113,13 @@ public partial class WorkflowWindow : Window
     }
     private async void OnMoveToTrash(object? sender, RoutedEventArgs e)
     {
+        e.Handled = true;
         if (Model is not { CanUse: true } model || OwnedWindows.Count > 0 || model.CreateTrashConfirmation() is not { } confirmation) return;
         var window = new WorkflowTrashConfirmationWindow { DataContext = confirmation, RequestedThemeVariant = ActualThemeVariant };
         await window.ShowDialog(this);
+        if (!IsVisible) return;
+        if (WorkflowOrderActions.IsEffectivelyVisible) WorkflowOrderActions.Focus();
+        else WorkflowOrdersGrid.Focus();
     }
     private async void OnChangeResponsible(object? sender, RoutedEventArgs e)
     {
@@ -129,7 +143,17 @@ public partial class WorkflowWindow : Window
         var window = new WorkflowCatalogWindow(() => model.CreateDatabaseSettings()) { DataContext = model.CreateCatalogSettings(), RequestedThemeVariant = ActualThemeVariant };
         await window.ShowDialog(this);
     }
-    private async void OnUpdates(object? sender, RoutedEventArgs e) => await ShowSettingsAsync(2);
+    private async void OnUpdates(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { } model) return;
+        if (OwnedWindows.OfType<WorkflowSettingsWindow>().FirstOrDefault() is { } settings)
+        { if (settings.OwnedWindows.Count == 0) { settings.SelectSection(2); settings.Activate(); } return; }
+        if (OwnedWindows.OfType<WorkflowUpdatesWindow>().FirstOrDefault() is { } existing)
+        { existing.Activate(); return; }
+        if (OwnedWindows.Count > 0) return;
+        var window = new WorkflowUpdatesWindow { DataContext = model.Updates, RequestedThemeVariant = ActualThemeVariant };
+        await window.ShowDialog(this);
+    }
     private async void OnCopyResult(object? sender, RoutedEventArgs e)
     {
         if (Model is not { CanUse: true } model || string.IsNullOrWhiteSpace(model.ResultText)) return;

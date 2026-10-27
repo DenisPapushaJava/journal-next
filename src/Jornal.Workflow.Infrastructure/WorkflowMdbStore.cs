@@ -30,10 +30,24 @@ public sealed partial class WorkflowMdbStore(string path, IWorkflowAccessTranspo
     public bool RequiresRefresh { get; private set; }
     public Guid? RecoveredOrderId { get; private set; }
     public void AcknowledgeRecovery() { RecoveredOrderId = null; _pendingCreate = null; }
+    public Task<WorkflowWorkspace> RecordShopHandoffAsync(Guid orderId, long expectedOrderVersion, Guid actor, DateTimeOffset at, CancellationToken token = default) => Locked(async () =>
+    {
+        if (RequiresRefresh) throw new WorkflowValidationException("Исход предыдущей записи не подтверждён. Сначала обновите журнал (F5).");
+        try
+        {
+            var result = await _transport.SendAsync(new(1, WorkflowAccessOperation.RecordShopHandoff, FilePath, DatabaseId,
+                ShopHandoff: new(orderId, expectedOrderVersion, actor, at), KnownCatalogVersion: _catalogVersion), token).ConfigureAwait(false);
+            if (result.Orders?.SingleOrDefault(o => o.Id == orderId)?.ShopHandoff is not { } stamp ||
+                stamp.OrderVersion != expectedOrderVersion || stamp.ActorId != actor || stamp.At != DateTimeOffset.FromUnixTimeSeconds(at.ToUnixTimeSeconds()))
+                throw new WorkflowOutcomeUnknownException();
+            return await MergeCommittedAsync(result, [orderId]).ConfigureAwait(false);
+        }
+        catch (WorkflowOutcomeUnknownException) { RequiresRefresh = true; throw; }
+    }, token);
     public static string NormalizePath(string value)
     {
         if (!Path.IsPathFullyQualified(value) || !Path.GetExtension(value).Equals(".mdb", StringComparison.OrdinalIgnoreCase))
-            throw new WorkflowValidationException("Выберите полный путь к MDB Journal Next.");
+            throw new WorkflowValidationException("Выберите полный путь к MDB программы «Заявки».");
         return Path.GetFullPath(value);
     }
     public Task<WorkflowWorkspace> InspectAsync(CancellationToken token = default) => Locked(async () =>

@@ -30,9 +30,6 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     public AppUpdatesViewModel Updates => Journal.Updates;
     public bool CanClose => !IsBusy && !IsExporting && (!Updates.IsApplying || Updates.RestartScheduled);
     public bool CanRestart => !HasChanges && !IsBusy && !IsExporting;
-    public string PriceSourcePath => _snapshot().PriceSource?.Path ?? "Источник ещё не выбран";
-    public string PriceSourceStatus => _snapshot().PriceSource is { } source ?
-        $"Цены загружены {source.LoadedAt.ToLocalTime():dd.MM.yyyy HH:mm}" : "Прежние цены ещё не загружены";
     public IReadOnlyList<string> EmployeeSuggestions => _employees.Where(e => e.CanWork).Select(e => e.Name).Order().ToArray();
     [ObservableProperty] private string _profileName = "";
     [ObservableProperty] private string _projectRoot = "";
@@ -47,6 +44,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
         {
             if (!SetProperty(ref _spectrum, new HsvColor(1, value.H, value.S, value.V))) return;
             OnPropertyChanged(nameof(ProfileBrush)); OnPropertyChanged(nameof(ProfileColorHex)); OnPropertyChanged(nameof(ProfileColorName)); InputChanged();
+            if (_loading) NotifyColorPicker();
         }
     }
     public uint ProfileColorArgb => _spectrum.ToRgb().ToUInt32();
@@ -58,15 +56,22 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     public bool HasRootChanges => ProjectRoot != _originalRoot;
     public bool HasProfileChanges => ProfileName != _originalProfile.Name || ProfileColorArgb != _originalProfile.ColorArgb ||
         (!_employees.Any(e => e.Id == _originalProfile.EmployeeId) && !string.IsNullOrWhiteSpace(ProfileName));
-    public bool HasChanges => HasRootChanges || HasProfileChanges;
+    public bool HasChanges => HasRootChanges || HasProfileChanges || HasShopRootChanges;
     public bool CanEdit => !IsBusy && !IsExporting && !Updates.IsApplying;
     public string CloseLabel => HasChanges ? "Отмена" : "Закрыть";
-    public string SaveLabel => IsProfile ? "Сохранить профиль" : "Сохранить папку";
-    public bool IsSaveVisible => !IsProgram;
+    public string SaveLabel => IsProfile ? "Сохранить профиль" : "Сохранить";
+    public bool IsSaveVisible => IsProfile || IsStorage;
     public bool IsProfile => SelectedSectionIndex == 0;
     public bool IsStorage => SelectedSectionIndex == 1;
-    public bool IsProgram => SelectedSectionIndex == 2;
-    public string SectionTitle => IsProfile ? "Общие" : IsStorage ? "Хранилище" : "Программа";
+    public bool IsUpdates => SelectedSectionIndex == 2;
+    public bool IsDiagnostics => SelectedSectionIndex == 3;
+    public bool IsAbout => SelectedSectionIndex == 4;
+    public string SectionTitle => SelectedSectionIndex switch
+    { 0 => "Общие", 1 => "Хранилище", 2 => "Обновления", 3 => "Диагностика", _ => "О программе" };
+    public bool HasError => !string.IsNullOrEmpty(Error);
+    public bool HasStatus => !string.IsNullOrEmpty(Status);
+    partial void OnErrorChanged(string? value) => OnPropertyChanged(nameof(HasError));
+    partial void OnStatusChanged(string? value) => OnPropertyChanged(nameof(HasStatus));
     public string EntrySuggestionsSummary
     {
         get { var value = _suggestions(); return $"Менеджеры: {value?.Managers.Length ?? 0} · Заказчики: {value?.Customers.Length ?? 0}"; }
@@ -102,7 +107,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
         catch (OperationCanceledException) { Status = "Операция отменена. Обновите журнал перед повтором."; }
         finally { IsBusy = false; }
     }
-    private bool CanSave => CanEdit && (IsProfile ? HasProfileChanges : IsStorage && HasRootChanges);
+    private bool CanSave => CanEdit && (IsProfile ? HasProfileChanges : IsStorage && (HasRootChanges || HasShopRootChanges));
 
     public WorkflowSettingsViewModel(string workspacePath, Func<WorkflowWorkspace> snapshot,
         Func<string?, string?, CancellationToken, Task<string?>> saveRoot, Func<WorkflowProfileDraft> profile,
@@ -113,13 +118,12 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
         _snapshot = snapshot; _saveRoot = saveRoot; _profile = profile; _saveProfile = saveProfile;
         _suggestions = suggestions; _saveSuggestions = saveSuggestions;
         Journal = journal; Updates.PropertyChanged += OnUpdatesChanged; Journal.PropertyChanged += OnJournalAvailabilityChanged;
-        _originalProfile = profile(); ReloadRoot(); ReloadProfile(); ReloadResultPricing();
+        _originalProfile = profile(); ReloadRoot(); ReloadProfile(); ReloadShopRoot(); ReloadResultPricing();
     }
     private void ReloadRoot()
     {
         _loading = true; _expectedRoot = _snapshot().ProjectRoot; ProjectRoot = _originalRoot = _expectedRoot ?? "";
         _loading = false; Changed();
-        OnPropertyChanged(nameof(PriceSourcePath)); OnPropertyChanged(nameof(PriceSourceStatus));
     }
     private void ReloadProfile()
     {
@@ -140,15 +144,15 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     partial void OnSelectedSectionIndexChanged(int value)
     {
         NormalizeResultPriceInput();
-        foreach (var name in new[] { nameof(SaveLabel), nameof(IsSaveVisible), nameof(IsProfile), nameof(IsStorage), nameof(IsProgram), nameof(SectionTitle) }) OnPropertyChanged(name);
+        foreach (var name in new[] { nameof(SaveLabel), nameof(IsSaveVisible), nameof(IsProfile), nameof(IsStorage), nameof(IsUpdates), nameof(IsDiagnostics), nameof(IsAbout), nameof(SectionTitle) }) OnPropertyChanged(name);
         SaveCommand.NotifyCanExecuteChanged(); Error = null; Status = null;
     }
     private void InputChanged() { if (!_loading) { Status = null; Error = null; Changed(); } }
     private void Changed()
     {
-        OnPropertyChanged(nameof(HasChanges)); OnPropertyChanged(nameof(HasRootChanges)); OnPropertyChanged(nameof(HasProfileChanges));
+        OnPropertyChanged(nameof(HasChanges)); OnPropertyChanged(nameof(HasShopRootChanges)); OnPropertyChanged(nameof(HasRootChanges)); OnPropertyChanged(nameof(HasProfileChanges));
         OnPropertyChanged(nameof(CloseLabel)); SaveCommand.NotifyCanExecuteChanged();
-        foreach (var color in FrequentColors.Concat(OtherColors)) color.IsSelected = color.Argb == ProfileColorArgb;
+        NotifyColorPicker();
     }
     [RelayCommand] private void SelectProfileColor(WorkflowProfileColorOption? color)
     { if (CanEdit && color is not null) ProfileSpectrumColor = new(Color.FromUInt32(color.Argb)); }
@@ -176,7 +180,10 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     { if (e.PropertyName is nameof(AppUpdatesViewModel.IsApplying) or nameof(AppUpdatesViewModel.RestartScheduled)) NotifyAvailability(); }
     partial void OnIsBusyChanged(bool value) => NotifyAvailability();
     private void OnJournalAvailabilityChanged(object? sender, PropertyChangedEventArgs e)
-    { if (e.PropertyName == nameof(WorkflowViewModel.CanUse)) NotifyAvailability(); }
+    {
+        if (e.PropertyName == nameof(WorkflowViewModel.CanUse)) NotifyAvailability();
+        if (e.PropertyName is nameof(WorkflowViewModel.OrderTitle) or nameof(WorkflowViewModel.WorkspacePath)) OnPropertyChanged(nameof(ShopFolderPreview));
+    }
     public void Dispose() { Updates.PropertyChanged -= OnUpdatesChanged; Journal.PropertyChanged -= OnJournalAvailabilityChanged; }
     [RelayCommand(CanExecute = nameof(CanSave))]
     private async Task SaveAsync(CancellationToken token)
@@ -192,12 +199,12 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
             }
             else if (IsStorage)
             {
-                Error = await _saveRoot(_expectedRoot, ProjectRoot, token);
-                if (Error is null) { ReloadRoot(); Status = "Папка проектов сохранена."; }
+                await SaveStorageAsync(token);
             }
         }
         catch (OperationCanceledException) { Status = "Сохранение отменено."; }
-        catch (ArgumentException ex) { Error = ex.Message; }
+        catch (Exception ex) when (ex is ArgumentException or WorkflowValidationException or NotSupportedException or PathTooLongException)
+        { Error = ex is WorkflowValidationException || IsProfile && ex is ArgumentException ? ex.Message : "Проверьте полные пути к папкам."; }
         finally { IsBusy = false; }
     }
 }

@@ -86,6 +86,29 @@ public sealed class WorkflowNativeMdbTests
                 project.Id, parameters, "native-1", new(2026, 10, 25), actor, at, null, machine.ImportProfile, rate), TestContext.Current.CancellationToken);
             order = book.Orders.Single(); Assert.Equal(CuttingCalculation.Calculate(parameters, rate), order.Specifications.Single().Current.Calculation);
             Assert.True(order.Specifications.Single().Current.Parameters.HasChamfer);
+            book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.UpdateOrder(w, order.Id, order.Version,
+                order.ManagerId, order.TechnologistId, "009337", actor, at), TestContext.Current.CancellationToken);
+            order = book.Orders.Single();
+            await MakeVersionOneFixture(path);
+            var versionOneBytes = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+            store = new WorkflowMdbStore(path, client, created.DatabaseId);
+            using (var writer = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete))
+            {
+                await Assert.ThrowsAsync<WorkflowValidationException>(() => store.InspectAsync(TestContext.Current.CancellationToken));
+                Assert.Empty(Directory.GetFiles(directory, "*.schema-v1-*.bak"));
+                Assert.Empty(Directory.GetFiles(directory, ".Workflow-upgrade-*.mdb"));
+            }
+            Assert.Equal(versionOneBytes, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
+            await store.InspectAsync(TestContext.Current.CancellationToken);
+            var backup = Assert.Single(Directory.GetFiles(directory, "*.schema-v1-*.bak"));
+            Assert.Equal(versionOneBytes, await File.ReadAllBytesAsync(backup, TestContext.Current.CancellationToken));
+            var upgraded = await store.ReadOrderAsync(order.Id, TestContext.Current.CancellationToken);
+            Assert.Equal(System.Text.Json.JsonSerializer.Serialize(order), System.Text.Json.JsonSerializer.Serialize(upgraded.Orders.Single()));
+            await store.InspectAsync(TestContext.Current.CancellationToken); Assert.Single(Directory.GetFiles(directory, "*.schema-v1-*.bak"));
+            var marked = await store.RecordShopHandoffAsync(order.Id, order.Version, actor, at, TestContext.Current.CancellationToken);
+            Assert.True(marked.Orders.Single().HasCurrentShopHandoff); Assert.Equal(order.Version, marked.Orders.Single().Version);
+            book = await new WorkflowMdbStore(path, client, created.DatabaseId).ReadAsync(TestContext.Current.CancellationToken);
+            Assert.True(book.Orders.Single().HasCurrentShopHandoff); order = book.Orders.Single();
             var secondName = WorkflowProjectNames.Name(machine, 8, at.AddSeconds(1)); var secondFolder = Path.Combine(directory, secondName);
             Directory.CreateDirectory(secondFolder); var secondNative = Path.Combine(secondFolder, secondName + WorkflowProjectNames.Extension(machine));
             await File.WriteAllBytesAsync(secondNative, [], TestContext.Current.CancellationToken);
@@ -108,6 +131,20 @@ public sealed class WorkflowNativeMdbTests
             await Assert.ThrowsAsync<WorkflowValidationException>(() => new WorkflowMdbStore(path, client, Guid.NewGuid()).InspectAsync(TestContext.Current.CancellationToken));
         }
         finally { Directory.Delete(directory, true); }
+    }
+
+    private static async Task MakeVersionOneFixture(string path)
+    {
+        var powershell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SysWOW64", "WindowsPowerShell", "v1.0", "powershell.exe");
+        var start = new System.Diagnostics.ProcessStartInfo(powershell) { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true };
+        start.Environment["WORKFLOW_V1_FIXTURE"] = path;
+        start.ArgumentList.Add("-NoProfile"); start.ArgumentList.Add("-NonInteractive"); start.ArgumentList.Add("-Command");
+        start.ArgumentList.Add("$ErrorActionPreference='Stop'; $c=New-Object -ComObject ADODB.Connection; try { $c.Open('Provider=Microsoft.Jet.OLEDB.4.0;Data Source=' + $env:WORKFLOW_V1_FIXTURE); $null=$c.Execute('DROP TABLE [order_shop_handoffs]'); $null=$c.Execute('UPDATE [app_metadata] SET [schema_version]=1 WHERE [singleton]=1'); } finally { if ($c.State -ne 0) {$c.Close()}; [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($c) }");
+        using var process = System.Diagnostics.Process.Start(start)!;
+        var error = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var output = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+        Assert.True(process.ExitCode == 0, "Create isolated MDB v1 fixture: " + await error + await output);
     }
 
     private static LegacyPriceCatalog LegacyImportFixture()

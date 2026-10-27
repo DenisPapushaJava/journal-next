@@ -9,8 +9,13 @@ public partial class WorkflowViewModel
     private WorkflowPreferencesStore _preferences;
     private WorkflowPreferences _localPreferences = new();
     private bool _loadingLocalPreferences;
+    private bool _startupPreferencesPrepared;
+    private bool _initialProfileReadFinished;
+    private WorkflowStartupProfile? _startupProfile;
     [ObservableProperty] private bool _isDarkTheme;
     [ObservableProperty] private string? _themeError;
+    public bool HasThemeError => !string.IsNullOrEmpty(ThemeError);
+    partial void OnThemeErrorChanged(string? value) => OnPropertyChanged(nameof(HasThemeError));
     partial void OnIsDarkThemeChanged(bool value)
     {
         if (_loadingLocalPreferences) return;
@@ -25,9 +30,12 @@ public partial class WorkflowViewModel
         { Error = ThemeError = "Не удалось сохранить тему. Выбор действует до закрытия."; }
     }
     private Employee? ActiveEmployee => CurrentEmployee is { } current ? _workspace.Employees.SingleOrDefault(e => e.Id == current.Id && e.CanWork) : null;
-    public string ProfileName => ActiveEmployee?.Name ?? "Профиль не выбран";
-    public IBrush ProfileBrush => new SolidColorBrush(Color.FromUInt32(ActiveEmployee?.ColorArgb ?? 0xFF628DB2));
-    public string ProfileHint => ProfileName + " · изменить: Настройки → Общие → Технолог";
+    private WorkflowStartupProfile? PendingStartupProfile => !_hasLoadedOrders && _startupProfile?.Matches(_connection, _localPreferences) == true ? _startupProfile : null;
+    public string ProfileName => ActiveEmployee?.Name ?? PendingStartupProfile?.Name ??
+        (!_hasLoadedOrders && _connection.EmployeeId is not null ? _initialProfileReadFinished ? "Профиль недоступен" : "Загрузка профиля…" : "Профиль не выбран");
+    public IBrush ProfileBrush => new SolidColorBrush(Color.FromUInt32(ActiveEmployee?.ColorArgb ?? PendingStartupProfile?.ColorArgb ?? 0xFF628DB2));
+    public string ProfileHint => ProfileName + (PendingStartupProfile is not null ? " · сохранён на этом ПК, ожидает подтверждения из БД" : "") +
+        " · изменить: Настройки → Общие → Технолог";
     partial void OnCurrentEmployeeChanged(Employee? value)
     { _connection = _connection with { EmployeeId = value?.Id }; NotifyProfile(); }
     private void NotifyProfile()
@@ -35,14 +43,47 @@ public partial class WorkflowViewModel
 
     public void LoadLocalPreferences(WorkflowPreferencesStore store)
     {
-        var value = store.Load(); _connection.RequireMatchingSource(value);
+        ApplyLocalPreferences(store, store.Load());
+    }
+    private void ApplyLocalPreferences(WorkflowPreferencesStore store, WorkflowPreferences value)
+    {
         _preferences = store; _localPreferences = value;
-        _connection = _connection with { EmployeeId = value.EmployeeId };
+        NotifyShopHandoffColor();
         _loadingLocalPreferences = true;
         try { IsDarkTheme = value.DarkTheme; } finally { _loadingLocalPreferences = false; }
-        ThemeError = null; NotifyProfile(); NotifyEntrySuggestions();
+        ThemeError = null; NotifyEntrySuggestions();
+        _connection.RequireMatchingSource(value);
+        _connection = _connection with { EmployeeId = value.EmployeeId };
+        NotifyProfile();
     }
-    public void UseLocalPreferencesStore(WorkflowPreferencesStore store) => _preferences = store;
+    public void UseLocalPreferencesStore(WorkflowPreferencesStore store)
+    {
+        if (ReferenceEquals(_preferences, store)) return;
+        _preferences = store; _startupPreferencesPrepared = false;
+        _startupProfile = new WorkflowStartupProfileStore(store.ProfileCachePath).Load();
+    }
+    private async Task RememberStartupProfileAsync()
+    {
+        var source = _connection; var preferences = _preferences;
+        var employee = ActiveEmployee;
+        var snapshot = employee is null ? null : new WorkflowStartupProfile(1, _store.FilePath, _store.DatabaseId, employee.Id, employee.Name, employee.ColorArgb);
+        if (snapshot == _startupProfile) return;
+        var previous = _startupProfile;
+        try
+        {
+            await Task.Run(() =>
+            {
+                var current = preferences.Load();
+                if (!source.Matches(current) || source.EmployeeId != current.EmployeeId) return;
+                var cache = new WorkflowStartupProfileStore(preferences.ProfileCachePath);
+                if (snapshot is not null) cache.Save(snapshot);
+                else if (previous?.Matches(source, current) == true) cache.Remove(previous);
+            });
+            if (_connection == source) _startupProfile = snapshot;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException or ArgumentException)
+        { /* Optional local preview cannot turn a successful read/save into a failure. */ }
+    }
     private WorkflowProfileDraft CaptureProfile() => ActiveEmployee is { } employee ?
         new(employee.Id, employee.Name, employee.ColorArgb ?? 0xFF628DB2) : new(Guid.Empty, "");
 
@@ -102,6 +143,7 @@ public partial class WorkflowViewModel
                         "проверьте доступ к локальным настройкам и повторите сохранение."));
             }
             CurrentEmployee = employee; NotifyProfile(); NotifyEntrySuggestions(); saved = true;
+            await RememberStartupProfileAsync();
         });
         if (!saved && Error is null) token.ThrowIfCancellationRequested();
         return saved ? null : Error ?? "Профиль не сохранён.";
