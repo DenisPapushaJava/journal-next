@@ -74,7 +74,9 @@ public sealed class WorkflowShopFolderAvailabilityTests
         await f.Model.RefreshShopFolderAvailabilityAsync(); Assert.True(row.CanOpenShopFolder);
         Assert.Equal(path, await f.Model.ShopFolderToOpenAsync(row, Token));
         var receipt = Path.Combine(path, ".journal-next-task.json");
-        await File.WriteAllTextAsync(receipt, "{}", Token); await f.Model.RefreshShopFolderAvailabilityAsync();
+        await using (var edit = new FileStream(receipt, FileMode.Open, FileAccess.Write, FileShare.None))
+        { edit.SetLength(0); await edit.WriteAsync("{}"u8.ToArray(), Token); }
+        await f.Model.RefreshShopFolderAvailabilityAsync();
         Assert.False(row.CanOpenShopFolder); Assert.Null(f.Model.Error); Assert.True(File.Exists(Path.Combine(path, "operator-note.txt")));
     }
 
