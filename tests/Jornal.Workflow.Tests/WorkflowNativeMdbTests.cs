@@ -95,10 +95,10 @@ public sealed class WorkflowNativeMdbTests
             using (var writer = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete))
             {
                 await Assert.ThrowsAsync<WorkflowValidationException>(() => store.InspectAsync(TestContext.Current.CancellationToken));
-                Assert.Equal(versionOneBytes, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
                 Assert.Empty(Directory.GetFiles(directory, "*.schema-v1-*.bak"));
                 Assert.Empty(Directory.GetFiles(directory, ".Workflow-upgrade-*.mdb"));
             }
+            Assert.Equal(versionOneBytes, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
             await store.InspectAsync(TestContext.Current.CancellationToken);
             var backup = Assert.Single(Directory.GetFiles(directory, "*.schema-v1-*.bak"));
             Assert.Equal(versionOneBytes, await File.ReadAllBytesAsync(backup, TestContext.Current.CancellationToken));
