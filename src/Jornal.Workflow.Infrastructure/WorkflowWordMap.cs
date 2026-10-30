@@ -66,13 +66,7 @@ internal static class WorkflowWordMap
             Layout before = Inspect(document, beforeCells, comments, scope);
             if (before.Pages is < 1 or > 100) throw new WorkflowValidationException("В DOC больше 100 страниц. Подпишите карту вручную.");
             var changed = 0;
-            // Inspect every comment first: do not partially edit a mixed/unsupported document.
-            foreach (var index in comments)
-            {
-                dynamic cell = beforeCells.Cells[index]; dynamic range = scope.Keep(cell.Range);
-                var old = WorkflowWordMapRules.Normalize((string)range.Text);
-                if (old != WorkflowWordMapRules.Normalize(request.Caption)) WorkflowWordMapRules.RequireReplaceable(old);
-            }
+            // The labelled comment cell is managed by the application; notes outside it remain unchanged.
             foreach (var index in comments)
             {
                 dynamic cell = beforeCells.Cells[index]; dynamic range = scope.Keep(cell.Range);

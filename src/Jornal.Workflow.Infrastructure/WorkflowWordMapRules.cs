@@ -48,10 +48,4 @@ internal static class WorkflowWordMapRules
 
     private static WorkflowValidationException BadTable() => new("Не удалось распознать все блоки карты DOC. Файл не изменён.");
 
-    internal static void RequireReplaceable(string text)
-    {
-        var value = Normalize(text);
-        if (value.Length > 0 && !Regex.IsMatch(value, @"\bБЛЦБ\s*-?\s*\d+\b", RegexOptions.IgnoreCase))
-            throw new WorkflowValidationException("В комментарии DOC есть ручная пометка. Проверьте карту вручную.");
-    }
 }
