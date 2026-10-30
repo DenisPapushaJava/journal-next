@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Jornal.Core.Results;
 using Jornal.Workflow.Core;
 
 namespace Jornal.Workflow.Desktop;
@@ -6,9 +7,11 @@ namespace Jornal.Workflow.Desktop;
 public sealed record WorkflowProfileDraft(Guid EmployeeId, string Name, uint ColorArgb = 0xFF628DB2);
 public sealed record WorkflowPreferences(bool DarkTheme = false)
 {
+    public bool AutomaticJournalRefresh { get; init; } = true;
     public Guid? EmployeeId { get; init; }
     public WorkflowEntrySuggestions? EntrySuggestions { get; init; }
     public WorkflowResultPricing? ResultPricing { get; init; }
+    public ResultTextStyle? ResultFormatting { get; init; }
     public string? ShopRoot { get; init; }
     public uint ShopHandoffColorArgb { get; init; } = 0xFF80FFFF;
     public string? DatabasePath { get; init; }
@@ -41,7 +44,7 @@ public sealed class WorkflowPreferencesStore(string path)
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
             if (stream.Length > MaximumBytes) throw new InvalidDataException("Настройки нового Journal слишком велики.");
             var value = JsonSerializer.Deserialize<WorkflowPreferences>(stream) ?? new(); value.Validate();
-            return value with { EntrySuggestions = value.EntrySuggestions?.Normalize(), ResultPricing = value.ResultPricing?.Normalize() };
+            return value with { EntrySuggestions = value.EntrySuggestions?.Normalize(), ResultPricing = value.ResultPricing?.Normalize(), ResultFormatting = value.ResultFormatting?.Normalize() };
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) { return new(); }
     }
@@ -54,7 +57,7 @@ public sealed class WorkflowPreferencesStore(string path)
         using var lease = new FileStream(path + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var current = Load(); var next = change(current); next.Validate();
         if (ReferenceEquals(current, next)) return current;
-        next = next with { EntrySuggestions = next.EntrySuggestions?.Normalize(), ResultPricing = next.ResultPricing?.Normalize() }; SaveCore(next); return next;
+        next = next with { EntrySuggestions = next.EntrySuggestions?.Normalize(), ResultPricing = next.ResultPricing?.Normalize(), ResultFormatting = next.ResultFormatting?.Normalize() }; SaveCore(next); return next;
     }
 
     private void SaveCore(WorkflowPreferences preferences)

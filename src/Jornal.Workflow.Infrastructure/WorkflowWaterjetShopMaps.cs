@@ -9,6 +9,7 @@ namespace Jornal.Workflow.Infrastructure;
 internal static class WorkflowWaterjetShopMaps
 {
     internal enum Kind { Unknown, Postprocessor, Calculation, Unrelated }
+    internal sealed record Header(Kind Type, string[] Drawings, string[] Programs, bool InvalidFields);
     internal sealed record Map(ShopFile File, Kind Type, string[] Drawings, string[] Programs, bool InvalidFields = false);
     private sealed record Link(Map Map, ShopFile[] Programs);
 
@@ -37,28 +38,29 @@ internal static class WorkflowWaterjetShopMaps
         foreach (var page in document.Pages)
         {
             token.ThrowIfCancellationRequested();
-            var lines = Lines(page);
-            var text = Compact(string.Join(" ", lines.SelectMany(line => line).Select(w => w.Text)));
-            var pp = text.Contains("FILES", StringComparison.Ordinal) && text.Contains("CNCFILE", StringComparison.Ordinal) &&
-                text.Contains("DRAWING", StringComparison.Ordinal) && text.Contains("SHEETSIZE", StringComparison.Ordinal) && text.Contains("TOOLSETUP", StringComparison.Ordinal);
-            var ce = (text.Contains("DRAWINGFILE", StringComparison.Ordinal) || text.Contains("ИМЯФАЙЛА", StringComparison.Ordinal)) &&
-                (text.Contains("CUTTINGLENGTH", StringComparison.Ordinal) || text.Contains("ДЛИНАРЕЗА", StringComparison.Ordinal) || text.Contains("ДЛИННАРЕЗА", StringComparison.Ordinal)) &&
-                (text.Contains("THICKNESS", StringComparison.Ordinal) || text.Contains("ТОЛЩИНА", StringComparison.Ordinal));
-            if (!pp && !ce) continue; // Continuation pages with the parts list are normal.
-            kinds.Add(pp ? Kind.Postprocessor : Kind.Calculation);
-            var source = Names(lines, ".dig", pp ? ["Drawing file", "Drawing"] : ["Drawing file", "Имя файла"]);
-            if (source.Invalid || source.Values.Length == 0) invalid = true;
-            drawings.AddRange(source.Values);
-            if (pp)
-            {
-                var cnc = Names(lines, ".nc", ["CNC file"]);
-                invalid |= cnc.Invalid; programs.AddRange(cnc.Values);
-                if (cnc.Values.Length == 0) invalid = true;
-            }
+            if (AnalyzeHeader(page) is not { } header) continue; // Parts-list continuation pages are normal.
+            kinds.Add(header.Type); invalid |= header.InvalidFields;
+            drawings.AddRange(header.Drawings); programs.AddRange(header.Programs);
         }
         var kind = kinds.Count == 1 ? kinds.Single() : Kind.Unknown;
         if (kinds.Count == 0 && IsUnrelated(document, token)) kind = Kind.Unrelated;
         return new(file, kind, drawings.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(), programs.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(), invalid);
+    }
+
+    internal static Header? AnalyzeHeader(PdfPage page)
+    {
+        var lines = Lines(page);
+        var text = Compact(string.Join(" ", lines.SelectMany(line => line).Select(w => w.Text)));
+        var pp = text.Contains("FILES", StringComparison.Ordinal) && text.Contains("CNCFILE", StringComparison.Ordinal) &&
+            text.Contains("DRAWING", StringComparison.Ordinal) && text.Contains("SHEETSIZE", StringComparison.Ordinal) && text.Contains("TOOLSETUP", StringComparison.Ordinal);
+        var ce = (text.Contains("DRAWINGFILE", StringComparison.Ordinal) || text.Contains("ИМЯФАЙЛА", StringComparison.Ordinal)) &&
+            (text.Contains("CUTTINGLENGTH", StringComparison.Ordinal) || text.Contains("ДЛИНАРЕЗА", StringComparison.Ordinal) || text.Contains("ДЛИННАРЕЗА", StringComparison.Ordinal)) &&
+            (text.Contains("THICKNESS", StringComparison.Ordinal) || text.Contains("ТОЛЩИНА", StringComparison.Ordinal));
+        if (!pp && !ce) return null;
+        var source = Names(lines, ".dig", pp ? ["Drawing file", "Drawing"] : ["Drawing file", "Имя файла"]);
+        var cnc = pp ? Names(lines, ".nc", ["CNC file"]) : (Values: Array.Empty<string>(), Invalid: false);
+        return new(pp ? Kind.Postprocessor : Kind.Calculation, source.Values, cnc.Values,
+            source.Invalid || source.Values.Length == 0 || cnc.Invalid || pp && cnc.Values.Length == 0);
     }
 
     internal static ShopFile[] Select(CuttingProject project, ShopFile[] files, IReadOnlyList<Map> maps)

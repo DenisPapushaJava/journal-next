@@ -39,7 +39,7 @@ public partial class WorkflowViewModel
     partial void OnCurrentEmployeeChanged(Employee? value)
     { _connection = _connection with { EmployeeId = value?.Id }; NotifyProfile(); }
     private void NotifyProfile()
-    { OnPropertyChanged(nameof(ProfileName)); OnPropertyChanged(nameof(ProfileBrush)); OnPropertyChanged(nameof(ProfileHint)); }
+    { OnPropertyChanged(nameof(ProfileName)); OnPropertyChanged(nameof(ProfileBrush)); OnPropertyChanged(nameof(ProfileHint)); NotifyActionAvailability(); }
 
     public void LoadLocalPreferences(WorkflowPreferencesStore store)
     {
@@ -48,7 +48,9 @@ public partial class WorkflowViewModel
     private void ApplyLocalPreferences(WorkflowPreferencesStore store, WorkflowPreferences value)
     {
         _preferences = store; _localPreferences = value;
+        ApplyResultStyle(value.ResultFormatting);
         NotifyShopHandoffColor();
+        OnPropertyChanged(nameof(AutomaticJournalRefresh));
         _loadingLocalPreferences = true;
         try { IsDarkTheme = value.DarkTheme; } finally { _loadingLocalPreferences = false; }
         ThemeError = null; NotifyEntrySuggestions();

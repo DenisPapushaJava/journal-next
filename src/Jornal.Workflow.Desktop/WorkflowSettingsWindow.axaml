@@ -93,6 +93,9 @@
             </StackPanel>
             <Border Classes="workflow-settings-group">
               <StackPanel Spacing="8">
+                <CheckBox x:Name="WorkflowAutomaticJournalRefresh" Content="Автоматически обновлять список заявок"
+                          IsChecked="{Binding Journal.AutomaticJournalRefresh, Mode=TwoWay}" ToolTip.Tip="Для общей MDB: изменения коллег подгружаются с сохранением вашего ввода. Настройка хранится на этом компьютере." />
+                <TextBlock Text="{Binding Journal.AutomaticJournalRefreshError}" IsVisible="{Binding Journal.HasAutomaticJournalRefreshError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
                 <CheckBox x:Name="WorkflowDarkTheme" Content="Тёмная тема" IsChecked="{Binding Journal.IsDarkTheme, Mode=TwoWay}" />
                 <TextBlock x:Name="WorkflowThemeError" Text="{Binding Journal.ThemeError}" IsVisible="{Binding Journal.HasThemeError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                 <Grid ColumnDefinitions="*,12,Auto" Margin="0,4,0,0">
@@ -152,7 +155,7 @@
                            AutomationProperties.Name="Начальная папка заданий в цех на этом компьютере" />
                   <ui:JournalButton x:Name="BrowseWorkflowShopRoot" Grid.Column="2" Label="Выбрать…" Click="OnBrowseShopRoot" />
                 </Grid>
-                <TextBlock Text="Путь на этом компьютере. Файлы копируются после проверки через «Задание в цех» в карточке заявки."
+                <TextBlock Text="Путь на этом компьютере. Файлы копируются после проверки через «Отправить в работу…» в карточке заявки."
                            Classes="muted" TextWrapping="Wrap" />
                 <TextBlock Text="Станок → менеджер → БЛЦБ и заказчик → полное имя проекта" Classes="muted" FontSize="12" TextWrapping="Wrap" />
                 <TextBlock Text="Пример по сохранённой заявке" FontWeight="SemiBold" FontSize="12" />

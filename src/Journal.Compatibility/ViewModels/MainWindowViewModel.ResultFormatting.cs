@@ -48,7 +48,12 @@ public partial class MainWindowViewModel
         OnPropertyChanged(nameof(ResultColorDescription));
     }
 
-    public IReadOnlyList<ResultColorOption> ResultColors { get; } =
+    public IReadOnlyList<ResultColorOption> ResultColors { get; } = ResultColorPalette.Create();
+}
+
+public static class ResultColorPalette
+{
+    public static IReadOnlyList<ResultColorOption> Create() =>
     [
         new("Тёмный", "#202124"), new("Серый", "#616161"), new("Красный", "#A61C00"), new("Оранжевый", "#C65911"),
         new("Золотистый", "#997300"), new("Зелёный", "#38761D"), new("Синий", "#2F5496"), new("Фиолетовый", "#7030A0"),

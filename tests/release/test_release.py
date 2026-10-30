@@ -16,6 +16,14 @@ spec.loader.exec_module(release)
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_alpha_six_notes_are_exactly_the_two_approved_points(self):
+        self.assertEqual(
+            '1. Карты раскроя: подписание всей заявки или отдельного проекта. PDF для лазера, плазмы, газа и AWJC; DOC HansLaser — через Microsoft Word.\n'
+            '2. Текст задания в цех: просмотр, редактирование и копирование без передачи файлов.\n',
+            release.release_notes('2026.1.0-alpha.6'))
+        previous = release.release_notes('2026.1.0-alpha.5')
+        self.assertEqual([str(n) for n in range(1, 6)], re.findall(r'^(\d+)\. ', previous, re.MULTILINE))
+
     def test_plan_cli_supports_a_windows_console_without_cyrillic(self):
         result = subprocess.run([sys.executable, str(ROOT / 'scripts/release.py'), 'plan', '--version', '2026.1.0-alpha.5'],
                                 env=os.environ | {'PYTHONIOENCODING': 'cp1252'}, capture_output=True)

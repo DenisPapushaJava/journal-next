@@ -9,7 +9,7 @@ public partial class WorkflowViewModel
     private sealed record CardState(long Version, bool HasEdits, SpecificationDraft[] Drafts, Guid? SelectedDraftId,
         Guid? SelectedProjectId, string ManagerName, Guid? TechnologistId, string? Blcb,
         string Result, bool ResultExpanded, bool ResultStale, PlanState Plan, bool LetterOnly = false, int TabIndex = 0,
-        WorkflowOrder? SourceOrder = null);
+        WorkflowOrder? SourceOrder = null, string? GeneratedResult = null);
     private readonly Dictionary<Guid, CardState> _cards = [];
     private bool _selectingCard;
     public bool IsCardVisible => IsOrderOpen && !IsCreating;
@@ -20,9 +20,7 @@ public partial class WorkflowViewModel
     private void NotifyHeaderEdit() { OnPropertyChanged(nameof(HasPendingEdits)); OnPropertyChanged(nameof(HeaderSummary)); NotifyCuttingTask(); }
     private long CardVersion => _loadedOrderVersion ?? CurrentOrder?.Version ?? 0;
     private bool HasCurrentCardEdits => IsCreating ? !string.IsNullOrWhiteSpace(NewCustomer) || !string.IsNullOrWhiteSpace(NewManager) :
-        IsPlanning || Drafts.Any(d => d.IsDirty) || CurrentOrder is { } o &&
-        (!ManagerName.Trim().Equals(EmployeeName(o.ManagerId), StringComparison.OrdinalIgnoreCase) || Technologist?.Id != o.TechnologistId ||
-            (string.IsNullOrWhiteSpace(Blcb) ? null : Blcb.Trim()) != o.Blcb);
+        IsPlanning || Drafts.Any(d => d.IsDirty) || HasHeaderChanges;
     private bool HasDraftForOrder(Guid id) => id == _openOrderId && !IsCreating ? HasCurrentCardEdits :
         _cards.TryGetValue(id, out var state) && state.HasEdits;
 
@@ -32,7 +30,7 @@ public partial class WorkflowViewModel
         _cards[order.Id] = new(CardVersion, HasCurrentCardEdits, Drafts.ToArray(), SelectedDraft?.Id,
             SelectedProject?.Project.Id, ManagerName, Technologist?.Id, Blcb,
             ResultText, IsResultExpanded, ResultIsStale, new(IsPlanning, PlanMachine?.Id,
-                PlanThickness, _redoItem, _preparedProject), TabIndex: OrderTabIndex, SourceOrder: order);
+                PlanThickness, _redoItem, _preparedProject), TabIndex: OrderTabIndex, SourceOrder: order, GeneratedResult: _generatedResultText);
     }
     private void SwitchCard(WorkflowOrder order)
     {
@@ -59,6 +57,7 @@ public partial class WorkflowViewModel
         }
         SelectedProject = Projects.SingleOrDefault(p => p.Project.Id == state.SelectedProjectId);
         SelectedDraft = Drafts.SingleOrDefault(d => d.Id == state.SelectedDraftId) ?? Drafts.FirstOrDefault();
+        _generatedResultText = state.GeneratedResult;
         ResultText = state.Result; IsResultExpanded = state.ResultExpanded;
         OrderTabIndex = state.LetterOnly ? (state.ResultExpanded ? 1 : 0) : Math.Clamp(state.TabIndex, 0, 1);
         ResultIsStale = !string.IsNullOrWhiteSpace(state.Result) && (state.ResultStale || state.Version != order.Version);

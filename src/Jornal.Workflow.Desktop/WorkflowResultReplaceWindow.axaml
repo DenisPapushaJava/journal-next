@@ -1,0 +1,13 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="using:Jornal.Desktop.Controls" x:Class="Jornal.Workflow.Desktop.WorkflowResultReplaceWindow"
+        Title="Сформировать результат заново" Width="480" SizeToContent="Height" CanResize="False"
+        Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="24" Spacing="16">
+    <TextBlock Text="Заменить ручные правки?" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+    <TextBlock Text="Результат будет сформирован заново по сохранённым данным заявки. Текущий текст будет заменён." TextWrapping="Wrap" />
+    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <ui:JournalButton x:Name="KeepWorkflowResult" Label="Оставить текст" Click="OnKeep" />
+      <ui:JournalButton x:Name="ReplaceWorkflowResult" Label="Сформировать заново" Classes="primary" Click="OnReplace" />
+    </StackPanel>
+  </StackPanel>
+</Window>

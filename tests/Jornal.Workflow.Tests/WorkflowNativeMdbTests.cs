@@ -17,7 +17,7 @@ public sealed class WorkflowNativeMdbTests
             "src", "Jornal.Workflow.Desktop", "bin", "Release", "net10.0", "AccessHost", "Jornal.AccessHost.exe");
         Assert.True(File.Exists(executable), "Build the Windows Desktop project to prepare its self-contained x86 AccessHost.");
         using (var probe = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(executable, "--probe")
-            { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true })!)
+        { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true })!)
         {
             var error = probe.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
             var output = probe.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
@@ -107,6 +107,11 @@ public sealed class WorkflowNativeMdbTests
             await store.InspectAsync(TestContext.Current.CancellationToken); Assert.Single(Directory.GetFiles(directory, "*.schema-v1-*.bak"));
             var marked = await store.RecordShopHandoffAsync(order.Id, order.Version, actor, at, TestContext.Current.CancellationToken);
             Assert.True(marked.Orders.Single().HasCurrentShopHandoff); Assert.Equal(order.Version, marked.Orders.Single().Version);
+            Assert.Equal(marked.Version, await store.ReadBackgroundRevisionAsync(TestContext.Current.CancellationToken));
+            var background = await store.PrepareBackgroundReadAsync(TestContext.Current.CancellationToken);
+            Assert.True(store.TryAcceptBackgroundRead(background));
+            Assert.True(background.Workspace.Orders.Single().HasCurrentShopHandoff);
+            Assert.Single(Directory.GetFiles(directory, "*.schema-v1-*.bak"));
             book = await new WorkflowMdbStore(path, client, created.DatabaseId).ReadAsync(TestContext.Current.CancellationToken);
             Assert.True(book.Orders.Single().HasCurrentShopHandoff); order = book.Orders.Single();
             var secondName = WorkflowProjectNames.Name(machine, 8, at.AddSeconds(1)); var secondFolder = Path.Combine(directory, secondName);

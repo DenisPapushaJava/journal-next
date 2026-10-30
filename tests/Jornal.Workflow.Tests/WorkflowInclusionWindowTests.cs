@@ -48,11 +48,13 @@ public sealed class WorkflowInclusionWindowTests
             Assert.True(check.IsFocused); Assert.True(check.IsEffectivelyEnabled); Assert.False(check.IsHitTestVisible);
             Assert.False(check.IsChecked); Assert.True(target.IsIncluded); Assert.True(visualRow.Bounds.Height > 40);
             var newOrder = window.GetVisualDescendants().OfType<JournalButton>().Single(b => b.Label == "Новая заявка");
-            Assert.True(newOrder.IsEffectivelyEnabled); Assert.Equal(1, newOrder.Opacity);
+            Assert.False(newOrder.IsEffectivelyEnabled); Assert.True(ToolTip.GetShowOnDisabled(newOrder));
+            Assert.Contains("Дождитесь", ToolTip.GetTip(newOrder)?.ToString());
             window.KeyPress(Key.Space, RawInputModifiers.None, PhysicalKey.Space, null); Pump();
             Assert.False(check.IsChecked); Assert.Equal(1, gate.Calls);
             window.Close(); Assert.True(window.IsVisible); Save(window, dark, width, "pending");
             gate.Release.TrySetResult(); await Until(() => !f.Model.IsBusy); Pump();
+            Assert.True(newOrder.IsEffectivelyEnabled);
             Assert.Null(f.Model.Error); Assert.Empty(resets); Assert.DoesNotContain(false, enabledChanges);
             Assert.Same(check, Check(grid, target)); Assert.Same(visualRow, check.FindAncestorOfType<DataGridRow>());
             Assert.True(check.IsFocused); Assert.True(check.IsHitTestVisible); Assert.False(check.IsChecked);

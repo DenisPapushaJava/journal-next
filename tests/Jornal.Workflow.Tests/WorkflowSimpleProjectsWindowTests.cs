@@ -33,7 +33,7 @@ public sealed class WorkflowSimpleProjectsWindowTests
             var fields = window.FindControl<ScrollViewer>("WorkflowCalculationFields")!;
             var coefficient = window.FindControl<TextBox>("WorkflowCalculationCoefficient")!;
             var save = window.FindControl<Button>("SaveWorkflowSpecification")!;
-            Assert.Equal(new[] { "Проекты", "Письмо" }, window.FindControl<TabControl>("WorkflowOrderTabs")!.Items.OfType<TabItem>().Select(t => t.Header));
+            Assert.Equal(new[] { "Проекты", "Результат" }, window.FindControl<TabControl>("WorkflowOrderTabs")!.Items.OfType<TabItem>().Select(t => t.Header));
             Assert.Null(window.FindControl<DataGrid>("WorkflowSpecificationsGrid")); Assert.False(DragDrop.GetAllowDrop(window));
             Assert.DoesNotContain(window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ToggleButton>(), button => Equals(button.Content, "Текст"));
             Assert.DoesNotContain(window.GetVisualDescendants().OfType<JournalButton>(), button => button.Label is "Ручной ввод" or "Импорт вне проекта…" or "Сохранить тариф");
