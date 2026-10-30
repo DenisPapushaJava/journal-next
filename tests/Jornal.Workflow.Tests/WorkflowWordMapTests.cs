@@ -45,13 +45,14 @@ public sealed class WorkflowWordMapTests
 
     [Theory]
     [InlineData("")]
-    [InlineData("\r\a\n ")]
+    [InlineData("Пластины для цеха под Ханс")]
     [InlineData("(4 мм) 1029-121314, Юрченко, ЗПТО, БЛЦБ-009337")]
-    public void EmptyOrGeneratedCaptionCanBeReplaced(string caption) => WorkflowWordMapRules.RequireReplaceable(caption);
-
-    [Fact]
-    public void ManualInstructionIsPreservedForReview() => Assert.Throws<WorkflowValidationException>(() =>
-        WorkflowWordMapRules.RequireReplaceable("Пластины для цеха под Ханс"));
+    [InlineData("Любая ручная подпись\r\a")]
+    public void OnlyCommentValueIsSelectedRegardlessOfItsTextOrNotesElsewhere(string caption)
+    {
+        WordMapCell[] cells = [.. Table(comment: caption), new(7, 4, "Пометка технолога вне комментария")];
+        Assert.Equal([6], WorkflowWordMapRules.Comments([cells], Project)!);
+    }
 
     private sealed class Editor(Func<byte[], WordMapEdit?> edit) : IWorkflowWordMapEditor
     {

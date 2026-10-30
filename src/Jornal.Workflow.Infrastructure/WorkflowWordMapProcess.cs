@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Text.Json;
 using Jornal.Workflow.Core;
 
@@ -11,7 +10,6 @@ public sealed class WorkflowWordMapProcess(string executable, string? assembly =
     public const string Argument = "--workflow-word-map";
     internal sealed record Request(string ProjectFileName, string Caption);
     internal sealed record Response(bool Matched, bool Changed, int Pages, int ChangedCards, string? Error = null, bool Unavailable = false);
-    internal sealed record WordProcess(int Id, long StartedUtcTicks);
 
     public async Task<WordMapEdit?> PrepareAsync(byte[] source, string projectFileName, string caption, CancellationToken token)
     {
@@ -72,34 +70,11 @@ public sealed class WorkflowWordMapProcess(string executable, string? assembly =
                     }
                 }
                 catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or OperationCanceledException) { }
-                StopOwnedWord(folder);
             }
             try { Directory.Delete(folder, recursive: true); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* A busy temp copy is safer than touching the working map. */ }
         }
     }
-
-    private static void StopOwnedWord(string folder)
-    {
-        try
-        {
-            var path = Path.Combine(folder, "word-process.json");
-            if (!File.Exists(path) || new FileInfo(path).Length > 1024) return;
-            var stamp = JsonSerializer.Deserialize<WordProcess>(File.ReadAllText(path));
-            if (stamp is null) return;
-            using var process = Process.GetProcessById(stamp.Id);
-            // Recorded only after proving that this process did not exist before COM activation.
-            if (process.ProcessName.Equals("WINWORD", StringComparison.OrdinalIgnoreCase) &&
-                process.StartTime.ToUniversalTime().Ticks == stamp.StartedUtcTicks &&
-                (process.MainWindowHandle == IntPtr.Zero || !IsWindowVisible(process.MainWindowHandle))) process.Kill(entireProcessTree: false);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception) { }
-    }
-
-    [DllImport("user32.dll")]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool IsWindowVisible(IntPtr window);
 
     // Called from the STA entry point before Avalonia, diagnostics or the updater are initialized.
     public static int RunWorker(string folder)
