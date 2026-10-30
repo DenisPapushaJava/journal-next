@@ -14,6 +14,7 @@ internal sealed class MemoryMdb : IWorkflowAccessTransport, IWorkflowDatabaseSer
     public WorkflowWorkspace Book { get; set; } = WorkflowWorkspace.Empty;
     public long CatalogVersion { get; private set; }
     public List<WorkflowAccessRequest> Requests { get; } = [];
+    public void BumpCatalogVersion() => CatalogVersion++;
     public bool LoseNextWriteReply { get; set; }
     public bool FailOpen { get; set; }
     public bool IsAvailable => true;

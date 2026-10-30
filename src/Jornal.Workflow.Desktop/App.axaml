@@ -19,6 +19,7 @@
     <StyleInclude Source="avares://Jornal.Desktop/Themes/Inputs.axaml" />
     <StyleInclude Source="avares://Jornal.Desktop/Themes/Settings.axaml" />
     <StyleInclude Source="avares://Jornal.Desktop/Themes/Scrollbars.axaml" />
+    <StyleInclude Source="avares://Jornal.Desktop/Themes/ContextMenus.axaml" />
     <Style Selector="TextBlock.tabular, TextBox.tabular, Button.tabular, ComboBox.tabular">
       <Setter Property="TextElement.FontFeatures" Value="tnum" />
     </Style>

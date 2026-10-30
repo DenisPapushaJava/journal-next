@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <PackageReference Include="PDFsharp" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+    <EmbeddedResource Include="Fonts/LiberationSans-Regular.ttf" />
+    <None Include="../../docs/licenses/LiberationFonts.txt" Link="licenses/LiberationFonts.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../docs/licenses/PDFsharp.txt" Link="licenses/PDFsharp.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <InternalsVisibleTo Include="Jornal.Workflow.Tests" />
     <ProjectReference Include="../Jornal.Workflow.Core/Jornal.Workflow.Core.csproj" />
     <ProjectReference Include="../Jornal.Infrastructure/Jornal.Infrastructure.csproj" />

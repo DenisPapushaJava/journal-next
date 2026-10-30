@@ -53,6 +53,18 @@ public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, s
     public bool CanToggle => HasProjectActions && !IsDeleted && Project.Rename is null;
     public bool CanEdit => !IsDeleted && Saved is null && Project.NativePath is not null;
     public bool CanTrash => HasProjectActions && !IsDeleted && Project.Rename is null;
+    private string? _mapSigningBlock;
+    internal void ApplyMapSigningBlock(string? reason)
+    {
+        if (_mapSigningBlock == reason) return;
+        _mapSigningBlock = reason;
+        OnPropertyChanged(nameof(CanSignMaps)); OnPropertyChanged(nameof(MapSigningHint));
+    }
+    public bool CanSignMaps => _mapSigningBlock is null && HasProjectActions && !IsDeleted && Project.Rename is null && Project.NativePath is not null && Project.ImportProfile is "block-html/v1" or "hans-pdf/v1" or "waterjet-awjc/v1";
+    public string MapSigningHint => _mapSigningBlock ?? (CanSignMaps ? Project.ImportProfile == "hans-pdf/v1" ?
+        "Подписать DOC-карты проекта через установленный Microsoft Word в фоне" : Project.ImportProfile == "waterjet-awjc/v1" ?
+        "Подписать PDF-карты AWJC в графе «НОМЕР ЗАКАЗА»" : "Подписать все PDF-карты проекта в графе «Комментарий»" :
+        "Поддерживаются PDF БЛОК/AWJC и DOC HansLaser через Microsoft Word");
     public string EditCaption => Project.Rename is null ? "Изменить параметры…" : "Завершить изменение…";
     public string InclusionHint => IsLegacyCalculation ? "Ранее сохранённый расчёт без проекта" : $"Учитывать позицию {ItemNumber} в сумме, письме и комплектности заявки. Отметка общая для её вариантов.";
     public string State => IsDeleted ? "В корзине · файлы сохранены" : Project.Rename is not null ? "Изменение не завершено · откройте параметры" :
@@ -121,13 +133,13 @@ public partial class WorkflowViewModel
     [ObservableProperty] private bool _resultIsStale;
     [ObservableProperty] private bool _isResultExpanded;
     [ObservableProperty] private int _orderTabIndex;
-    partial void OnOrderTabIndexChanged(int value) => IsResultExpanded = value == 1;
+    partial void OnOrderTabIndexChanged(int value) { IsResultExpanded = value == 1; OnPropertyChanged(nameof(IsResultTab)); }
     partial void OnIsResultExpandedChanged(bool value)
     {
         if (value) OrderTabIndex = 1;
         else if (OrderTabIndex == 1) OrderTabIndex = 0;
     }
-    partial void OnResultTextChanged(string value) { if (value.Length > 0) IsResultExpanded = true; }
+    partial void OnResultTextChanged(string value) => ResultTextEdited(value);
     private Guid? _redoItem;
     private CuttingProject? _preparedProject;
     public bool CanEditPlan => _preparedProject is null;
@@ -142,7 +154,7 @@ public partial class WorkflowViewModel
         order.ActiveProjects.Any(p => p.ItemId == item.Id) &&
         (!order.ActiveProjects.Any(p => p.Id == item.CurrentProjectId) ||
          order.ActiveProjects.Any(p => p.ItemId == item.Id && p.Variant > item.ReviewedThroughVariant)));
-    [RelayCommand] private void AddProject()
+    [RelayCommand(CanExecute = nameof(CanAddProject))] private void AddProject()
     {
         if (!CanUse || !IsCurrentOrderActive) return;
         if (CurrentOrder?.HasProjectRename == true) { Error = "Сначала завершите изменение параметров проекта."; return; }
@@ -159,14 +171,14 @@ public partial class WorkflowViewModel
         PlanThickness = row.Thickness;
         IsPlanning = true; OnPropertyChanged(nameof(PlanTitle)); Error = null;
     }
-    [RelayCommand] private void CancelPlanning()
+    [RelayCommand(CanExecute = nameof(CanCancelPlanning))] private void CancelPlanning()
     {
         if (!CanUse) return;
         if (_preparedProject is { } prepared)
         { Error = "Заготовка уже создана: " + prepared.NativePath + ". Повторите сохранение проекта."; return; }
         IsPlanning = false;
     }
-    [RelayCommand] private async Task CreateProjectAsync()
+    [RelayCommand(CanExecute = nameof(CanCreateProject))] private async Task CreateProjectAsync()
     {
         if (!CanUse || !IsCurrentOrderActive || CurrentOrder is not { IsDeleted: false } order) return;
         await RunAsync(async () =>
@@ -217,9 +229,19 @@ public partial class WorkflowViewModel
     {
         OnPropertyChanged(nameof(PlannedName));
         OnPropertyChanged(nameof(PlanThicknessSuggestions));
+        NotifyPlanActions();
     }
+    partial void OnPlanThicknessChanged(string value) => NotifyPlanActions();
     partial void OnIsPlanningChanged(bool value) { OnPropertyChanged(nameof(HasPendingEdits)); NotifyProjectCalculation(); NotifyCuttingTask(); }
     private void MarkResultStale() { if (!string.IsNullOrWhiteSpace(ResultText)) ResultIsStale = true; }
+    private void NotifyProjectMachines()
+    {
+        var selected = PlanMachine?.Id;
+        OnPropertyChanged(nameof(ProjectMachines));
+        // Updating ItemsSource may clear the two-way selection. Restore by stable ID.
+        PlanMachine = _workspace.Machines.SingleOrDefault(m => m.Id == selected);
+        OnPropertyChanged(nameof(PlanThicknessSuggestions));
+    }
     private void RefreshProjects(Guid? select = null)
     {
         var id = select ?? SelectedDraft?.Id ?? SelectedProject?.Project.Id;
@@ -252,12 +274,12 @@ public partial class WorkflowViewModel
         finally { _refreshingProjects = false; }
         NotifyShopFolderPaths();
         SelectedDraft = SelectedProject is { IsDeleted: false } selected ? Drafts.SingleOrDefault(d => d.Id == selected.Project.Id) : null;
-        OnPropertyChanged(nameof(ProjectMachines)); OnPropertyChanged(nameof(ProjectsStatus)); NotifyCompleteness();
+        NotifyProjectMachines(); OnPropertyChanged(nameof(ProjectsStatus)); NotifyCompleteness();
         OnPropertyChanged(nameof(IsProjectListEmpty)); OnPropertyChanged(nameof(NeedsProjectRoot));
         OnPropertyChanged(nameof(ProjectTrashCaption)); OnPropertyChanged(nameof(HasPendingEdits));
         NotifyProjectCalculation();
-        OnPropertyChanged(nameof(PlanThicknessSuggestions));
         OnPropertyChanged(nameof(CustomerSuggestions));
         NotifyProfile();
+        NotifyMapSigning();
     }
 }

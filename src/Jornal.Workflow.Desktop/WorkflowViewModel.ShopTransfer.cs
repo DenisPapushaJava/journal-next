@@ -38,7 +38,7 @@ public partial class WorkflowViewModel
     {
         if (!CanCopyCuttingTask || CurrentOrder is not { } order) return null;
         _cuttingTaskSource = _store; _cuttingTaskOrderId = order.Id; NotifyCuttingTask();
-        if (!TaskPreview.IsReady) return null;
+        if (!TaskPreview.IsReady || string.IsNullOrWhiteSpace(CuttingTaskText)) return null;
         if (ShopRoot is not { } root) { Error = "Укажите папку заданий в цех: Настройки → Хранилище."; return null; }
         Error = null;
         var source = _store; var snapshot = _workspace; var epoch = _cuttingTaskEpoch; var text = TaskPreview.Text;
@@ -80,6 +80,14 @@ public partial class WorkflowViewModel
             _workspace = saved;
             RefreshOrders(preserveRows: true); NotifyOrder();
         }
-        return new(root, sourceId, order, snapshot, Validate, clipboard, Transferred, Record);
+        async Task CopyText(string value)
+        {
+            var text = CuttingTaskText;
+            if (string.IsNullOrWhiteSpace(text) || !IsCurrentCuttingTaskCopy(source, order, epoch, value, text))
+                throw new WorkflowValidationException("Проверьте текст задания перед копированием.");
+            await clipboard(text);
+            RememberCuttingTaskCopy(source, order, epoch, value, text);
+        }
+        return new(root, sourceId, order, snapshot, Validate, CopyText, Transferred, Record);
     }
 }

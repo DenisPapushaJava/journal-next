@@ -86,7 +86,7 @@ public sealed class ProjectWorkflowTests
         Assert.Equal(1, order.PendingProjectCount); Assert.Equal(2, order.Items.Length);
         var report = Assert.IsType<AcceptedReport>(spec.Current.Report);
         Assert.Equal(await File.ReadAllBytesAsync(ProjectFixture.ReportPath(a), TestContext.Current.CancellationToken), await File.ReadAllBytesAsync(report.ArchivePath, TestContext.Current.CancellationToken));
-        f.Model.GenerateResultCommand.Execute(null); Assert.NotNull(f.Model.Error); Assert.Empty(f.Model.ResultText);
+        f.Model.GenerateResultCommand.Execute(null); Assert.True(f.Model.HasResultStatusError); Assert.NotEmpty(f.Model.ResultStatus); Assert.Empty(f.Model.ResultText);
     }
 
     [Fact]

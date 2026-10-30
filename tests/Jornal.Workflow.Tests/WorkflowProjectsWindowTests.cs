@@ -74,6 +74,16 @@ public sealed class WorkflowProjectsWindowTests
             Dispatcher.UIThread.RunJobs();
             InWindow(window.FindControl<Control>("WorkflowProjectThickness")!, window);
             InWindow(window.FindControl<ComboBox>("WorkflowProjectMachine")!, window);
+            var machineInput = window.FindControl<ComboBox>("WorkflowProjectMachine")!;
+            var thicknessInput = window.FindControl<Control>("WorkflowProjectThickness")!;
+            Assert.True(machineInput.Bounds.Width < window.FindControl<Border>("WorkflowProjectPlan")!.Bounds.Width / 2);
+            Assert.True(thicknessInput.Bounds.Width < machineInput.Bounds.Width / 2);
+            var create = window.FindControl<Button>("CreateWorkflowProject")!; var cancel = window.FindControl<Button>("CancelWorkflowProjectPlan")!;
+            InWindow(create, window); InWindow(cancel, window);
+            Assert.Equal(Bounds(machineInput, window).Top, Bounds(thicknessInput, window).Top);
+            Assert.Equal(Bounds(machineInput, window).Top, Bounds(create, window).Top);
+            Assert.True(Bounds(machineInput, window).Right < Bounds(thicknessInput, window).Left);
+            Assert.True(Bounds(thicknessInput, window).Right < Bounds(create, window).Left);
             Assert.Null(window.FindControl<Control>("WorkflowProjectMaterial"));
             InWindow(window.FindControl<Button>("RefreshWorkflowReports")!, window);
             Assert.True(window.FindControl<DataGrid>("WorkflowOrdersGrid")!.IsEffectivelyVisible);

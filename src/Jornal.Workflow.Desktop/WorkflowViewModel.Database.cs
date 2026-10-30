@@ -36,6 +36,7 @@ public partial class WorkflowViewModel
     }
     private void NotifyDatabase()
     {
+        NotifyResultState();
         foreach (var name in new[] { nameof(WorkspacePath), nameof(IsMdb), nameof(CanConnectDatabase), nameof(DatabaseDescription),
             nameof(HasMoreOrders), nameof(RequiresDatabaseRefresh) }) OnPropertyChanged(name);
         NotifyOrderList(); OnPropertyChanged(nameof(TrashCaption));
@@ -78,7 +79,7 @@ public partial class WorkflowViewModel
             _reportReview = null; _reportImportOrderId = null;
             ResetCuttingTask(); _bendingFolderFailures = null;
             _cards.Clear(); SelectedOrder = null; _connection = new(candidate, saved.EmployeeId); _workspace = workspace;
-            _localPreferences = saved; _hasLoadedOrders = true;
+            _localPreferences = saved; _hasLoadedOrders = true; RecordListedSnapshot(workspace);
             _refreshing = true;
             try { Search = ""; FilterDate = null; } finally { _refreshing = false; }
             RefreshEmployees(saved.EmployeeId); Technologist = CurrentEmployee; NotifyEntrySuggestions();
@@ -100,6 +101,7 @@ public partial class WorkflowViewModel
     }
     private void CancelDatabaseSearch()
     {
+        CancelBackgroundRefresh(); _searchPending = false;
         ++_searchGeneration;
         var cancellation = _databaseSearch; _databaseSearch = null;
         cancellation?.Cancel(); cancellation?.Dispose();
@@ -107,13 +109,13 @@ public partial class WorkflowViewModel
     private void ScheduleDatabaseSearch()
     {
         if (_store is not IWorkflowQueryStore) return;
-        CancelDatabaseSearch(); ConfigureDatabaseQuery(); NotifyDatabase(); _databaseSearch = new();
+        CancelDatabaseSearch(); ConfigureDatabaseQuery(); NotifyDatabase(); _databaseSearch = new(); _searchPending = true;
         _ = SearchDatabaseAsync(_databaseSearch.Token, _searchGeneration, false);
     }
     public async Task SearchDatabaseNowAsync()
     {
         if (_store is not IWorkflowQueryStore) return;
-        CancelDatabaseSearch(); ConfigureDatabaseQuery(); NotifyDatabase(); _databaseSearch = new();
+        CancelDatabaseSearch(); ConfigureDatabaseQuery(); NotifyDatabase(); _databaseSearch = new(); _searchPending = true;
         await SearchDatabaseAsync(_databaseSearch.Token, _searchGeneration, true);
     }
     private async Task SearchDatabaseAsync(CancellationToken token, long generation, bool immediate)
@@ -131,6 +133,7 @@ public partial class WorkflowViewModel
         {
             if (generation == _searchGeneration) Error = ex is WorkflowValidationException or WorkflowConflictException ? ex.Message : "Не удалось прочитать заявки. Проверьте доступ к MDB и обновите журнал.";
         }
+        finally { if (generation == _searchGeneration) _searchPending = false; }
     }
     [RelayCommand]
     private async Task LoadMoreOrdersAsync()
@@ -150,13 +153,13 @@ public partial class WorkflowViewModel
             var book = more ? await store.ReadMoreAsync(token) : await store.ReadAsync(token);
             if (generation != _searchGeneration || !ReferenceEquals(source, _store)) return;
             CaptureCard(); var state = _openOrderId is { } id ? _cards.GetValueOrDefault(id) : null;
-            _loadedOrderSnapshot = CurrentOrder; _workspace = book; _hasLoadedOrders = true;
+            _loadedOrderSnapshot = CurrentOrder; _workspace = book; _hasLoadedOrders = true; if (!more) RecordListedSnapshot(book);
             RefreshEmployees(CurrentEmployee?.Id); RefreshOrders(preserveRows: true); NotifyPriceCatalog();
             if (!IsCreating && CurrentOrder is { } order)
             { LoadOrder(order); if (state is not null) RestoreCard(order, state); }
             NotifyDatabase();
             await RememberStartupProfileAsync();
         }
-        finally { _readingDatabase = false; OnPropertyChanged(nameof(CanUse)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList(); NotifyCuttingTask(); }
+        finally { _readingDatabase = false; OnPropertyChanged(nameof(CanUse)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList(); NotifyCuttingTask(); NotifyResultState(); }
     }
 }

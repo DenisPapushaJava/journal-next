@@ -9,7 +9,7 @@ public sealed class WorkflowCuttingTaskFlowTests
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
     [Fact]
-    public async Task TaskIsReadOnlyAndUnsavedChangesNeverReachClipboard()
+    public async Task TaskUsesSavedDataAndUnsavedOrderChangesNeverReachClipboard()
     {
         using var f = new ProjectFixture(); await f.InitializeAsync(); var p = await f.AddAsync(); await ProjectFixture.WriteAsync(p); await f.AcceptAsync();
         var copies = new List<string>();
@@ -26,6 +26,26 @@ public sealed class WorkflowCuttingTaskFlowTests
         await f.Model.SaveSpecificationCommand.ExecuteAsync(null);
         Assert.DoesNotContain("Задание скопировано", f.Model.CuttingTaskNotice);
         await f.Model.CopyCuttingTaskAsync(text => { copies.Add(text); return Task.CompletedTask; }); Assert.Contains("ФАСКА", copies[1]);
+    }
+
+    [Fact]
+    public async Task EditedMessageCopiesExactlyAndEmptyTextNeverStartsTransferOrReachesClipboard()
+    {
+        using var f = new ProjectFixture(); await f.InitializeAsync(); var p = await f.AddAsync(); await ProjectFixture.WriteAsync(p); await f.AcceptAsync();
+        f.Model.Blcb = "9337"; await f.Model.SaveHeaderCommand.ExecuteAsync(null);
+        var original = f.Model.CuttingTaskText; var before = JsonSerializer.Serialize(await f.Store.ReadAsync(Token));
+        var edited = original + "Дополнительная пометка\n"; f.Model.CuttingTaskText = edited;
+        string? copied = null;
+        await f.Model.CopyCuttingTaskAsync(text => { copied = text; return Task.CompletedTask; });
+        Assert.Equal(edited, copied); Assert.True(f.Model.HasCuttingTaskTextEdits);
+        await f.Model.CopyCuttingTaskAsync(_ => throw new IOException("clipboard"));
+        Assert.Equal(edited, f.Model.CuttingTaskText); Assert.Contains("Не удалось", f.Model.CuttingTaskNotice);
+        f.Model.CuttingTaskText = " \n"; copied = null;
+        Assert.False(f.Model.CanCopyCuttingTaskText); Assert.Contains("Введите текст", f.Model.CuttingTaskNotice);
+        await f.Model.CopyCuttingTaskAsync(text => { copied = text; return Task.CompletedTask; }); Assert.Null(copied);
+        Assert.Null(f.Model.CreateShopTransfer(_ => throw new InvalidOperationException("Must not transfer")));
+        f.Model.ResetCuttingTaskTextCommand.Execute(null); Assert.Equal(original, f.Model.CuttingTaskText); Assert.False(f.Model.HasCuttingTaskTextEdits);
+        Assert.Equal(before, JsonSerializer.Serialize(await f.Store.ReadAsync(Token))); Assert.Null(f.Model.ShopTransfer);
     }
 
     [Fact]

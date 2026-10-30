@@ -11,8 +11,9 @@ public partial class WorkflowViewModel
     private Guid? _reportImportOrderId;
     private int _acceptedReports;
     private bool HasPendingReportEdits => _reportReview?.Review.Candidates.Any(c => !c.WasAccepted && c.Draft?.IsDirty == true) == true;
+    // A newer order version must not hide its retained review draft.
     private WorkflowReportReviewViewModel? CurrentReportReview => _reportReview is { } session &&
-        CurrentOrder is { } order && session.OrderId == order.Id && session.Review.PreviewOrderVersion == order.Version ? session.Review : null;
+        CurrentOrder is { } order && session.OrderId == order.Id ? session.Review : null;
     public bool HasReportImportNotice => CurrentOrder is { } order && _reportImportOrderId == order.Id && _acceptedReports > 0;
     public string AcceptedReportsCaption => $"Принято {_acceptedReports}";
     public string ReportImportNotice => !HasReportImportNotice ? "" : $"Принято {_acceptedReports}" +
@@ -32,7 +33,10 @@ public partial class WorkflowViewModel
         {
             var latest = await _store.ReadOrderAsync(order.Id, token); var latestOrder = latest.Orders.Single(o => o.Id == order.Id);
             if (previous is not null && latestOrder.Version != previous.PreviewOrderVersion)
-                throw new WorkflowValidationException("Заявка изменена в другом окне. Текущий подбор сохранён; для новой проверки закройте сводку и обновите заявку через F5.");
+            {
+                // Reopen the original draft for inspection; never rebase it silently.
+                previous.MarkOrderChanged(); review = previous; return;
+            }
             _workspace = latest; order = latestOrder; RefreshOrders(); LoadOrder(order);
             if (order.IsDeleted || order.HasProjectRename) throw new WorkflowValidationException("Подбор недоступен: заявка в корзине или изменение проекта не завершено.");
             var snapshot = _workspace; var actor = ActorId();

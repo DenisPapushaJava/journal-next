@@ -73,6 +73,7 @@ public sealed class WorkflowShopTransferWindowTests
         await f.Model.SaveShopRootAsync(null, Path.Combine(f.DirectoryPath, "shop"), Token);
         await File.WriteAllTextAsync(Path.Combine(Path.GetDirectoryName(project.NativePath!)!, "Лист.cnc"), "UP", Token);
         await File.WriteAllTextAsync(Path.Combine(Path.GetDirectoryName(project.NativePath!)!, "Карта.pdf"), "Map", Token);
+        f.Model.CuttingTaskText += "Проверить кромку перед резкой";
         var preferences = new WorkflowPreferencesStore(Path.Combine(f.DirectoryPath, "preferences.json"));
         var window = new RecordingWindow(preferences) { DataContext = f.Model };
         try
@@ -87,7 +88,18 @@ public sealed class WorkflowShopTransferWindowTests
             Assert.Null(window.Copied); Assert.False(Directory.Exists(f.Model.ShopRoot));
             var row = Assert.Single(model.Projects); foreach (var file in row.Files) file.IsSelected = true; row.Reviewed = true;
             await model.CopyAsync(); Assert.True(model.AllPrepared); Assert.NotEmpty(window.Copied!); Assert.Null(model.Error);
+            Assert.EndsWith("Проверить кромку перед резкой", window.Copied);
             Assert.True(File.Exists(Path.Combine(row.Destination, "Лист.cnc"))); dialog.Close();
+            Assert.Contains("Задание скопировано", f.Model.CuttingTaskNotice);
+            var toggle = window.FindControl<Button>("ToggleWorkflowCuttingTaskPreview")!;
+            Assert.True(toggle.IsEffectivelyVisible); toggle.Flyout!.ShowAt(toggle); Pump();
+            Assert.Equal(window.Copied, window.FindControl<TextBox>("WorkflowCuttingTaskPreview")!.Text);
+            var before = await f.Store.ReadAsync(Token); var stamp = File.GetLastWriteTimeUtc(Path.Combine(row.Destination, "Лист.cnc"));
+            window.FindControl<Button>("CopyWorkflowTaskPreviewText")!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            await Until(() => !f.Model.IsCopyingCuttingTask);
+            Assert.Same(model, f.Model.ShopTransfer); Assert.True(model.AllPrepared);
+            Assert.Equal(before.Version, (await f.Store.ReadAsync(Token)).Version);
+            Assert.Equal(stamp, File.GetLastWriteTimeUtc(Path.Combine(row.Destination, "Лист.cnc")));
         }
         finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); }
     }

@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Jornal.Workflow.Core;
 using Jornal.Workflow.Infrastructure;
 
@@ -13,17 +14,37 @@ public partial class WorkflowViewModel
     private string? _cuttingTaskCopyError;
     private bool _cuttingTaskDetached;
     private long _cuttingTaskEpoch;
+    private sealed record CuttingTaskEdit(IWorkflowWorkspaceStore Source, Guid OrderId, long Version, string Generated, string Text);
+    private CuttingTaskEdit? _cuttingTaskEdit;
     [ObservableProperty] private bool _isCopyingCuttingTask;
-    public bool CanCopyCuttingTask => CanUse && IsCurrentOrderActive && !IsCopyingCuttingTask;
+    public bool CanCopyCuttingTask => CanUse && IsCurrentOrderActive && !IsCopyingCuttingTask && !_isCopyingResult;
+    public bool CanSendToWork => CanCopyCuttingTask && !IsCreating && AuthorProblem is null && TaskPreview.IsReady && !string.IsNullOrWhiteSpace(CuttingTaskText);
+    public string SendToWorkHint => !CanCopyCuttingTask ? "Дождитесь завершения операции или откройте активную заявку." : AuthorProblem ??
+        TaskPreview.Problem?.Message ?? (string.IsNullOrWhiteSpace(CuttingTaskText) ? "Введите текст задания в цех." :
+        ShopRoot is null ? "Выбрать папку цеха в настройках и подготовить задание" : "Проверить УП и карты, подготовить файлы и скопировать текст задания");
+    public bool CanCopyCuttingTaskText => CanCopyCuttingTask && HasCuttingTaskText && !string.IsNullOrWhiteSpace(CuttingTaskText);
     public bool IsCuttingTaskVisible => ReferenceEquals(_cuttingTaskSource, _store) && CurrentOrder?.Id == _cuttingTaskOrderId;
-    public string CuttingTaskText => TaskPreview.Text;
+    public string CuttingTaskText
+    {
+        get => _cuttingTaskEdit?.Text ?? TaskPreview.Text;
+        set
+        {
+            if (!CanCopyCuttingTask || !TaskPreview.IsReady || CurrentOrder is not { } order || value == CuttingTaskText) return;
+            _cuttingTaskEdit = value == TaskPreview.Text ? null : new(_store, order.Id, order.Version, TaskPreview.Text, value ?? "");
+            _copiedCuttingTask = null; _cuttingTaskCopyError = null; NotifyCuttingTaskText();
+        }
+    }
+    public bool HasCuttingTaskTextEdits => _cuttingTaskEdit is not null;
     public bool HasCuttingTaskText => TaskPreview.IsReady;
-    public bool IsCuttingTaskReadyVisible => IsCuttingTaskVisible && HasCuttingTaskText && ShopTransfer is null;
+    private bool HasCurrentCuttingTaskCopy => _copiedCuttingTask is { } copied && copied.OrderId == CurrentOrder?.Id &&
+        copied.Version == CurrentOrder.Version && copied.Text == CuttingTaskText;
+    public bool HasCuttingTaskCopyFeedback => IsCuttingTaskVisible && HasCuttingTaskText && ShopTransfer is null &&
+        (_cuttingTaskCopyError is not null || HasCurrentCuttingTaskCopy);
     public bool IsCuttingTaskProblemVisible => IsCuttingTaskVisible && !HasCuttingTaskText;
     public bool CanGoToCuttingTaskProblem => TaskPreview.Problem is { Target: not CuttingTaskTarget.None };
     public string CuttingTaskNotice => TaskPreview.Problem?.Message ?? _cuttingTaskCopyError ??
-        (_copiedCuttingTask is { } copied && copied.OrderId == CurrentOrder?.Id && copied.Version == CurrentOrder.Version && copied.Text == TaskPreview.Text ?
-            "Задание скопировано" : "Текст задания готов");
+        (string.IsNullOrWhiteSpace(CuttingTaskText) ? "Введите текст задания." :
+        HasCurrentCuttingTaskCopy ? "Задание скопировано" : HasCuttingTaskTextEdits ? "Текст задания изменён" : "Текст задания готов");
     public string CuttingTaskActionCaption => TaskPreview.Problem?.Target switch
     {
         CuttingTaskTarget.Header => "Открыть реквизиты", CuttingTaskTarget.Project => "Перейти к проекту",
@@ -38,8 +59,7 @@ public partial class WorkflowViewModel
         if (!IsCurrentOrderActive || IsCurrentCardStale || RequiresDatabaseRefresh)
             return Block("Проверьте изменения заявки и обновите журнал (F5).", CuttingTaskTarget.Refresh);
         if (IsPlanning) return Block("Создайте проект или отмените ввод его параметров.", CuttingTaskTarget.Projects);
-        if (!ManagerName.Trim().Equals(EmployeeName(order.ManagerId), StringComparison.OrdinalIgnoreCase) ||
-            (string.IsNullOrWhiteSpace(Blcb) ? null : Blcb.Trim()) != order.Blcb || Technologist?.Id != order.TechnologistId)
+        if (HasHeaderChanges)
             return Block("Сохраните или отмените изменения реквизитов.", CuttingTaskTarget.Header);
         if (Drafts.FirstOrDefault(d => d.IsDirty) is { } draft)
             return Block("Сохраните или отмените изменения расчёта.", CuttingTaskTarget.Project, draft.Id);
@@ -49,9 +69,27 @@ public partial class WorkflowViewModel
     }
     private void NotifyCuttingTask()
     {
+        NotifyMapSigning();
         _cuttingTaskPreview = null;
-        foreach (var name in new[] { nameof(CanCopyCuttingTask), nameof(IsCuttingTaskVisible), nameof(CuttingTaskText), nameof(HasCuttingTaskText),
-            nameof(IsCuttingTaskReadyVisible), nameof(IsCuttingTaskProblemVisible), nameof(CanGoToCuttingTaskProblem), nameof(CuttingTaskNotice), nameof(CuttingTaskActionCaption), nameof(HasShopTransfer) }) OnPropertyChanged(name);
+        if (_cuttingTaskEdit is { } edit && (!ReferenceEquals(edit.Source, _store) || CurrentOrder?.Id != edit.OrderId ||
+            CurrentOrder.Version != edit.Version || TaskPreview.IsReady && TaskPreview.Text != edit.Generated))
+        { _cuttingTaskEdit = null; _copiedCuttingTask = null; _cuttingTaskCopyError = null; }
+        foreach (var name in new[] { nameof(CanCopyCuttingTask), nameof(CanCopyCuttingTaskText), nameof(IsCuttingTaskVisible), nameof(CuttingTaskText), nameof(HasCuttingTaskText),
+            nameof(CanSendToWork), nameof(SendToWorkHint), nameof(HasCuttingTaskTextEdits), nameof(HasCuttingTaskCopyFeedback), nameof(IsCuttingTaskProblemVisible), nameof(CanGoToCuttingTaskProblem), nameof(CuttingTaskNotice), nameof(CuttingTaskActionCaption), nameof(HasShopTransfer) }) OnPropertyChanged(name);
+        NotifyActionAvailability();
+    }
+
+    private void NotifyCuttingTaskText()
+    {
+        foreach (var name in new[] { nameof(CuttingTaskText), nameof(HasCuttingTaskTextEdits), nameof(CanCopyCuttingTaskText), nameof(CanSendToWork), nameof(SendToWorkHint),
+            nameof(HasCuttingTaskCopyFeedback), nameof(CuttingTaskNotice) }) OnPropertyChanged(name);
+    }
+
+    [RelayCommand]
+    private void ResetCuttingTaskText()
+    {
+        if (!CanCopyCuttingTask || !HasCuttingTaskText) return;
+        _cuttingTaskEdit = null; _copiedCuttingTask = null; _cuttingTaskCopyError = null; NotifyCuttingTaskText();
     }
     private void ResetCuttingTask()
     {
@@ -59,26 +97,36 @@ public partial class WorkflowViewModel
         _cuttingTaskEpoch++; _cuttingTaskSource = null; _cuttingTaskOrderId = null; _copiedCuttingTask = null; _cuttingTaskCopyError = null;
         NotifyCuttingTask();
     }
-    partial void OnIsCopyingCuttingTaskChanged(bool value) => OnPropertyChanged(nameof(CanCopyCuttingTask));
+    partial void OnIsCopyingCuttingTaskChanged(bool value)
+    { OnPropertyChanged(nameof(CanCopyCuttingTask)); OnPropertyChanged(nameof(CanCopyCuttingTaskText)); OnPropertyChanged(nameof(CanSendToWork)); OnPropertyChanged(nameof(SendToWorkHint)); NotifyResultState(); }
+
+    private bool IsCurrentCuttingTaskCopy(IWorkflowWorkspaceStore source, WorkflowOrder order, long epoch, string generated, string text) =>
+        !_cuttingTaskDetached && epoch == _cuttingTaskEpoch && ReferenceEquals(source, _store) && CurrentOrder?.Id == order.Id &&
+        CurrentOrder.Version == order.Version && PrepareCuttingTask() is { IsReady: true } current && current.Text == generated && CuttingTaskText == text;
+
+    private void RememberCuttingTaskCopy(IWorkflowWorkspaceStore source, WorkflowOrder order, long epoch, string generated, string text)
+    {
+        if (!IsCurrentCuttingTaskCopy(source, order, epoch, generated, text)) return;
+        _copiedCuttingTask = (order.Id, order.Version, text); _cuttingTaskCopyError = null;
+        NotifyCuttingTask();
+    }
 
     public async Task CopyCuttingTaskAsync(Func<string, Task> writeClipboard)
     {
         if (!CanCopyCuttingTask || CurrentOrder is not { } order) return;
         _cuttingTaskSource = _store; _cuttingTaskOrderId = order.Id; _cuttingTaskCopyError = null; _copiedCuttingTask = null;
         NotifyCuttingTask();
-        if (!TaskPreview.IsReady) return;
-        var text = TaskPreview.Text; var source = _store; var version = order.Version; var epoch = _cuttingTaskEpoch;
+        if (!TaskPreview.IsReady || string.IsNullOrWhiteSpace(CuttingTaskText)) return;
+        var generated = TaskPreview.Text; var text = CuttingTaskText; var source = _store; var epoch = _cuttingTaskEpoch;
         IsCopyingCuttingTask = true;
-        bool StillCurrent() => !_cuttingTaskDetached && epoch == _cuttingTaskEpoch && ReferenceEquals(source, _store) && CurrentOrder?.Id == order.Id &&
-            CurrentOrder.Version == version && PrepareCuttingTask() is { IsReady: true } current && current.Text == text;
         try
         {
             await writeClipboard(text);
-            if (StillCurrent()) _copiedCuttingTask = (order.Id, version, text);
+            RememberCuttingTaskCopy(source, order, epoch, generated, text);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            if (StillCurrent()) _cuttingTaskCopyError = "Не удалось скопировать задание. Повторите копирование.";
+            if (IsCurrentCuttingTaskCopy(source, order, epoch, generated, text)) _cuttingTaskCopyError = "Не удалось скопировать задание. Повторите копирование.";
             Jornal.Infrastructure.Diagnostics.AppDiagnostics.Capture(Jornal.Infrastructure.Diagnostics.DiagnosticOperation.Unexpected, ex);
         }
         finally { IsCopyingCuttingTask = false; NotifyCuttingTask(); }

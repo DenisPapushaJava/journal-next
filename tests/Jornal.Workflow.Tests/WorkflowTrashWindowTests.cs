@@ -14,8 +14,10 @@ namespace Jornal.Workflow.Tests;
 public sealed class WorkflowTrashWindowTests
 {
     [AvaloniaTheory]
-    [InlineData(false, 1366)] [InlineData(true, 1366)]
-    [InlineData(false, 1180)] [InlineData(true, 1180)]
+    [InlineData(false, 1366)]
+    [InlineData(true, 1366)]
+    [InlineData(false, 1180)]
+    [InlineData(true, 1180)]
     public async Task ConfirmationRestoreAndForeignDeletedDraftFitBothThemesWithoutLosingData(bool dark, int width)
     {
         using var log = new BindingLog(); using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync();
@@ -72,6 +74,11 @@ public sealed class WorkflowTrashWindowTests
             InWindow(window.FindControl<Border>("WorkflowCardReview")!, window);
             Save(window, dark, width, "workflow-trash-draft-review");
             Click(window, "DiscardWorkflowCardChanges"); Dispatcher.UIThread.RunJobs();
+            var decision = Assert.IsType<WorkflowProjectActionWindow>(Assert.Single(window.OwnedWindows));
+            Click(decision, "CancelProjectAction"); Assert.True(f.Model.HasCardReview); Assert.Same(draft, f.Model.SelectedDraft);
+            Click(window, "DiscardWorkflowCardChanges"); Dispatcher.UIThread.RunJobs();
+            decision = Assert.IsType<WorkflowProjectActionWindow>(Assert.Single(window.OwnedWindows));
+            Click(decision, "ConfirmProjectAction"); await Until(() => !f.Model.HasCardReview && !f.Model.IsBusy && window.OwnedWindows.Count == 0);
             Assert.False(f.Model.HasCardReview); Assert.Equal("1", f.Model.SelectedDraft!.Coefficient);
             Assert.True(log.Errors.Count == 0, string.Join("\n", log.Errors.Distinct().Take(12)));
 

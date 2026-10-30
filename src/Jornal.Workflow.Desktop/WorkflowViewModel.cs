@@ -95,7 +95,6 @@ public partial class WorkflowViewModel : ObservableObject
     public bool IsOrderOpen => _openOrderId is not null;
     public bool HasSelectedDraft => SelectedDraft is not null;
     public bool HasAcceptedReport => SelectedDraft?.Saved?.Report is not null;
-    private bool CanSaveSpecification => CanUse && IsCurrentOrderActive && !IsCurrentCardStale && SelectedDraft?.CanSave == true;
     public bool CanUse => !IsBusy && !_readingDatabase && !_savingProjectInclusion && !Updates.IsApplying;
     public bool CanBrowseWorkspace => (!IsBusy || _savingProjectInclusion) && !Updates.IsApplying;
     public bool HasPendingEdits => HasCurrentCardEdits || HasPendingReportEdits || _workspace.Orders.Any(o => o.HasProjectRename) ||
@@ -109,9 +108,12 @@ public partial class WorkflowViewModel : ObservableObject
         (_loadedOrderSnapshot?.Id == id ? _loadedOrderSnapshot : null) : null;
 
     public WorkflowViewModel(IWorkflowWorkspaceStore store, AppUpdatesViewModel updates, DiagnosticService? diagnostics = null,
-        WorkflowPreferencesStore? preferences = null, IWorkflowDatabaseService? databases = null, WorkflowPreferences? initialPreferences = null)
+        WorkflowPreferencesStore? preferences = null, IWorkflowDatabaseService? databases = null, WorkflowPreferences? initialPreferences = null,
+        IWorkflowWordMapEditor? wordMapEditor = null)
     {
         _connection = new(store); Updates = updates; Diagnostics = diagnostics;
+        _wordMapEditor = wordMapEditor ?? new WorkflowWordMapProcess(Environment.ProcessPath!,
+            string.Equals(Path.GetFileNameWithoutExtension(Environment.ProcessPath), "dotnet", StringComparison.OrdinalIgnoreCase) ? typeof(Program).Assembly.Location : null);
         _preferences = preferences ?? new(store is WorkflowMdbStore ? WorkflowIdentity.PreferencesPath : Path.Combine(Path.GetDirectoryName(store.FilePath)!, "preferences.json"));
         _databases = databases ?? new WorkflowDatabaseService();
         _startupProfile = new WorkflowStartupProfileStore(_preferences.ProfileCachePath).Load();
@@ -143,7 +145,7 @@ public partial class WorkflowViewModel : ObservableObject
             finally { _initialProfileReadFinished = true; NotifyProfile(); }
             _reportReview = null; _reportImportOrderId = null;
             ResetCuttingTask();
-            _workspace = workspace; _hasLoadedOrders = true;
+            _workspace = workspace; _hasLoadedOrders = true; RecordListedSnapshot(workspace);
             if (IsCurrentOrderMissing && string.IsNullOrEmpty(ResultText)) ForgetOpenCard();
             RefreshEmployees(_connection.EmployeeId);
             Technologist ??= CurrentEmployee;
@@ -157,20 +159,23 @@ public partial class WorkflowViewModel : ObservableObject
             await RememberStartupProfileAsync();
         });
     }
-    [RelayCommand] private void NewOrder()
+    [RelayCommand(CanExecute = nameof(CanStartNewOrder))]
+    private void NewOrder()
     {
-        if (!CanUse) return;
+        if (!CanUse || IsCreating) return;
         if (CurrentEmployee is null) { Error = "Выберите себя: Настройки → Общие → Технолог."; return; }
         if (IsCreating) return;
         CaptureCard();
         IsCreating = true; NewCustomer = ""; NewManager = ""; Error = null;
     }
-    [RelayCommand] private void CancelNewOrder()
+    [RelayCommand]
+    private void CancelNewOrder()
     {
         IsCreating = false; Error = null;
         if (CurrentOrder is { } order && _cards.TryGetValue(order.Id, out var state)) RestoreCard(order, state);
     }
-    [RelayCommand] private async Task CreateOrderAsync()
+    [RelayCommand(CanExecute = nameof(CanCreateOrder))]
+    private async Task CreateOrderAsync()
     {
         if (!CanUse) return;
         await RunAsync(async () =>
@@ -183,22 +188,25 @@ public partial class WorkflowViewModel : ObservableObject
             RefreshOrders(); LoadOrder(_workspace.Orders.Single(o => o.Id == orderId)); RefreshOrders();
         });
     }
-    [RelayCommand] private void OpenOrder()
+    [RelayCommand]
+    private void OpenOrder()
     {
         if (SelectedOrder is null || !CanUse) return;
         SwitchCard(SelectedOrder.Order);
     }
-    [RelayCommand] private void Back()
+    [RelayCommand]
+    private void Back()
     {
         if (HasCurrentCardEdits) { Error = "Сохраните или отмените изменения спецификаций."; return; }
-        _openOrderId = null; Drafts.Clear(); SelectedDraft = null; Projects.Clear(); SelectedProject = null; ResultText = ""; IsResultExpanded = false; ResultIsStale = false; NotifyOrder();
+        _openOrderId = null; ResetResultPresentation(); Drafts.Clear(); SelectedDraft = null; Projects.Clear(); SelectedProject = null; ResultText = ""; IsResultExpanded = false; ResultIsStale = false; NotifyOrder();
     }
     internal void AddLegacySpecificationDraft()
     {
         if (!CanUse || !IsCurrentOrderActive) return;
         var draft = new SpecificationDraft(); Drafts.Add(draft); SelectedDraft = draft; RefreshProjects(draft.Id);
     }
-    [RelayCommand] private void CancelDraft()
+    [RelayCommand(CanExecute = nameof(CanCancelDraft))]
+    private void CancelDraft()
     {
         if (SelectedDraft is not { } draft || !CanUse) return;
         var saved = CurrentOrder?.Specifications.SingleOrDefault(s => s.Id == draft.Id);
@@ -207,7 +215,8 @@ public partial class WorkflowViewModel : ObservableObject
         else { Drafts[index] = CreateDraft(saved); SelectedDraft = Drafts[index]; }
         Error = null;
     }
-    [RelayCommand] private async Task SaveHeaderAsync()
+    [RelayCommand(CanExecute = nameof(CanSaveHeader))]
+    private async Task SaveHeaderAsync()
     {
         if (!CanUse || !IsCurrentOrderActive || CurrentOrder is not { IsDeleted: false } order) return;
         await RunAsync(async () =>
@@ -230,13 +239,15 @@ public partial class WorkflowViewModel : ObservableObject
             draft.ApplyRate(_workspace.Rates.Single(r => r.MachineId == draft.MachineId && r.MaterialGroup == rate.MaterialGroup && r.ThicknessMm == rate.ThicknessMm));
         });
     }
-    [RelayCommand] private void RefreshRate()
+    [RelayCommand(CanExecute = nameof(CanRefreshRate))]
+    private void RefreshRate()
     {
         if (!CanUse || SelectedDraft is not { } draft) return;
         try { draft.ApplyRate(_workspace.Rates.SingleOrDefault(r => r.MachineId == draft.MachineId && r.MaterialGroup == draft.MaterialGroup && r.ThicknessMm == SpecificationDraft.Decimal(draft.Thickness, "толщину"))); }
         catch (WorkflowValidationException ex) { Error = ex.Message; }
     }
-    [RelayCommand(CanExecute = nameof(CanSaveSpecification))] private async Task SaveSpecificationAsync()
+    [RelayCommand(CanExecute = nameof(CanSaveSpecification))]
+    private async Task SaveSpecificationAsync()
     {
         if (!CanUse || !IsCurrentOrderActive || CurrentOrder is not { IsDeleted: false } order || SelectedDraft is not { } draft || !draft.IsDirty) return;
         if (order.HasProjectRename) { Error = "Сначала завершите изменение параметров проекта."; return; }
@@ -260,15 +271,12 @@ public partial class WorkflowViewModel : ObservableObject
             if (createBendingFolder) await EnsureSavedBendingFoldersAsync(CurrentOrder!, [draft.Id]);
         });
     }
-    [RelayCommand] private void GenerateResult()
+    [RelayCommand(CanExecute = nameof(CanGenerateResult))]
+    private void GenerateResult()
     {
-        if (CurrentOrder is not { } order || !CanUse) return;
-        if (HasCurrentCardEdits) { Error = "Сохраните изменения перед формированием результата."; return; }
-        if (order.HasProjectRename) { Error = "Завершите изменение параметров проекта перед формированием результата."; return; }
-        if (order.PendingProjectCount > 0 || HasUnselectedVariant)
-        { Error = "Сохраните расчёты всех позиций и выберите варианты для итога."; return; }
-        ResultText = WorkflowResultFormatter.Format(order.ActiveSpecifications.Select(s => s.Current), _workspace.Machines, ResultPricing);
-        ResultIsStale = false;
+        if (PrepareResultGeneration() is not { } draft) return;
+        if (draft.NeedsConfirmation) { SetResultFeedback("В тексте есть ручные правки. Подтвердите формирование заново.", true); return; }
+        ApplyResultGeneration(draft);
     }
 
     internal async Task ImportLegacyFilesAsync(IReadOnlyList<string> paths, CancellationToken token)
@@ -317,17 +325,20 @@ public partial class WorkflowViewModel : ObservableObject
         var draft = new SpecificationDraft(report.Material?.Value, review)
         {
             Id = id ?? Guid.NewGuid(),
-            SourcePath = Path.GetFullPath(path), ImportProfile = report.Profile,
+            SourcePath = Path.GetFullPath(path),
+            ImportProfile = report.Profile,
             ImportNotice = string.Join("\n", report.Issues.Where(i => i.Code != "MaterialNeedsReview").Take(4).Select(i => i.Message)
                 .Concat(ambiguousMachine ? ["Формат подходит нескольким станкам. Выберите станок для расчёта."] : Array.Empty<string>())),
             Number = report.Header?.Value.JournalNumber ?? "",
             Date = report.Header?.Value.OrderDate.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? "",
             Machine = machineName,
-            Material = report.Material?.Value ?? "", Thickness = Number(dimensions?.ThicknessMillimeters),
+            Material = report.Material?.Value ?? "",
+            Thickness = Number(dimensions?.ThicknessMillimeters),
             BlankSize = dimensions is null ? "" : $"Лист {SpecificationDraft.N(dimensions.ThicknessMillimeters)}×{SpecificationDraft.N(dimensions.WidthMillimeters)}×{SpecificationDraft.N(dimensions.LengthMillimeters)}",
             Quantity = report.SheetCount?.Value.ToString(CultureInfo.InvariantCulture) ?? "",
             Length = report.CutLengthMillimeters is { } length ? SpecificationProfileCatalog.Default.NormalizeCutLengthMeters(report.Profile, length.Value).ToString(CultureInfo.InvariantCulture) : "",
-            Pierces = report.PunchCount?.Value.ToString(CultureInfo.InvariantCulture) ?? "", Weight = Number(report.WeightKilograms?.Value),
+            Pierces = report.PunchCount?.Value.ToString(CultureInfo.InvariantCulture) ?? "",
+            Weight = Number(report.WeightKilograms?.Value),
             Duration = report.CuttingDuration is { } t ? SpecificationDraft.FormatDuration((long)Math.Ceiling(t.Value.TotalSeconds)) : "",
             UsesMaterialCategories = report.Profile == HansPdfSpecificationParser.Profile,
             MaterialGroup = report.Profile == HansPdfSpecificationParser.Profile ? report.MaterialId?.Value switch
@@ -344,7 +355,7 @@ public partial class WorkflowViewModel : ObservableObject
     {
         var sameOrder = _openOrderId == order.Id;
         if (sameOrder && _loadedOrderVersion != order.Version) MarkResultStale();
-        else if (!sameOrder) { ResultText = ""; IsResultExpanded = false; OrderTabIndex = 0; ResultIsStale = false; }
+        else if (!sameOrder) { ResetResultPresentation(); ResultText = ""; IsResultExpanded = false; OrderTabIndex = 0; ResultIsStale = false; }
         _loadedOrderVersion = order.Version; _loadedOrderSnapshot = order;
         _openOrderId = order.Id; Drafts.Clear();
         foreach (var specification in order.Specifications.Where(s => !order.Projects.Any(p => p.Id == s.Id && p.IsDeleted))) Drafts.Add(CreateDraft(specification));
@@ -365,7 +376,7 @@ public partial class WorkflowViewModel : ObservableObject
                 !pair.Value.HasEdits && pair.Value.Result.Length == 0).Select(pair => pair.Key).ToArray()) _cards.Remove(id);
             var rows = new List<WorkflowOrderRow>();
             if (!preserveRows) Orders.Clear();
-            foreach (var order in _workspace.Orders.Where(o => !o.IsDeleted && IsInPeriod(o)).OrderByDescending(o => o.UpdatedAt))
+            foreach (var order in _workspace.Orders.Where(o => !o.IsDeleted && IsInPeriod(o)).OrderByDescending(o => o.UpdatedAt).ThenByDescending(o => o.Number))
             {
                 var detail = "";
                 if (exactId is { } exact ? order.Id != exact : !index.Documents[order.Id].Matches(query, out detail)) continue;
@@ -408,9 +419,9 @@ public partial class WorkflowViewModel : ObservableObject
     partial void OnManagerNameChanged(string value) => NotifyHeaderEdit();
     partial void OnTechnologistChanged(Employee? value) => NotifyHeaderEdit();
     partial void OnBlcbChanged(string? value) => NotifyHeaderEdit();
-    partial void OnNewCustomerChanged(string value) => OnPropertyChanged(nameof(HasPendingEdits));
-    partial void OnNewManagerChanged(string value) => OnPropertyChanged(nameof(HasPendingEdits));
-    partial void OnIsCreatingChanged(bool value) { OnPropertyChanged(nameof(HasPendingEdits)); OnPropertyChanged(nameof(IsCardVisible)); OnPropertyChanged(nameof(IsNoCardSelected)); }
+    partial void OnNewCustomerChanged(string value) { OnPropertyChanged(nameof(HasPendingEdits)); NotifyNewOrderActions(); }
+    partial void OnNewManagerChanged(string value) { OnPropertyChanged(nameof(HasPendingEdits)); NotifyNewOrderActions(); }
+    partial void OnIsCreatingChanged(bool value) { OnPropertyChanged(nameof(HasPendingEdits)); OnPropertyChanged(nameof(IsCardVisible)); OnPropertyChanged(nameof(IsNoCardSelected)); NotifyActionAvailability(); }
     partial void OnSelectedDraftChanged(SpecificationDraft? oldValue, SpecificationDraft? newValue)
     {
         if (oldValue is not null) oldValue.PropertyChanged -= DraftChanged;
@@ -423,7 +434,7 @@ public partial class WorkflowViewModel : ObservableObject
             try { SelectedProject = row; } finally { _refreshingProjects = false; }
         }
         NotifyProjectCalculation();
-        OnPropertyChanged(nameof(HasAcceptedReport)); OnPropertyChanged(nameof(HasPendingEdits)); OnPropertyChanged(nameof(HasSelectedDraft)); SaveSpecificationCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(HasAcceptedReport)); OnPropertyChanged(nameof(HasPendingEdits)); OnPropertyChanged(nameof(HasSelectedDraft)); NotifyActionAvailability();
     }
     private void DraftChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -444,10 +455,13 @@ public partial class WorkflowViewModel : ObservableObject
         }
     }
     private Guid ActorId() => ActiveEmployee?.Id ?? throw new WorkflowValidationException("Выберите себя: Настройки → Общие → Технолог.");
-    private string CustomerName(Guid id) => _workspace.Customers.Single(c => c.Id == id).Name;
-    private string EmployeeName(Guid id) => _workspace.Employees.Single(e => e.Id == id).Name;
+    private string CustomerName(Guid id) => _workspace.Customers.SingleOrDefault(c => c.Id == id)?.Name ??
+        Orders.FirstOrDefault(r => r.Order.CustomerId == id)?.Customer ?? "Заказчик недоступен";
+    private string EmployeeName(Guid id) => _workspace.Employees.SingleOrDefault(e => e.Id == id)?.Name ??
+        Orders.FirstOrDefault(r => r.Order.ManagerId == id)?.Manager ?? Orders.FirstOrDefault(r => r.Order.TechnologistId == id)?.Technologist ?? "Сотрудник недоступен";
     private void NotifyOrder()
     {
+        NotifyResultState();
         NotifyShopFolderPaths();
         NotifyCompleteness();
         NotifyBendingFolders();
@@ -457,23 +471,26 @@ public partial class WorkflowViewModel : ObservableObject
         SaveSpecificationCommand.NotifyCanExecuteChanged();
     }
     partial void OnIsBusyChanged(bool value)
-    { OnPropertyChanged(nameof(CanUse)); OnPropertyChanged(nameof(CanBrowseWorkspace)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList(); NotifyCuttingTask(); }
+    { if (value) DismissPreviousMapSigningNotice(); OnPropertyChanged(nameof(CanUse)); OnPropertyChanged(nameof(CanBrowseWorkspace)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList(); NotifyCuttingTask(); NotifyResultState(); }
     private async Task RunAsync(Func<Task> action, string? fileError = null, bool projectInclusion = false)
     {
-        if (IsBusy || _readingDatabase || _savingProjectInclusion && !projectInclusion) return; IsBusy = true; Error = null;
+        if (IsBusy || _readingDatabase || _savingProjectInclusion && !projectInclusion) return; CancelBackgroundRefresh(); IsBusy = true; Error = null;
         try { await action(); }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Error = ex switch { WorkflowValidationException or WorkflowConflictException or WorkflowOutcomeUnknownException => ex.Message,
+            Error = ex switch
+            {
+                WorkflowValidationException or WorkflowConflictException or WorkflowOutcomeUnknownException => ex.Message,
                 IOException => fileError ?? (_store is WorkflowMdbStore ? "База данных недоступна или занята. Проверьте сеть и обновите журнал. Введённые параметры остались в форме." : "Локальные данные недоступны или заняты. Введённые параметры остались в форме."),
                 UnauthorizedAccessException when fileError is not null => fileError,
-                _ => "Не удалось выполнить действие. Введённые параметры остались в форме." };
+                _ => "Не удалось выполнить действие. Введённые параметры остались в форме."
+            };
             Jornal.Infrastructure.Diagnostics.AppDiagnostics.Capture(Jornal.Infrastructure.Diagnostics.DiagnosticOperation.Unexpected, ex);
         }
         finally { IsBusy = false; NotifyDatabase(); }
     }
-    public void Detach() { _cuttingTaskDetached = true; StopShopFolderChecks(); ResetShopTransfer(); _copiedCuttingTask = null; _cuttingTaskPreview = null; _bendingFolderFailures = null; CancelDatabaseSearch(); _reportReview = null; if (SelectedDraft is { } draft) draft.PropertyChanged -= DraftChanged; }
+    public void Detach() { _cuttingTaskDetached = true; StopShopFolderChecks(); ResetShopTransfer(); _copiedCuttingTask = null; _cuttingTaskPreview = null; _bendingFolderFailures = null; CancelDatabaseSearch(); _reportReview = null; if (SelectedDraft is { } draft) draft.PropertyChanged -= DraftChanged; NotifyMapSigning(); }
     public WorkflowRestartDraft CreateRestartDraft()
     {
         CaptureCard();

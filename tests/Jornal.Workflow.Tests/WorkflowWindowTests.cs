@@ -12,6 +12,9 @@ using Jornal.Workflow.Core;
 using Xunit;
 
 [assembly: AvaloniaTestApplication(typeof(Jornal.Workflow.Tests.WorkflowTestApp))]
+// Headless setup resets the global Avalonia dispatcher/locator. View-model facts
+// also use that dispatcher; they must not race UI-session setup and teardown.
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
 namespace Jornal.Workflow.Tests;
 public static class WorkflowTestApp
 {

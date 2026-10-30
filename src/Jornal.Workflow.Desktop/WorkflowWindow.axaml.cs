@@ -4,8 +4,6 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
-using Jornal.Desktop.Clipboard;
-using Jornal.Core.Results;
 using Jornal.Workflow.Infrastructure;
 using Jornal.Workflow.Core;
 
@@ -19,24 +17,29 @@ public partial class WorkflowWindow : Window
     private bool _loadingTheme = true;
     private WorkflowViewModel? Model => DataContext as WorkflowViewModel;
     public WorkflowWindow() : this(new WorkflowPreferencesStore(WorkflowIdentity.PreferencesPath)) { }
-    public WorkflowWindow(WorkflowPreferencesStore preferences, WorkflowPreferences? initialPreferences = null)
+    public WorkflowWindow(WorkflowPreferencesStore preferences, WorkflowPreferences? initialPreferences = null, TimeProvider? journalRefreshClock = null,
+        Func<string, Action<bool>, Action, Task<IDisposable>>? journalSubscribe = null, TimeProvider? mapStatusClock = null, TimeProvider? resultFeedbackClock = null)
     {
+        _mapStatusClock = mapStatusClock ?? TimeProvider.System;
+        _resultFeedbackClock = resultFeedbackClock ?? TimeProvider.System;
+        _journalClock = journalRefreshClock; _journalSubscribe = journalSubscribe;
         _preferences = preferences; _restart = new(Path.Combine(preferences.DirectoryPath, "update-restart.json"));
         WorkflowPreferences settings;
         try { settings = initialPreferences ?? preferences.Load(); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException)
         { settings = new(); }
         RequestedThemeVariant = settings.DarkTheme ? ThemeVariant.Dark : ThemeVariant.Light;
-        InitializeComponent(); ThemeSwitch.IsChecked = settings.DarkTheme; ApplyTheme();
+        InitializeComponent(); InitializeJournalInputTracking(); InitializeOrderContextMenu(); InitializeMapSigningStatus(); InitializeResultFeedback(); ThemeSwitch.IsChecked = settings.DarkTheme; ApplyTheme();
         _loadingTheme = false;
     }
     protected override async void OnOpened(EventArgs e)
     {
-        base.OnOpened(e); if (Model is not { } model) return;
+        base.OnOpened(e); SyncMapSigningStatus(); ScheduleResultFeedbackExpiration(); if (Model is not { } model) return;
         model.UseLocalPreferencesStore(_preferences);
         model.Updates.ConfigureRestart(() => model.CanUse && !model.IsCopyingCuttingTask && !model.HasPendingEdits && OwnedWindows.All(w => w is WorkflowSettingsWindow { CanRestart: true } or WorkflowUpdatesWindow { CanClose: true }),
             () => _restart.Save(model.CreateRestartDraft()), Close);
         await model.ReloadCommand.ExecuteAsync(null);
+        if (!IsVisible || !ReferenceEquals(Model, model) || _lifetime.IsCancellationRequested) return;
         if (model.Error is null)
         {
             try
@@ -47,17 +50,19 @@ public partial class WorkflowWindow : Window
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException)
             { model.Error = "Не удалось восстановить результат после обновления. Сохранённые заявки доступны."; }
         }
+        InitializeJournalRefresh(model);
         await model.Updates.RunAutomaticChecksAsync(_lifetime.Token);
     }
     protected override void OnClosing(WindowClosingEventArgs e)
     { if (Model?.IsBusy == true || OwnedWindows.Any(w => w is WorkflowProjectEditorWindow or WorkflowShopTransferWindow) || Model?.Updates is { IsApplying: true, RestartScheduled: false }) e.Cancel = true; base.OnClosing(e); }
     protected override void OnClosed(EventArgs e)
     {
-        _lifetime.Cancel(); Model?.Updates.ClearRestart(); Model?.Updates.CheckCommand.Cancel(); Model?.Updates.DownloadCommand.Cancel();
+        StopOrderContextMenu(); StopResultFeedback(); StopMapSigningStatus(); StopJournalRefresh(); _pressedPointers.Clear(); _lifetime.Cancel(); Model?.Updates.ClearRestart(); Model?.Updates.CheckCommand.Cancel(); Model?.Updates.DownloadCommand.Cancel();
         Model?.Detach(); _lifetime.Dispose(); base.OnClosed(e);
     }
     protected override void OnKeyDown(KeyEventArgs e)
     {
+        OnCuttingTaskTextKeyDown(this, e); if (e.Handled) return;
         base.OnKeyDown(e);
         if (e.Handled || Model is not { CanUse: true } model) return;
         if (e.Key == Key.F5) { model.ReloadCommand.Execute(null); e.Handled = true; }
@@ -93,12 +98,13 @@ public partial class WorkflowWindow : Window
     { if (IsVisible && Model is { IsPlanning: true, CanUse: true }) WorkflowProjectThickness.Focus(); });
     private async void OnCreateOrder(object? sender, RoutedEventArgs e)
     {
-        if (Model is not { CanUse: true } model) return;
+        if (Model is not { CanCreateOrder: true } model) return;
         await model.CreateOrderCommand.ExecuteAsync(null);
         if (IsVisible && model.IsOrderOpen && model.Error is null)
         { WorkflowOrderTabs.SelectedIndex = 0; Dispatcher.UIThread.Post(() => { if (IsVisible) PrepareWorkflowProject.Focus(); }); }
     }
     private async void OnSettings(object? sender, RoutedEventArgs e) => await ShowSettingsAsync(0);
+    private async void OnProjectStorageSettings(object? sender, RoutedEventArgs e) => await ShowSettingsAsync(1);
     private async Task ShowSettingsAsync(int section)
     {
         if (Model is not { } model) return;
@@ -114,11 +120,16 @@ public partial class WorkflowWindow : Window
     private async void OnMoveToTrash(object? sender, RoutedEventArgs e)
     {
         e.Handled = true;
+        await ShowOrderTrashConfirmationAsync();
+    }
+    private async Task ShowOrderTrashConfirmationAsync(bool returnToJournal = false)
+    {
         if (Model is not { CanUse: true } model || OwnedWindows.Count > 0 || model.CreateTrashConfirmation() is not { } confirmation) return;
         var window = new WorkflowTrashConfirmationWindow { DataContext = confirmation, RequestedThemeVariant = ActualThemeVariant };
         await window.ShowDialog(this);
         if (!IsVisible) return;
-        if (WorkflowOrderActions.IsEffectivelyVisible) WorkflowOrderActions.Focus();
+        if (returnToJournal) WorkflowOrdersGrid.Focus();
+        else if (WorkflowOrderActions.IsEffectivelyVisible) WorkflowOrderActions.Focus();
         else WorkflowOrdersGrid.Focus();
     }
     private async void OnChangeResponsible(object? sender, RoutedEventArgs e)
@@ -156,9 +167,8 @@ public partial class WorkflowWindow : Window
     }
     private async void OnCopyResult(object? sender, RoutedEventArgs e)
     {
-        if (Model is not { CanUse: true } model || string.IsNullOrWhiteSpace(model.ResultText)) return;
-        try { await new ResultClipboard(() => Clipboard).WriteAsync(ResultClipboardContent.FromText(model.ResultText)); }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { model.Error = "Не удалось скопировать результат."; }
+        if (Model is { CanCopyResult: true } model && OwnedWindows.Count == 0)
+            await model.CopyResultAsync(new WindowResultClipboard(WriteResultClipboardAsync));
     }
     private async void OnOpenFolder(object? sender, RoutedEventArgs e)
     {
@@ -187,7 +197,7 @@ public partial class WorkflowWindow : Window
     }
     private async void OnRefreshReports(object? sender, RoutedEventArgs e)
     {
-        if (Model is not { CanUse: true } model || OwnedWindows.Count > 0) return;
+        if (Model is not { CanLoadReports: true } model || OwnedWindows.Count > 0) return;
         var review = await model.CreateReportReviewAsync(_lifetime.Token);
         if (review is null || !IsVisible || _lifetime.IsCancellationRequested) return;
         var window = new WorkflowReportReviewWindow(candidate =>
@@ -195,7 +205,8 @@ public partial class WorkflowWindow : Window
             var catalog = model.CreateCatalogSettings();
             catalog.SelectTariff(candidate.Project.MachineId, candidate.Draft!.MaterialGroup, candidate.Project.ThicknessMm);
             return new(() => model.CreateDatabaseSettings()) { DataContext = catalog };
-        }) { DataContext = review, RequestedThemeVariant = ActualThemeVariant };
+        })
+        { DataContext = review, RequestedThemeVariant = ActualThemeVariant };
         await window.ShowDialog(this);
         model.ReportReviewClosed();
     }

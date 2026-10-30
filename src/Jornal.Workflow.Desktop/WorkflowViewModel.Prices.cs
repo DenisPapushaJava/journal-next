@@ -70,9 +70,11 @@ public partial class WorkflowViewModel
         return saved ? null : Error ?? "Загрузка цен не выполнена.";
     }
 
-    private void NotifyPriceCatalog()
+    private void NotifyPriceCatalog(bool preserveDrafts = false)
     {
+        NotifyProjectMachines();
         OnPropertyChanged(nameof(PriceSourceDescription));
+        if (preserveDrafts) return;
         _catalogUpdating = true;
         try { foreach (var draft in Drafts) ConfigurePriceSuggestions(draft); }
         finally { _catalogUpdating = false; }

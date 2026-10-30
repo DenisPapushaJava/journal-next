@@ -105,6 +105,7 @@ public partial class WorkflowViewModel
     }
     private void ForgetOpenCard()
     {
+        ResetResultPresentation();
         _openOrderId = null; _loadedOrderVersion = null; _loadedOrderSnapshot = null;
         Drafts.Clear(); SelectedDraft = null; Projects.Clear(); SelectedProject = null;
         ResultText = ""; IsResultExpanded = false; ResultIsStale = false;

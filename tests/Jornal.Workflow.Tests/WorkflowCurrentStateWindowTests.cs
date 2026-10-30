@@ -25,7 +25,7 @@ public sealed class WorkflowCurrentStateWindowTests
         {
             window.Show(); await Until(() => !f.Model.IsBusy);
             var tabs = window.FindControl<TabControl>("WorkflowOrderTabs")!;
-            Assert.Equal(new[] { "Проекты", "Письмо" }, tabs.Items.OfType<TabItem>().Select(t => t.Header));
+            Assert.Equal(new[] { "Проекты", "Результат" }, tabs.Items.OfType<TabItem>().Select(t => t.Header));
             f.Model.OrderTabIndex = 0; Pump();
             var open = window.FindControl<Button>("OpenAcceptedWorkflowReport")!; Assert.True(open.IsEffectivelyEnabled); InWindow(open, window);
             Assert.Equal("Сохранить", window.FindControl<JournalButton>("SaveWorkflowSpecification")!.Label);

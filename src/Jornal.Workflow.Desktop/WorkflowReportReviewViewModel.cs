@@ -243,9 +243,10 @@ public partial class WorkflowReportReviewViewModel : ObservableObject
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string? _error;
     [ObservableProperty] private bool _wasSaved;
+    private bool _orderChanged;
     public bool CanEdit => !IsBusy && !WasSaved;
-    private bool CanSave => CanEdit && Candidates.Any(c => c.IsSelected && c.Ready);
-    private bool CanRefresh => CanEdit && _refresh is not null;
+    private bool CanSave => CanEdit && !_orderChanged && Candidates.Any(c => c.IsSelected && c.Ready);
+    private bool CanRefresh => CanEdit && !_orderChanged && _refresh is not null;
     public string SaveCaption => $"Принять готовые ({Candidates.Count(c => c.IsSelected && c.Ready)})";
     public string Summary => WasSaved ? "Готовые отчёты сохранены. Остальные проекты можно обновить позже." :
         $"{Candidates.Count(c => c.Ready)} готовы · {Candidates.Count(c => c.Status == "Без изменений")} без изменений · " +
@@ -256,15 +257,23 @@ public partial class WorkflowReportReviewViewModel : ObservableObject
     { _save = save; _refresh = refresh; _pricingSnapshot = pricingSnapshot; }
     public void Changed()
     { OnPropertyChanged(nameof(SaveCaption)); OnPropertyChanged(nameof(Summary)); SaveCommand.NotifyCanExecuteChanged(); }
+    internal void MarkOrderChanged()
+    {
+        _orderChanged = true;
+        Error = "Заявка изменена в другом окне. Ваши правки остались в этом подборе; принять его нельзя. Чтобы начать заново, закройте окно и нажмите F5: несохранённые правки подбора будут сброшены.";
+        Changed(); RefreshCommand.NotifyCanExecuteChanged();
+    }
     partial void OnIsBusyChanged(bool value) { OnPropertyChanged(nameof(CanEdit)); Changed(); RefreshCommand.NotifyCanExecuteChanged(); }
     partial void OnWasSavedChanged(bool value) { OnPropertyChanged(nameof(CanEdit)); Changed(); RefreshCommand.NotifyCanExecuteChanged(); }
     [RelayCommand(CanExecute = nameof(CanRefresh))] private async Task RefreshAsync(CancellationToken token)
     {
-        if (_refresh is null) return;
+        if (!CanRefresh || _refresh is null) return;
         IsBusy = true; Error = null;
         try
         {
-            var (next, error) = await _refresh(this, token); Error = error;
+            var (next, error) = await _refresh(this, token);
+            if (ReferenceEquals(next, this)) return;
+            Error = error;
             if (next is null) return;
             var selected = Selected?.Project.Id; _save = next._save;
             Candidates.Clear();
@@ -285,6 +294,7 @@ public partial class WorkflowReportReviewViewModel : ObservableObject
     [RelayCommand] private void RefreshRate() => RefreshPricing();
     [RelayCommand(CanExecute = nameof(CanSave))] private async Task SaveAsync(CancellationToken token)
     {
+        if (!CanSave) return;
         IsBusy = true; Error = null;
         try
         {

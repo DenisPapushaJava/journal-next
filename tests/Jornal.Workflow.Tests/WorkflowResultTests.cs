@@ -128,7 +128,8 @@ public sealed class WorkflowResultTests
         competing.ResultMinimumText = "800"; Assert.NotNull(competing.ResultPriceError); Assert.Equal("800", competing.ResultMinimumText);
         Assert.Equal(new WorkflowResultPricing(false, 2000), preferences.Load().ResultPricing);
         settings.UseResultMinimum = true; f.Model.CancelDraftCommand.Execute(null);
-        f.Model.GenerateResultCommand.Execute(null); Assert.Contains("Резка: 2000 ₽.", f.Model.ResultText);
+        var replacement = Assert.IsType<WorkflowResultGeneration>(f.Model.PrepareResultGeneration()); Assert.True(replacement.NeedsConfirmation);
+        Assert.True(f.Model.ApplyResultGeneration(replacement)); Assert.Contains("Резка: 2000 ₽.", f.Model.ResultText);
         f.Model.IsDarkTheme = !f.Model.IsDarkTheme; Assert.Equal(new WorkflowResultPricing(true, 2000), preferences.Load().ResultPricing);
         Assert.Equal(before.Orders.Single().CuttingTotal, (await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders.Single().CuttingTotal);
         preferences.Update(p => p with { ResultPricing = new(false, -1) }); Assert.Equal(new WorkflowResultPricing(false, 500), preferences.Load().ResultPricing);

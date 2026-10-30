@@ -1,4 +1,5 @@
 using Avalonia.Interactivity;
+using Avalonia.Input;
 using Avalonia.Threading;
 using Jornal.Core.Results;
 using Jornal.Desktop.Clipboard;
@@ -9,15 +10,28 @@ namespace Jornal.Workflow.Desktop;
 
 public partial class WorkflowWindow
 {
+    private void OnCuttingTaskTextKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || ToggleWorkflowCuttingTaskPreview.Flyout is not { IsOpen: true } popup) return;
+        popup.Hide();
+        if (ToggleWorkflowCuttingTaskPreview.IsEffectivelyVisible && ToggleWorkflowCuttingTaskPreview.IsEffectivelyEnabled) ToggleWorkflowCuttingTaskPreview.Focus();
+        e.Handled = true;
+    }
+
     private async void OnPrepareShopTransfer(object? sender, RoutedEventArgs e)
         => await PrepareShopTransferAsync(false);
     private async void OnReviewShopTransfer(object? sender, RoutedEventArgs e)
         => await PrepareShopTransferAsync(true);
     private async Task PrepareShopTransferAsync(bool reviewOnly)
     {
-        if (Model is not { CanCopyCuttingTask: true } model || OwnedWindows.Count > 0) return;
+        if (Model is not { } model || OwnedWindows.Count > 0 || !(reviewOnly ? model.CanCopyCuttingTask : model.CanSendToWork)) return;
         try
         {
+            if (model.HasCuttingTaskText && string.IsNullOrWhiteSpace(model.CuttingTaskText))
+            {
+                ToggleWorkflowCuttingTaskPreview.Flyout?.ShowAt(ToggleWorkflowCuttingTaskPreview);
+                WorkflowCuttingTaskPreview.Focus(); return;
+            }
             if (model.ShopRoot is null)
             {
                 // Show missing requisites before asking for a destination folder.
@@ -56,7 +70,7 @@ public partial class WorkflowWindow
         try
         {
             if (!await OpenFolderAsync(path) && IsVisible && !_lifetime.IsCancellationRequested && model.Projects.Contains(row))
-                model.Error = "Папка задания в цехе не найдена или недоступна. Если задание ещё не готовили, нажмите «Задание в цех».";
+                model.Error = "Папка задания в цехе не найдена или недоступна. Если задание ещё не готовили, нажмите «Отправить в работу…».";
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         { if (IsVisible && !_lifetime.IsCancellationRequested && model.Projects.Contains(row)) model.Error = "Не удалось открыть папку задания в цехе. Проверьте доступ к папке."; }
@@ -71,6 +85,7 @@ public partial class WorkflowWindow
 
     private void OnGoToCuttingTaskProblem(object? sender, RoutedEventArgs e)
     {
+        ToggleWorkflowCuttingTaskPreview.Flyout?.Hide();
         switch (Model?.GoToCuttingTaskProblem())
         {
             case CuttingTaskTarget.Header:

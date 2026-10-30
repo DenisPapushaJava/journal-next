@@ -47,6 +47,7 @@ public partial class WorkflowViewModel
 
     private void NotifyInclusionBusy()
     {
+        NotifyResultState();
         OnPropertyChanged(nameof(CanUse)); OnPropertyChanged(nameof(CanBrowseWorkspace));
         SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList();
         NotifyCuttingTask();

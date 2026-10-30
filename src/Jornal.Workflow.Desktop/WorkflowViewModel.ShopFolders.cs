@@ -26,7 +26,7 @@ public partial class WorkflowViewModel
             { if (Projects.Contains(row) && row.ShopFolderPath == path) row.ApplyShopFolderAvailability(ShopFolderAvailability.Unavailable); throw; }
             if (!ReferenceEquals(source, _store) || CurrentOrder?.Id != order.Id || !Projects.Contains(row) || row.ShopFolderPath != path) return;
             if (owned) result = path;
-            else { row.ApplyShopFolderAvailability(ShopFolderAvailability.NotFound); Error = "Папка задания в цехе ещё не создана. Нажмите «Задание в цех», чтобы подготовить файлы."; }
+            else { row.ApplyShopFolderAvailability(ShopFolderAvailability.NotFound); Error = "Папка задания в цехе ещё не создана. Нажмите «Отправить в работу…», чтобы подготовить файлы."; }
         }, "Папка задания в цехе недоступна. Проверьте путь и доступ к папке.");
         return result;
     }
@@ -37,7 +37,7 @@ public partial class WorkflowViewModel
         foreach (var row in Projects)
         {
             string? path = null;
-            if (ShopRoot is { } root && CurrentOrder is { IsDeleted: false } order && row is { IsDeleted: false, IsLegacyCalculation: false })
+            if (IsCurrentOrderActive && ShopRoot is { } root && CurrentOrder is { IsDeleted: false } order && row is { IsDeleted: false, IsLegacyCalculation: false })
             {
                 try { path = WorkflowShopFolderPaths.ForProject(root, order, row.Project.Id, _workspace.Employees, _workspace.Customers, _workspace.Machines).Path; }
                 catch (Exception ex) when (ex is WorkflowValidationException or ArgumentException or NotSupportedException or PathTooLongException) { }
@@ -81,8 +81,11 @@ public partial class WorkflowViewModel
                 foreach (var target in context.Targets)
                 {
                     token.ThrowIfCancellationRequested();
-                    try { result.Add(await reader(new(target.Row.Project, target.Path, [], null, null), context.SourceId, context.OrderId, token)
-                        ? ShopFolderAvailability.Available : ShopFolderAvailability.NotFound); }
+                    try
+                    {
+                        result.Add(await reader(new(target.Row.Project, target.Path, [], null, null), context.SourceId, context.OrderId, token)
+                        ? ShopFolderAvailability.Available : ShopFolderAvailability.NotFound);
+                    }
                     catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     { result.Add(ShopFolderAvailability.Unavailable); }
