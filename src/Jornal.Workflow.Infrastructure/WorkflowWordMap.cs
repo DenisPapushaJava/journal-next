@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
-using System.Text.Json;
 using Jornal.Workflow.Core;
 
 namespace Jornal.Workflow.Infrastructure;
@@ -41,15 +40,20 @@ internal static class WorkflowWordMap
         dynamic? document = null; dynamic? documents = null; var owned = false; dynamic? options = null; object? updateLinks = null;
         try
         {
-            GetWindowThreadProcessId(new IntPtr((int)word.Hwnd), out var pid);
-            if (pid == 0 || existing.Contains(checked((int)pid)))
-                throw new WordMapUnavailableException("Не удалось запустить отдельный Word. DOC-карта не изменена.");
             documents = scope.Keep(word.Documents);
+            // Word.Application has no Hwnd. Use a window of our inert temporary text document,
+            // before opening a DOC or changing any application settings.
+            var probe = Path.Combine(folder, "window-probe.txt");
+            File.WriteAllText(probe, "Word window ownership probe.");
+            WorkflowWordMapWindow.Probe(application, (object)documents, probe, value => scope.Keep(value), handle =>
+            {
+                GetWindowThreadProcessId(new IntPtr(handle), out var pid);
+                if (pid == 0 || existing.Contains(checked((int)pid)))
+                    throw new WordMapUnavailableException("Не удалось запустить отдельный Word. DOC-карта не изменена.");
+                owned = true;
+            });
             if ((bool)word.Visible || (int)documents.Count != 0)
                 throw new WordMapUnavailableException("Word используется другим окном. DOC-карта не изменена.");
-            using (var process = Process.GetProcessById(checked((int)pid)))
-                File.WriteAllText(Path.Combine(folder, "word-process.json"), JsonSerializer.Serialize(new WorkflowWordMapProcess.WordProcess(process.Id, process.StartTime.ToUniversalTime().Ticks)));
-            owned = true;
             word.Visible = false; word.DisplayAlerts = 0; word.ScreenUpdating = false;
             word.AutomationSecurity = 3; // msoAutomationSecurityForceDisable; DisplayAlerts does not disable macros.
             options = scope.Keep(word.Options); updateLinks = options.UpdateLinksAtOpen; options.UpdateLinksAtOpen = false;
@@ -114,9 +118,8 @@ internal static class WorkflowWordMap
             // Never attach to, hide or quit an instance that existed before this action.
             try
             {
-                if (owned && documents is not null && (int)documents.Count > (closedOwnDocument ? 0 : 1))
-                    File.Delete(Path.Combine(folder, "word-process.json")); // Another user document appeared; relinquish the instance.
-                else if (owned) word.Quit(SaveChanges: 0);
+                if (documents is not null)
+                    WorkflowWordMapWindow.QuitIfIdle(application, (object)documents, owned, closedOwnDocument);
             }
             catch (COMException) { }
         }
