@@ -20,6 +20,8 @@ public sealed class WorkflowShopTransferWindowTests
     public async Task CompactPreviewChecksManualFilesCopiesWholeBendingAndFitsBothThemes(bool dark, int width, int height)
     {
         using var log = new WorkflowWindowTests.BindingLog(); using var f = new ShopFixture("Плазма", true);
+        ShopSigningTestData.WriteBlockMap(f.Project, Path.Combine(f.Source, "Карта.pdf"), "Плазма", "Лист.nc");
+        await File.WriteAllTextAsync(Path.Combine(f.Source, "Дополнительная.nc"), "unlinked UP", Token);
         string? copied = null; var failClipboard = true;
         var model = new WorkflowShopTransferViewModel(f.ShopRoot, "test-db", f.Order, f.Book, _ => Task.CompletedTask,
             text => { if (failClipboard) throw new IOException("test"); copied = text; return Task.CompletedTask; });
@@ -29,7 +31,7 @@ public sealed class WorkflowShopTransferWindowTests
             window.Show(); await Until(() => !model.IsBusy); Assert.Null(model.Error);
             Assert.False(model.CanCopy); Assert.False(Directory.Exists(f.ShopRoot));
             var project = Assert.Single(model.Projects); Assert.Equal(project.Destination, window.FindControl<TextBox>("ShopDestination")!.Text);
-            Assert.Contains("не подтверждены автоматически", project.SelectionHelp);
+            Assert.Contains("Дополнительная.nc", project.SelectionHelp);
             foreach (var file in project.Files) file.IsSelected = true;
             Assert.False(model.CanCopy); project.Reviewed = true; Assert.True(model.CanCopy);
             Pump(); Frame(window, $"shop-preview-{width}-{dark}");
@@ -45,7 +47,7 @@ public sealed class WorkflowShopTransferWindowTests
             Frame(window, $"shop-complete-{width}-{dark}");
             Assert.Empty(log.Errors);
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     [AvaloniaFact]
@@ -68,11 +70,12 @@ public sealed class WorkflowShopTransferWindowTests
     [AvaloniaFact]
     public async Task MainActionOpensPreviewAndPreparesFilesBeforeCopyingText()
     {
-        using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync();
+        using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync("Плазма");
         await ProjectFixture.WriteAsync(project); await f.AcceptAsync(); f.Model.Blcb = "009337"; await f.Model.SaveHeaderCommand.ExecuteAsync(null);
         await f.Model.SaveShopRootAsync(null, Path.Combine(f.DirectoryPath, "shop"), Token);
-        await File.WriteAllTextAsync(Path.Combine(Path.GetDirectoryName(project.NativePath!)!, "Лист.cnc"), "UP", Token);
-        await File.WriteAllTextAsync(Path.Combine(Path.GetDirectoryName(project.NativePath!)!, "Карта.pdf"), "Map", Token);
+        await File.WriteAllTextAsync(Path.Combine(Path.GetDirectoryName(project.NativePath!)!, "Лист.nc"), "UP", Token);
+        ShopSigningTestData.WriteBlockMap(project, Path.Combine(Path.GetDirectoryName(project.NativePath!)!, "Карта.pdf"), "Плазма", "Лист.nc");
+        await File.WriteAllTextAsync(Path.Combine(Path.GetDirectoryName(project.NativePath!)!, "Дополнительная.nc"), "unlinked UP", Token);
         f.Model.CuttingTaskText += "Проверить кромку перед резкой";
         var preferences = new WorkflowPreferencesStore(Path.Combine(f.DirectoryPath, "preferences.json"));
         var window = new RecordingWindow(preferences) { DataContext = f.Model };
@@ -89,19 +92,19 @@ public sealed class WorkflowShopTransferWindowTests
             var row = Assert.Single(model.Projects); foreach (var file in row.Files) file.IsSelected = true; row.Reviewed = true;
             await model.CopyAsync(); Assert.True(model.AllPrepared); Assert.NotEmpty(window.Copied!); Assert.Null(model.Error);
             Assert.EndsWith("Проверить кромку перед резкой", window.Copied);
-            Assert.True(File.Exists(Path.Combine(row.Destination, "Лист.cnc"))); dialog.Close();
+            Assert.True(File.Exists(Path.Combine(row.Destination, "Лист.nc"))); dialog.Close();
             Assert.Contains("Задание скопировано", f.Model.CuttingTaskNotice);
             var toggle = window.FindControl<Button>("ToggleWorkflowCuttingTaskPreview")!;
             Assert.True(toggle.IsEffectivelyVisible); toggle.Flyout!.ShowAt(toggle); Pump();
             Assert.Equal(window.Copied, window.FindControl<TextBox>("WorkflowCuttingTaskPreview")!.Text);
-            var before = await f.Store.ReadAsync(Token); var stamp = File.GetLastWriteTimeUtc(Path.Combine(row.Destination, "Лист.cnc"));
+            var before = await f.Store.ReadAsync(Token); var stamp = File.GetLastWriteTimeUtc(Path.Combine(row.Destination, "Лист.nc"));
             window.FindControl<Button>("CopyWorkflowTaskPreviewText")!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
             await Until(() => !f.Model.IsCopyingCuttingTask);
             Assert.Same(model, f.Model.ShopTransfer); Assert.True(model.AllPrepared);
             Assert.Equal(before.Version, (await f.Store.ReadAsync(Token)).Version);
-            Assert.Equal(stamp, File.GetLastWriteTimeUtc(Path.Combine(row.Destination, "Лист.cnc")));
+            Assert.Equal(stamp, File.GetLastWriteTimeUtc(Path.Combine(row.Destination, "Лист.nc")));
         }
-        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); }
     }
 
     private sealed class RecordingWindow(WorkflowPreferencesStore preferences) : WorkflowWindow(preferences)

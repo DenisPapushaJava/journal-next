@@ -5,13 +5,6 @@ namespace Jornal.Workflow.Desktop;
 
 public partial class WorkflowWindow
 {
-    private async void OnSignAllMaps(object? sender, RoutedEventArgs e)
-    {
-        e.Handled = true;
-        if (Model is { CanSignMaps: true } model && OwnedWindows.Count == 0)
-            await model.SignMapsAsync(token: _lifetime.Token);
-    }
-
     private async void OnSignProjectMaps(object? sender, RoutedEventArgs e)
     {
         e.Handled = true;

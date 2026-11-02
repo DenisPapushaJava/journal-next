@@ -32,7 +32,7 @@ public sealed class WorkflowCuttingTaskTests
         order = order with { Specifications = [Spec(book, 12, material: "09Г2С"), Spec(book, 8, bending: true), Spec(book, 6, chamfer: true), Spec(book, 4, bending: true, chamfer: true)] };
         var text = Prepare(book, order);
         Assert.True(text.IsReady);
-        Assert.Equal("9337  Юрченко (ЗПТО)\n4 мм Ст3 ГИБКА, ФАСКА\n6 мм Ст3 ФАСКА\n8 мм Ст3 ГИБКА\n12 мм 09Г2С   на Лазер\n", text.Text);
+        Assert.Equal("9337  Юрченко (ЗПТО)\n\n4 мм Ст3 ГИБКА, ФАСКА\n6 мм Ст3 ФАСКА\n8 мм Ст3 ГИБКА\n12 мм 09Г2С   на Лазер\n\n", text.Text);
         var laser = book.Machines.Single(m => m.Name == "Лазер");
         book = book with { Machines = book.Machines.Select(m => m.Id == laser.Id ? m with { Name = "Новый лазер" } : m).ToArray() };
         Assert.Contains("на Новый лазер\n", Prepare(book, order).Text);
@@ -69,7 +69,7 @@ public sealed class WorkflowCuttingTaskTests
         var preview = Prepare(book, order); Assert.False(preview.IsReady); Assert.Equal(b.Id, preview.Problem!.ProjectId);
         order = order with { Items = order.Items.Select(i => i.Id == item ? i with { CurrentProjectId = b.Id, ReviewedThroughVariant = 2 } : i).ToArray() };
         preview = Prepare(book, order); Assert.True(preview.IsReady);
-        Assert.Equal("9337  Юрченко (ЗПТО)\n6 мм Ст3   на Плазму\n", preview.Text);
+        Assert.Equal("9337  Юрченко (ЗПТО)\n\n6 мм Ст3   на Плазму\n\n", preview.Text);
         order = order with { Specifications = [a, c, d] };
         Assert.Equal(b.Id, Prepare(book, order).Problem!.ProjectId); Assert.Equal("", Prepare(book, order).Text);
     }
@@ -83,6 +83,8 @@ public sealed class WorkflowCuttingTaskTests
         Assert.Contains("6 мм AISI304", text); Assert.Contains("6 мм Ст3 ГИБКА", text);
         Assert.Equal(2, text.Split('\n').Count(line => line.StartsWith("6 мм ", StringComparison.Ordinal)));
         Assert.Contains("   на Лазер\n\n20 мм Ст3   на Плазму\n", text);
+        Assert.EndsWith("   на Плазму\n\n", text);
+        Assert.DoesNotContain("\n\n\n", text);
     }
 
     [Fact]

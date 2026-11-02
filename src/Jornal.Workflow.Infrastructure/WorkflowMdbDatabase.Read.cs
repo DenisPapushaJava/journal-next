@@ -64,6 +64,8 @@ public sealed partial class WorkflowMdbDatabase
         foreach (var table in new[] { "order_items", "cutting_projects", "order_item_selections", "specifications" }) Read(table, "order_id", found);
         Read("accepted_reports", "specification_id", data["specifications"].Keys);
         Read("project_renames", "project_id", data["cutting_projects"].Keys);
+        Read("project_shop_handoffs", "id", data["cutting_projects"].Keys);
+        Read("project_shop_handoff_inputs", "id", data["project_shop_handoffs"].Keys);
         return data;
     }
     private static WorkflowCatalog ReadCatalog(WorkflowMdbSession session, Metadata metadata, bool includeRates = true)

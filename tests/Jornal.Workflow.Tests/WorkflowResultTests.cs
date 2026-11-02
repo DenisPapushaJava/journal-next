@@ -19,14 +19,20 @@ public sealed class WorkflowResultTests
     [Theory]
     [InlineData(false, false, "")] [InlineData(true, false, "   ФАСКА")]
     [InlineData(false, true, "   ГИБКА")] [InlineData(true, true, "   ФАСКА   ГИБКА")]
-    public void ExactLetterHasIndependentOperationsAndOneFinalNewline(bool chamfer, bool bending, string suffix)
+    public void ExactLetterHasIndependentOperationsAndTwoFinalNewlines(bool chamfer, bool bending, string suffix)
     {
         var state = State(chamfer: chamfer, bending: bending);
         var text = WorkflowResultFormatter.Format([state], []);
-        Assert.Equal("Лист 6x3000x1500,\t   Материал: Ст3,\t   1 шт.\t   Вес 48,2 кг.\t   Резка: 1105 ₽.     Время резки: 00:10\t   ЛАЗЕР" + suffix + "\n", text);
+        Assert.Equal("Лист 6x3000x1500,\t   Материал: Ст3,\t   1 шт.\t   Вес 48,2 кг.\t   Резка: 1105 ₽.     Время резки: 00:10\t   ЛАЗЕР" + suffix + "\n\n", text);
         var clipboard = ResultClipboardContent.FromText(text);
         Assert.Equal(text, clipboard.Text); Assert.Equal(text, ResultClipboardContent.FromText(clipboard.Text).Text);
         Assert.Contains("Резка:", WebUtility.HtmlDecode(clipboard.Html)); Assert.Contains("&nbsp;</span></div></div>", clipboard.Html);
+        using var document = new AngleSharp.Html.Parser.HtmlParser().ParseDocument(clipboard.Html);
+        var paragraphs = document.Body!.FirstElementChild!.Children;
+        Assert.Equal(3, paragraphs.Length);
+        Assert.NotNull(paragraphs[1].QuerySelector("br"));
+        Assert.Equal("\u00a0", paragraphs[2].TextContent);
+        Assert.EndsWith("\\par \n\\par \n}", clipboard.Rtf);
         if (chamfer) { Assert.Contains("ФАСКА", WebUtility.HtmlDecode(clipboard.Html)); Assert.Contains(@"\u1060?", clipboard.Rtf); }
         Assert.DoesNotContain("Не включать", text); Assert.Equal(1105m, state.Calculation.TotalCost);
     }
@@ -58,7 +64,7 @@ public sealed class WorkflowResultTests
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("tr-TR");
             var renamed = first with { Parameters = first.Parameters with { MachineId = machine.Id } };
-            Assert.EndsWith("\t   ЛАЗЕР I № 1\n", WorkflowResultFormatter.Format([renamed], [machine]));
+            Assert.EndsWith("\t   ЛАЗЕР I № 1\n\n", WorkflowResultFormatter.Format([renamed], [machine]));
             Assert.Equal("Лазер", renamed.Parameters.Machine);
         }
         finally { CultureInfo.CurrentCulture = before; }
@@ -72,7 +78,9 @@ public sealed class WorkflowResultTests
         Assert.StartsWith("Полоса из остатка,", text); Assert.Contains("Вес — кг.", text); Assert.Contains("Время резки: 194:27", text);
         var thin = state with { Parameters = state.Parameters with { ThicknessMm = 1, Material = "яя" } };
         var alphabetical = state with { Parameters = state.Parameters with { Material = "аа" } };
-        var lines = WorkflowResultFormatter.Format([state, alphabetical, thin], []).Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var formatted = WorkflowResultFormatter.Format([state, alphabetical, thin], []);
+        Assert.EndsWith("\n\n", formatted); Assert.DoesNotContain("\n\n\n", formatted);
+        var lines = formatted.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         Assert.Contains("Материал:   яя,", lines[0]); Assert.Contains("Материал:   аа,", lines[1]); Assert.Contains("Материал: Ст3,", lines[2]);
         Assert.Equal("", WorkflowResultFormatter.Format([], []));
     }
@@ -87,7 +95,7 @@ public sealed class WorkflowResultTests
         await f.Model.ReloadCommand.ExecuteAsync(null); Assert.True(f.Model.SelectedDraft!.HasChamfer);
         var saved = f.Model.SelectedDraft.Saved!; f.Model.SelectedDraft.HasChamfer = false; Assert.True(f.Model.HasPendingEdits);
         f.Model.CancelDraftCommand.Execute(null); Assert.True(f.Model.SelectedDraft.HasChamfer); Assert.False(f.Model.HasPendingEdits);
-        f.Model.GenerateResultCommand.Execute(null); Assert.EndsWith("   ФАСКА   ГИБКА\n", f.Model.ResultText);
+        f.Model.GenerateResultCommand.Execute(null); Assert.EndsWith("   ФАСКА   ГИБКА\n\n", f.Model.ResultText);
         await ProjectFixture.WriteAsync(project, 20000);
         review = await f.ReviewAsync(); Assert.True(review.Selected!.Draft!.HasChamfer);
         review.Selected.Draft.HasChamfer = false;

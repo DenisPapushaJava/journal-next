@@ -94,7 +94,7 @@ public sealed class WorkflowTrashWindowTests
         finally
         {
             foreach (var child in window.OwnedWindows.ToArray()) child.Close();
-            window.Close();
+            WorkflowTestWindows.Close(window);
         }
     }
     private static async Task Until(Func<bool> condition)

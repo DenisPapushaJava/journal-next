@@ -33,8 +33,8 @@ public sealed class WorkflowOrderEntryWindowTests
             var manager = window.FindControl<EntrySuggestionComboBox>("NewManagerInput")!;
             var customer = window.FindControl<EntrySuggestionComboBox>("NewCustomerInput")!;
             Assert.Equal(2, form.GetVisualDescendants().OfType<ComboBox>().Count());
-            Assert.Equal(600, form.Bounds.Width); Assert.InRange(manager.Bounds.Width, 319, 321);
-            Assert.InRange(customer.Bounds.Width, manager.Bounds.Width, 560);
+            Assert.Equal(600, form.Bounds.Width); Assert.InRange(manager.Bounds.Width, 550, 560);
+            Assert.Equal(customer.Bounds.Width, manager.Bounds.Width, 1);
             InWindow(form, window); Assert.Equal(form.TranslatePoint(default, window)!.Value.X + 20 + form.BorderThickness.Left,
                 manager.TranslatePoint(default, window)!.Value.X, 1);
             var input = manager.GetVisualDescendants().OfType<TextBox>().Single(); Assert.True(input.IsFocused);
@@ -82,12 +82,15 @@ public sealed class WorkflowOrderEntryWindowTests
             var model = Assert.IsType<WorkflowEntrySuggestionsViewModel>(lists.DataContext);
             var managers = lists.FindControl<TextBox>("WorkflowManagersList")!;
             var customers = lists.FindControl<TextBox>("WorkflowCustomersList")!;
-            InWindow(managers, lists); InWindow(customers, lists); InWindow(lists.FindControl<Button>("SaveWorkflowSuggestions")!, lists);
+            var materials = lists.FindControl<TextBox>("WorkflowMaterialsList")!;
+            InWindow(managers, lists); InWindow(customers, lists); InWindow(materials, lists); InWindow(lists.FindControl<Button>("SaveWorkflowSuggestions")!, lists);
+            Assert.Equal(managers.Bounds.Width, materials.Bounds.Width, 1); Assert.Equal(customers.Bounds.Width, materials.Bounds.Width, 1);
             Assert.True(managers.IsFocused);
             model.ManagersText = new string('Я', 256);
             await model.SaveCommand.ExecuteAsync(null); Assert.NotNull(model.Error); Assert.True(lists.IsVisible);
             Assert.Equal(new string('Я', 256), model.ManagersText);
             model.ManagersText = "Персональный менеджер"; model.CustomersText = "Новый заказчик\nЕщё заказчик";
+            model.MaterialsText = "Ст3\n09Г2С\nAISI304";
             SaveFrame(lists, $"workflow-settings-lists-{width}-{(dark ? "dark" : "light")}");
             await model.SaveCommand.ExecuteAsync(null); Pump(); Assert.Null(model.Error); Assert.True(model.WasSaved); Assert.False(lists.IsVisible);
             Assert.True(settings.FindControl<Button>("WorkflowEntrySuggestionsButton")!.IsFocused);
@@ -102,7 +105,7 @@ public sealed class WorkflowOrderEntryWindowTests
             Pump(); Assert.Null(f.Model.Error); Assert.False(f.Model.IsCreating); Assert.Equal(2, (await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Orders.Length);
             Assert.Empty(log.Errors);
         }
-        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); }
     }
     private static void Pump() => Dispatcher.UIThread.RunJobs();
     private static void Press(TopLevel window, Key key)

@@ -29,7 +29,7 @@
     <Button.Flyout>
       <Flyout Placement="BottomEdgeAlignedLeft" FlyoutPresenterClasses="workflowCalendar" Opened="OnOpened" Closed="OnClosed">
         <Grid x:Name="CalendarPanel" DataContext="{Binding Calendar, ElementName=Picker}" x:DataType="vm:WorkflowCalendarViewModel"
-              Width="294" RowDefinitions="Auto,8,Auto,4,Auto" KeyDown="OnCalendarKeyDown">
+              Width="294" RowDefinitions="Auto,8,Auto,4,Auto,Auto" KeyDown="OnCalendarKeyDown">
           <Grid ColumnDefinitions="38,*,38">
             <ui:JournalButton x:Name="PreviousMonth" Icon="chevron-left" IconOnly="True" Width="36" Height="36"
                               IsEnabled="{Binding CanPrevious}" Click="OnPrevious" AutomationProperties.Name="Предыдущий период" />
@@ -50,6 +50,11 @@
                       Content="{Binding Caption}" IsEnabled="{Binding IsEnabled}" AutomationProperties.Name="{Binding Description}" Click="OnDay" />
             </DataTemplate></ItemsControl.ItemTemplate>
           </ItemsControl>
+          <Border Grid.Row="5" IsVisible="{Binding IsDays}">
+            <Button x:Name="WholeMonthButton" Content="Весь месяц" Classes="command" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                    Margin="0,8,0,0" IsVisible="{Binding AllowMonthSelection, ElementName=Picker}" Click="OnWholeMonth"
+                    AutomationProperties.Name="Показать заявки за весь месяц, открытый в календаре" />
+          </Border>
         </Grid>
       </Flyout>
     </Button.Flyout>

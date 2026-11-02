@@ -85,6 +85,7 @@ public partial class WorkflowViewModel
 
     private void ConfigurePriceSuggestions(SpecificationDraft draft)
     {
+        draft.SetMaterialSuggestions(MaterialSuggestions);
         var machine = draft.MachineId != Guid.Empty ? _workspace.Machines.SingleOrDefault(m => m.Id == draft.MachineId) :
             _workspace.Machines.SingleOrDefault(m => m.Name == draft.Machine);
         draft.UseMachine(machine);

@@ -108,7 +108,7 @@ public sealed class WorkflowShopHandoffTests
             Frame(TopLevel.GetTopLevel(palette)!, $"marker-palette-{width}-{dark}");
             Click(palette.GetVisualDescendants().OfType<Button>().Single(b => ReferenceEquals(b.DataContext, color)));
             Assert.False(profileButton.Flyout.IsOpen); Assert.True(shopButton.IsFocused);
-            Assert.Equal(color.Argb, preferences.Load().ShopHandoffColorArgb); Assert.Equal(color.Argb, BrushColor(marker.Background));
+            Assert.Equal(color.Argb, preferences.Load().ShopHandoffColorArgb); Assert.Equal(color.Argb, BrushColor(marker.GetVisualDescendants().OfType<Border>().First(b => b.Name == "WorkflowShopHandoffTop").Background));
             Assert.Equal(originalProfile, vm.ProfileColorArgb); Assert.False(vm.HasChanges);
             Click(shopButton); Click(settings.FindControl<Button>("MoreWorkflowProfileColors")!);
             var wheel = settings.FindControl<ColorWheel>("WorkflowProfileColor")!;
@@ -116,7 +116,7 @@ public sealed class WorkflowShopHandoffTests
             var precise = vm.PickerSpectrumColor.ToRgb().ToUInt32(); Assert.Equal(color.Argb, preferences.Load().ShopHandoffColorArgb);
             Frame(TopLevel.GetTopLevel(wheel)!, $"marker-precise-{width}-{dark}");
             Click(settings.FindControl<Button>("ConfirmWorkflowProfileColor")!);
-            Assert.Equal(precise, preferences.Load().ShopHandoffColorArgb); Assert.Equal(precise, BrushColor(marker.Background));
+            Assert.Equal(precise, preferences.Load().ShopHandoffColorArgb); Assert.Equal(precise, BrushColor(marker.GetVisualDescendants().OfType<Border>().First(b => b.Name == "WorkflowShopHandoffTop").Background));
             Assert.Equal(0xFF80FF80u, BrushColor(author.Background)); Assert.Equal(originalProfile, vm.ProfileColorArgb);
             Assert.Equal(savedBytes, await File.ReadAllBytesAsync(f.Store.FilePath, Token));
             Click(shopButton); Click(settings.FindControl<Button>("MoreWorkflowProfileColors")!);
@@ -131,15 +131,16 @@ public sealed class WorkflowShopHandoffTests
             Assert.True(colleague.Orders.Single().HasShopHandoff); Assert.Equal(0xFFFF9DFFu, BrushColor(colleague.Orders.Single().ShopHandoffBrush));
             Assert.Equal(precise, f.Model.ShopHandoffColorArgb);
             f.Model.Blcb = "0100"; await f.Model.SaveHeaderCommand.ExecuteAsync(null); Assert.Null(f.Model.Error);
-            Assert.False(f.Model.Orders.Single().HasShopHandoff);
-            await colleague.ReloadCommand.ExecuteAsync(null); Assert.False(colleague.Orders.Single().HasShopHandoff);
+            Assert.True(f.Model.Orders.Single().HasShopHandoff); Assert.True(f.Model.Orders.Single().HasShopHandoffChanges);
+            await colleague.ReloadCommand.ExecuteAsync(null); Assert.True(colleague.Orders.Single().HasShopHandoff); Assert.True(colleague.Orders.Single().HasShopHandoffChanges);
             Assert.Empty(log.Errors);
         }
-        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); colleague?.Detach(); }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); colleague?.Detach(); }
     }
 
-    [Fact]
-    public async Task PartialCopyDoesNotRecordHandoff()
+    [AvaloniaTheory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task PartialCopyRecordsOnlyConfirmedProjectsAndKeepsTheCopyProblemIfRecordingFails(bool failRecording)
     {
         using var f = new ShopFixture("HansLaser");
         var source = Path.Combine(f.Root, "second"); Directory.CreateDirectory(source);
@@ -150,12 +151,38 @@ public sealed class WorkflowShopHandoffTests
         var order = f.Order with { Projects = [f.Project, second], Items = [.. f.Order.Items, new(second.ItemId, 2, second.Id)],
             Specifications = [.. f.Order.Specifications, f.Order.Specifications.Single() with { Id = second.Id }] };
         var book = f.Book with { Orders = [order] }; var validations = 0; var recorded = 0;
+        var recordingEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRecording = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var vm = new WorkflowShopTransferViewModel(f.ShopRoot, "test-db", order, book,
-            _ => { if (++validations == 3) throw new WorkflowValidationException("Заявка изменилась перед вторым проектом."); return Task.CompletedTask; }, _ => Task.CompletedTask,
-            recordHandoff: (_, _) => { recorded++; return Task.CompletedTask; });
+            _ => { validations++; if (Directory.Exists(vmDestination())) throw new WorkflowValidationException("Заявка изменилась перед вторым проектом."); return Task.CompletedTask; }, _ => Task.CompletedTask,
+            recordHandoff: (_, _) => { recorded++; return Task.CompletedTask; }, wordMapEditor: new ShopWordEditor(),
+            recordProjects: async (ids, at, token) =>
+            {
+                Assert.Equal(new[] { f.Project.Id }, ids);
+                recordingEntered.TrySetResult(); await releaseRecording.Task.WaitAsync(token);
+                if (failRecording) throw new WorkflowOutcomeUnknownException();
+                book = WorkflowChanges.RecordProjectHandoffs(book, order.Id, order.Version, ids, order.TechnologistId, at);
+            });
+        string vmDestination() => WorkflowShopFolderPaths.Plan(f.ShopRoot, order, book.Employees, book.Customers, book.Machines)[0].Path;
         await vm.RefreshAsync(); validations = 0; Assert.True(vm.CanStartAutomatically);
-        await vm.CopyAsync(); Assert.False(vm.AllPrepared); Assert.False(vm.TextCopied); Assert.Equal(0, recorded);
+        var copying = vm.CopyAsync();
+        try
+        {
+            await recordingEntered.Task.WaitAsync(TimeSpan.FromSeconds(5), Token);
+            var outcome = vm.Status; var problem = vm.Error;
+            Assert.Contains("Подготовлено 1 из 2", outcome); Assert.NotNull(problem);
+            await Task.Delay(250, Token); Pump();
+            Assert.Equal(outcome, vm.Status); Assert.Equal(problem, vm.Error);
+        }
+        finally { releaseRecording.TrySetResult(); await copying; }
+        Assert.False(vm.AllPrepared); Assert.False(vm.TextCopied); Assert.Equal(0, recorded);
         Assert.Single(vm.Projects, p => p.HasDestination);
+        Assert.Contains("Заявка изменилась перед вторым проектом", vm.Error);
+        Assert.Null(book.Orders.Single().ShopHandoff);
+        Assert.Null(book.Orders.Single().Projects.Single(p => p.Id == second.Id).ShopHandoff);
+        if (failRecording)
+        { Assert.All(book.Orders.Single().Projects, p => Assert.Null(p.ShopHandoff)); Assert.Contains("Не удалось подтвердить отметки", vm.Error); }
+        else Assert.NotNull(book.Orders.Single().Projects.Single(p => p.Id == f.Project.Id).ShopHandoff);
     }
 
     private static uint BrushColor(IBrush? brush) => Assert.IsType<SolidColorBrush>(brush).Color.ToUInt32();

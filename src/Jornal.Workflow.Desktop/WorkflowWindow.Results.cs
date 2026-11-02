@@ -55,11 +55,15 @@ public partial class WorkflowWindow
     private async void OnGenerateResult(object? sender, RoutedEventArgs e)
     {
         if (Model is not { CanGenerateResult: true } model || OwnedWindows.Count > 0) return;
+        await GenerateResultAsync(model);
+    }
+    private async Task GenerateResultAsync(WorkflowViewModel model, bool openResult = true)
+    {
         try
         {
             if (model.PrepareResultGeneration() is not { } draft) return;
             if (draft.NeedsConfirmation && !await new WorkflowResultReplaceWindow { RequestedThemeVariant = ActualThemeVariant }.ShowDialog<bool>(this)) return;
-            if (IsVisible && ReferenceEquals(Model, model) && !_lifetime.IsCancellationRequested) model.ApplyResultGeneration(draft);
+            if (IsVisible && ReferenceEquals(Model, model) && !_lifetime.IsCancellationRequested) model.ApplyResultGeneration(draft, openResult);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

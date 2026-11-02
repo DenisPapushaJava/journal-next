@@ -8,7 +8,7 @@
       <TextBlock Text="Данные для выпадающих списков" FontSize="20" FontWeight="SemiBold" />
       <TextBlock Text="Одно значение на строку. Ваши подсказки сохраняются на этом компьютере; списки можно оставить пустыми." Classes="muted" TextWrapping="Wrap" />
     </StackPanel>
-    <Grid Grid.Row="1" ColumnDefinitions="*,16,*" Margin="24,0" IsEnabled="{Binding CanEdit}">
+    <Grid Grid.Row="1" ColumnDefinitions="*,16,*,16,*" Margin="24,0" IsEnabled="{Binding CanEdit}">
       <Grid RowDefinitions="Auto,8,*">
         <TextBlock Text="Менеджеры" FontWeight="SemiBold" />
         <TextBox x:Name="WorkflowManagersList" Grid.Row="2" Text="{Binding ManagersText}" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" MaxLength="16000"
@@ -18,6 +18,11 @@
         <TextBlock Text="Заказчики" FontWeight="SemiBold" />
         <TextBox x:Name="WorkflowCustomersList" Grid.Row="2" Text="{Binding CustomersText}" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" MaxLength="16000"
                  ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Список заказчиков, по одному на строку" />
+      </Grid>
+      <Grid Grid.Column="4" RowDefinitions="Auto,8,*">
+        <TextBlock Text="Материалы" FontWeight="SemiBold" />
+        <TextBox x:Name="WorkflowMaterialsList" Grid.Row="2" Text="{Binding MaterialsText}" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" MaxLength="16000"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Список материалов, по одному на строку" />
       </Grid>
     </Grid>
     <Border Grid.Row="2" Padding="24,16" Margin="0,16,0,0" Background="{DynamicResource JournalSurface}">

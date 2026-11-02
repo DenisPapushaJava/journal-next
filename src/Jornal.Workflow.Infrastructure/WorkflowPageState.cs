@@ -1,3 +1,5 @@
+using Jornal.Workflow.Core;
+
 namespace Jornal.Workflow.Infrastructure;
 
 // Cursor and counters belong to one filter. Retained open cards do not change that filter.
@@ -7,7 +9,8 @@ internal sealed record WorkflowPageState(WorkflowReadQuery Filter)
     public bool HasMore { get; init; }
     public int TotalCount { get; init; }
     public bool Matches(WorkflowReadQuery query) => Filter.From == query.From && Filter.Until == query.Until &&
-        Filter.Search == query.Search && Filter.Limit == query.Limit;
+        Filter.Search == query.Search && Filter.Limit == query.Limit &&
+        (Filter.Filter ?? WorkflowOrderFilter.All) == (query.Filter ?? WorkflowOrderFilter.All);
 
     public WorkflowPageState Accept(WorkflowAccessResponse response)
     {

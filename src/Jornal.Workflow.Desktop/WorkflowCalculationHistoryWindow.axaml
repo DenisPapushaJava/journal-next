@@ -1,0 +1,54 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Workflow.Desktop" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Workflow.Desktop.WorkflowCalculationHistoryWindow" x:DataType="vm:WorkflowCalculationHistoryViewModel"
+        Title="История расчёта" Width="960" Height="620" MinWidth="800" MinHeight="500"
+        Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
+  <Grid Margin="20" RowDefinitions="Auto,12,*,12,Auto">
+    <StackPanel Spacing="4">
+      <TextBlock Text="История расчёта" FontSize="22" FontWeight="SemiBold" />
+      <TextBlock Text="{Binding ProjectName}" TextWrapping="Wrap" Classes="muted" />
+      <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
+    </StackPanel>
+    <TextBlock Grid.Row="2" Text="Текущий расчёт сохранён в заявке. История появится после его изменения."
+               IsVisible="{Binding IsEmpty}" TextWrapping="Wrap" VerticalAlignment="Center" HorizontalAlignment="Center" />
+    <Grid Grid.Row="2" ColumnDefinitions="260,12,*" IsVisible="{Binding !IsEmpty}">
+      <ListBox x:Name="CalculationHistoryList" ItemsSource="{Binding Changes}" SelectedItem="{Binding Selected}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:CalculationHistoryChange">
+            <StackPanel Spacing="4" Margin="4,6">
+              <TextBlock Text="{Binding Date}" />
+              <TextBlock Text="{Binding CostChange}" Classes="tabular" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding Caption}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding Author}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <Border Grid.Column="2" Classes="panel" Padding="12">
+        <Grid RowDefinitions="Auto,12,*,12,Auto">
+          <TextBlock Text="{Binding Selected.CostChange}" Classes="tabular" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+          <DataGrid x:Name="CalculationHistoryFields" Grid.Row="2" ItemsSource="{Binding Selected.Fields}"
+                    AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="NaN">
+            <DataGrid.Columns>
+              <DataGridTextColumn x:DataType="vm:CalculationHistoryField" Header="Поле" Binding="{Binding Field}" Width="*" />
+              <DataGridTemplateColumn Header="Было" Width="*"><DataGridTemplateColumn.CellTemplate>
+                <DataTemplate x:DataType="vm:CalculationHistoryField"><TextBlock Text="{Binding Before}" TextTrimming="None" TextWrapping="Wrap" MaxLines="0" Margin="4,6" /></DataTemplate>
+              </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+              <DataGridTemplateColumn Header="Стало" Width="*"><DataGridTemplateColumn.CellTemplate>
+                <DataTemplate x:DataType="vm:CalculationHistoryField"><TextBlock Text="{Binding After}" TextTrimming="None" TextWrapping="Wrap" MaxLines="0" Margin="4,6" /></DataTemplate>
+              </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+            </DataGrid.Columns>
+          </DataGrid>
+          <ui:JournalButton x:Name="OpenHistoricalSpecification" Grid.Row="4" Label="Открыть прежнюю спецификацию"
+                            Click="OnOpenReport" IsEnabled="{Binding Selected.CanOpenReport}" HorizontalAlignment="Left"
+                            ToolTip.Tip="{Binding Selected.ReportHint}" ToolTip.ShowOnDisabled="True" />
+        </Grid>
+      </Border>
+    </Grid>
+    <Grid Grid.Row="4" ColumnDefinitions="*,12,Auto">
+      <StackPanel Spacing="4"><TextBlock Text="{Binding Warning}" TextWrapping="Wrap" Classes="muted" />
+        <TextBlock Text="{Binding Error}" TextWrapping="Wrap" Foreground="{DynamicResource JournalDangerForeground}" /></StackPanel>
+      <ui:JournalButton Grid.Column="2" Label="Закрыть" Click="OnClose" />
+    </Grid>
+  </Grid>
+</Window>

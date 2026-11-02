@@ -64,7 +64,7 @@ public sealed class WorkflowCuttingTaskWindowTests
             Assert.Equal(popupSize, content.Bounds.Size); Assert.True(copy.IsEffectivelyEnabled);
             window.FailCopy = false; Click(copy); await Until(() => f.Model.CuttingTaskNotice.Contains("Задание скопировано", StringComparison.Ordinal));
             Assert.Equal(footer, Bounds(window.FindControl<Border>("WorkflowOrderTotal")!, window)); Assert.Equal(workspace, Bounds(window.FindControl<TabControl>("WorkflowOrderTabs")!, window));
-            Assert.Equal(1, f.Model.OrderTabIndex);
+            Assert.Equal(0, f.Model.OrderTabIndex);
             Assert.Equal(before, JsonSerializer.Serialize(await f.Store.ReadAsync(Token))); Assert.Equal("Ручной текст письма", f.Model.ResultText);
             Assert.False(Directory.Exists(Path.GetDirectoryName(project.NativePath!))); Assert.Null(f.Model.ShopTransfer);
             SaveFrame(window, $"task-text-always-{width}-{dark}");
@@ -74,9 +74,9 @@ public sealed class WorkflowCuttingTaskWindowTests
             Click(window.FindControl<Button>("ResetWorkflowTaskPreviewText")!); Assert.False(f.Model.HasCuttingTaskTextEdits);
             Assert.DoesNotContain("Проверить кромку", text.Text!);
             text.Text = ""; Pump(); Assert.False(copy.IsEffectivelyEnabled); popup.Hide();
-            Assert.False(transfer.IsEffectivelyEnabled);
+            Assert.True(transfer.IsEffectivelyEnabled);
             transfer.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); Pump();
-            Assert.False(popup.IsOpen); Click(toggle);
+            Assert.True(popup.IsOpen);
             Assert.True(popup.IsOpen); Assert.Empty(window.OwnedWindows); Assert.Null(f.Model.ShopRoot); Assert.Null(f.Model.ShopTransfer);
             Click(window.FindControl<Button>("ResetWorkflowTaskPreviewText")!); Assert.True(copy.IsEffectivelyEnabled); popup.Hide();
             Assert.Equal(before, JsonSerializer.Serialize(await f.Store.ReadAsync(Token)));
@@ -88,7 +88,7 @@ public sealed class WorkflowCuttingTaskWindowTests
             Click(toggle); Assert.True(popup.IsOpen); Click(window.FindControl<TextBox>("WorkflowSearchInput")!); Assert.False(popup.IsOpen);
             Assert.Empty(log.Errors);
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     [AvaloniaTheory]
@@ -114,7 +114,7 @@ public sealed class WorkflowCuttingTaskWindowTests
             Assert.True(initial.Height <= 76, initial.ToString());
             var gridBounds = Bounds(grid, window);
             Assert.True(grid.GetVisualDescendants().OfType<DataGridRow>().Count(r => r.IsEffectivelyVisible && r.Bounds.Height > 0 && Bounds(r, window).Bottom <= gridBounds.Bottom) >= 4);
-            Assert.False(copy.IsEffectivelyEnabled); Assert.Contains("БЛЦБ", ToolTip.GetTip(copy)?.ToString());
+            Assert.True(copy.IsEffectivelyEnabled); Assert.False(f.Model.CanSendToWork); Assert.Contains("БЛЦБ", ToolTip.GetTip(copy)?.ToString());
             Click(toggle); Assert.True(flyout.IsOpen); Assert.Null(window.Copied);
             Assert.Contains("БЛЦБ", f.Model.CuttingTaskNotice);
             Click(window.FindControl<Button>("GoToWorkflowTaskTextProblem")!);
@@ -142,7 +142,7 @@ public sealed class WorkflowCuttingTaskWindowTests
             SaveFrame(window, $"task-compact-{width}-{dark}");
             Assert.True(log.Errors.Count == 0, string.Join("\n", log.Errors));
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     [AvaloniaTheory]
@@ -168,7 +168,7 @@ public sealed class WorkflowCuttingTaskWindowTests
             Click(open); await Until(() => window.OpenedFolder is not null); Assert.Equal(path, window.OpenedFolder);
             Assert.Empty(window.OwnedWindows); Assert.Null(f.Model.Error); SaveFrame(window, "bending-ready-" + dark);
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     private sealed class RecordingWindow(WorkflowPreferencesStore preferences) : WorkflowWindow(preferences)

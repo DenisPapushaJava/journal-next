@@ -119,6 +119,6 @@ public sealed class WorkflowDatabaseConnectionTests
                 frame.Save(Path.Combine(output, $"workflow-mdb-storage-{(dark ? "dark" : "light")}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
             }
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 }

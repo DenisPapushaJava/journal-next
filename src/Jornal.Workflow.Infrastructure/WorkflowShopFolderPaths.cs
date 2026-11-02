@@ -46,7 +46,9 @@ public static class WorkflowShopFolderPaths
         var manager = Component(employees.SingleOrDefault(e => e.Id == order.ManagerId)?.Name, "менеджера");
         var customer = Component(customers.SingleOrDefault(c => c.Id == order.CustomerId)?.Name, "заказчика");
         var blcb = order.Blcb.Trim();
-        var orderName = Component((blcb.StartsWith("БЛЦБ-", StringComparison.OrdinalIgnoreCase) ? blcb : "БЛЦБ-" + blcb) + " " + customer, "БЛЦБ и заказчика");
+        var blcbLabel = blcb.StartsWith("БЛЦБ-", StringComparison.OrdinalIgnoreCase) ? blcb : "БЛЦБ-" + blcb;
+        var orderName = Component(blcbLabel + " " + customer, "БЛЦБ и заказчика");
+        var projectSuffix = " " + Component(blcbLabel, "БЛЦБ");
         var active = order.ActiveProjects.ToDictionary(p => p.Id);
         var rows = new List<WorkflowShopFolderPath>();
         foreach (var item in order.Items.Where(i => i.IsIncluded).OrderBy(i => i.Number))
@@ -54,8 +56,11 @@ public static class WorkflowShopFolderPaths
             if (!active.TryGetValue(item.CurrentProjectId, out var project)) continue;
             // Never normalize, abbreviate or regenerate an established project name.
             RequireProjectName(project.Name);
+            var folderName = project.Name + projectSuffix;
+            if (folderName.Length > 255)
+                throw new WorkflowValidationException("Имя папки задания вместе с БЛЦБ превышает 255 символов. Сократите имя проекта или БЛЦБ; автоматического сокращения нет.");
             var machine = Component(machines.SingleOrDefault(m => m.Id == project.MachineId)?.Name, "станка");
-            var path = System.IO.Path.Combine(root, machine, manager, orderName, project.Name);
+            var path = System.IO.Path.Combine(root, machine, manager, orderName, folderName);
             if (path.Length > 32760) throw new WorkflowValidationException("Путь задания слишком длинный. Выберите более короткую начальную папку; имя проекта сохраняется целиком.");
             rows.Add(new(project.Id, project.Name, path));
         }

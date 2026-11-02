@@ -29,24 +29,24 @@ public sealed class WorkflowMapSigningWindowTests
         var window = new WorkflowWindow(preferences) { DataContext = f.Model, RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light, Width = 1180, Height = 768 }; window.Show();
         try
         {
-            await Until(() => !f.Model.IsBusy); var button = window.FindControl<JournalButton>("SignWorkflowMaps")!;
-            Assert.False(button.IsEnabled); Assert.False(Assert.Single(f.Model.Projects).CanSignMaps);
+            await Until(() => !f.Model.IsBusy); Assert.Null(window.FindControl<JournalButton>("SignWorkflowMaps"));
+            Assert.False(f.Model.CanSignMaps); Assert.False(Assert.Single(f.Model.Projects).CanSignMaps);
             Assert.Contains("БЛЦБ", f.Model.MapSigningHint); Assert.Contains("БЛЦБ", Assert.Single(f.Model.Projects).MapSigningHint);
             Frame(window, "map-signing-no-blcb-" + machine + "-" + dark);
-            f.Model.Blcb = "009337"; Pump(); Assert.False(button.IsEnabled);
+            f.Model.Blcb = "009337"; Pump(); Assert.False(f.Model.CanSignMaps);
             await f.Model.SaveHeaderCommand.ExecuteAsync(null); Pump(); Assert.Null(f.Model.Error);
-            Assert.True(button.IsEnabled); Assert.True(Assert.Single(f.Model.Projects).CanSignMaps);
-            f.Model.Blcb = ""; Pump(); Assert.False(button.IsEnabled); Assert.False(Assert.Single(f.Model.Projects).CanSignMaps);
+            Assert.True(f.Model.CanSignMaps); Assert.True(Assert.Single(f.Model.Projects).CanSignMaps);
+            f.Model.Blcb = ""; Pump(); Assert.False(f.Model.CanSignMaps); Assert.False(Assert.Single(f.Model.Projects).CanSignMaps);
             await f.Model.SignMapsAsync(token: Token); Assert.Contains("БЛЦБ", Assert.Single(f.Model.MapSigningResults).Message); Assert.Null(f.Model.Error);
-            await f.Model.SaveHeaderCommand.ExecuteAsync(null); Pump(); Assert.False(button.IsEnabled);
+            await f.Model.SaveHeaderCommand.ExecuteAsync(null); Pump(); Assert.False(f.Model.CanSignMaps);
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     [AvaloniaTheory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task AwjcUsesExistingToolbarAndShowsNoOpOnSecondClick(bool dark)
+    public async Task AwjcProjectMenuShowsNoOpOnSecondClick(bool dark)
     {
         using var log = new WorkflowWindowTests.BindingLog(); using var f = new ProjectFixture();
         await f.InitializeAsync(); var project = await f.AddAsync("ГАР");
@@ -64,25 +64,25 @@ public sealed class WorkflowMapSigningWindowTests
         {
             window.Show(); await Until(() => !f.Model.IsBusy); Assert.Null(f.Model.Error);
             var geometry = Geometry(window);
-            var button = window.FindControl<JournalButton>("SignWorkflowMaps")!; Assert.True(button.IsEnabled);
+            Assert.Null(window.FindControl<JournalButton>("SignWorkflowMaps")); Assert.True(f.Model.CanSignMaps);
             Assert.Contains("AWJC", Assert.Single(f.Model.Projects).MapSigningHint);
-            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Until(() => !f.Model.IsBusy && f.Model.HasMapSigningResults);
+            SignProject(window, Assert.Single(f.Model.Projects)); await Until(() => !f.Model.IsBusy && f.Model.HasMapSigningResults);
             Assert.Equal(MapSigningStatus.Signed, Assert.Single(f.Model.MapSigningResults).Status);
             var bytes = await File.ReadAllBytesAsync(path, Token); var time = File.GetLastWriteTimeUtc(path);
-            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Until(() => !f.Model.IsBusy && f.Model.HasMapSigningResults);
+            SignProject(window, Assert.Single(f.Model.Projects)); await Until(() => !f.Model.IsBusy && f.Model.HasMapSigningResults);
             Assert.Equal(MapSigningStatus.Unchanged, Assert.Single(f.Model.MapSigningResults).Status);
             Assert.Equal(geometry, Geometry(window));
             Assert.Equal(time, File.GetLastWriteTimeUtc(path)); Assert.Equal(bytes, await File.ReadAllBytesAsync(path, Token));
             Frame(window, "awjc-map-signing-" + dark); Assert.Empty(log.Errors);
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
     [AvaloniaTheory]
     [InlineData(false, 1180)]
     [InlineData(true, 1180)]
     [InlineData(false, 1366)]
     [InlineData(true, 1366)]
-    public async Task ToolbarSignsIncludedProjectsAndRowMenuTargetsItsOwnProject(bool dark, int width)
+    public async Task ProjectMenuTargetsItsOwnProjectAndKeepsOtherCardsUnchanged(bool dark, int width)
     {
         using var log = new WorkflowWindowTests.BindingLog(); using var f = new ProjectFixture();
         await f.InitializeAsync(); var a = await f.AddAsync(); var b = await f.AddAsync();
@@ -101,9 +101,8 @@ public sealed class WorkflowMapSigningWindowTests
         {
             window.Show(); await Until(() => !f.Model.IsBusy); Assert.Null(f.Model.Error);
             var geometry = Geometry(window);
-            var all = window.FindControl<JournalButton>("SignWorkflowMaps")!;
-            Assert.True(all.IsEnabled); InWindow(all, window);
-            all.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Null(window.FindControl<JournalButton>("SignWorkflowMaps"));
+            SignProject(window, f.Model.Projects.Single(p => p.Project.Id == a.Id));
             await Until(() => f.Model.HasMapSigningResults && !f.Model.IsBusy);
             Assert.Equal(MapSigningStatus.Signed, Assert.Single(f.Model.MapSigningResults).Status);
             Assert.Equal(untouched, await File.ReadAllBytesAsync(pathB, Token));
@@ -121,10 +120,10 @@ public sealed class WorkflowMapSigningWindowTests
             var result = window.FindControl<Button>("WorkflowMapSigningDetails")!; Assert.True(result.IsVisible);
             Assert.False(result.Flyout!.IsOpen); Assert.Equal(geometry, Geometry(window));
             Pump(); Frame(window, $"map-signing-{width}-{dark}");
-            InWindow(all, window); InWindow(window.FindControl<JournalButton>("CopyWorkflowCuttingTask")!, window);
+            InWindow(window.FindControl<JournalButton>("CopyWorkflowCuttingTask")!, window);
             using (File.Open(pathA, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
             {
-                all.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                SignProject(window, f.Model.Projects.Single(p => p.Project.Id == a.Id));
                 await Until(() => !f.Model.IsBusy && f.Model.HasMapSigningProblems);
             }
             Assert.False(result.Flyout.IsOpen); Assert.True(result.IsVisible); Pump(); Assert.Equal(geometry, Geometry(window));
@@ -136,7 +135,7 @@ public sealed class WorkflowMapSigningWindowTests
                 Assert.True(scroll.Extent.Width <= scroll.Viewport.Width + 1, $"Horizontal overflow: {scroll.Extent}/{scroll.Viewport}");
             Assert.Empty(log.Errors);
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     [AvaloniaFact]
@@ -154,6 +153,16 @@ public sealed class WorkflowMapSigningWindowTests
         await f.Store.WriteOrderAsync(order.Id, order.Version, b => b with { Orders = [order with { Version = order.Version + 1, Blcb = "changed" }] }, Token);
         await f.Model.SignMapsAsync(token: Token); Assert.Contains("другим пользователем", Assert.Single(f.Model.MapSigningResults).Message); Assert.Null(f.Model.Error);
         Assert.Equal(original, await File.ReadAllBytesAsync(map, Token));
+    }
+
+    private static void SignProject(WorkflowWindow window, WorkflowProjectRow row)
+    {
+        var grid = window.FindControl<DataGrid>("WorkflowProjectsGrid")!;
+        grid.ScrollIntoView(row, null); Pump();
+        var button = grid.GetVisualDescendants().OfType<Button>().Single(b => ReferenceEquals(b.DataContext, row) && b.Flyout is MenuFlyout);
+        var menu = (MenuFlyout)button.Flyout!; menu.ShowAt(button); Pump();
+        var action = menu.Items.OfType<MenuItem>().Single(i => Equals(i.Header, "Подписать карты раскроя"));
+        Assert.True(action.IsEnabled); action.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); menu.Hide();
     }
 
     private static void Pump() => Dispatcher.UIThread.RunJobs();

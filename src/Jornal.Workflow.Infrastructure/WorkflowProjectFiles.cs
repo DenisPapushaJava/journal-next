@@ -1,4 +1,5 @@
 using Jornal.Workflow.Core;
+using System.Globalization;
 
 namespace Jornal.Workflow.Infrastructure;
 
@@ -19,12 +20,8 @@ public static class WorkflowProjectFiles
             throw new WorkflowValidationException("Позиция заявки не найдена.");
         var id = Guid.NewGuid(); var item = itemId ?? Guid.NewGuid();
         var variant = order.Projects.Where(p => p.ItemId == item).Select(p => p.Variant).DefaultIfEmpty().Max() + 1;
-        // Keep the existing order-folder component when upgrading an older display number.
-        var orderFolder = order.Projects.Where(p => p.NativePath is not null)
-            .Select(p => Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(p.NativePath))))
-            .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ??
-            order.DisplayNumber + "-" + order.Id.ToString("N")[..8] + " " + SafeComponent(customer);
-        var claims = Path.Combine(root, ".workflow-names"); Directory.CreateDirectory(claims);
+        var location = OrderLocation(root, order, customer);
+        var claims = Path.Combine(location.Root, ".workflow-names"); Directory.CreateDirectory(claims);
         WorkflowServiceFiles.TryHide(claims);
         // CreateNew is the reservation, including across orders/clients. Seconds alone do not guarantee uniqueness.
         for (var offset = 0; offset < 3600; offset++)
@@ -37,8 +34,7 @@ public static class WorkflowProjectFiles
             catch (IOException) when (File.Exists(claim)) { continue; }
             await using (lease)
             {
-                var folder = Path.Combine(root, allocated.ToString("yyyy"), allocated.ToString("MM"), allocated.ToString("dd"),
-                    orderFolder, name);
+                var folder = Path.Combine(location.Folder, name);
                 var native = Path.Combine(folder, name + extension);
                 // Keep a receipt even if later persistence fails; never reuse a name or delete somebody's working files.
                 await using (var writer = new StreamWriter(lease, leaveOpen: true))
@@ -51,6 +47,35 @@ public static class WorkflowProjectFiles
             }
         }
         throw new WorkflowValidationException("Не удалось подобрать свободное имя проекта. Проверьте папку и повторите.");
+    }
+
+    private static (string Root, string Folder) OrderLocation(string root, WorkflowOrder order, string customer)
+    {
+        // Persisted paths also survive deletion, customer changes and older display-number migrations.
+        // Pick deterministically even when an older version scattered projects across several days.
+        var first = order.Projects.Where(p => p.NativePath is not null).OrderBy(p => p.CreatedAt).ThenBy(p => p.Id).FirstOrDefault();
+        if (first is not null)
+        {
+            if (!Path.IsPathFullyQualified(first.NativePath!))
+                throw new WorkflowValidationException("Путь существующего проекта неполный. Проверьте папку заявки.");
+            var folder = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(first.NativePath!))!);
+            // Existing projects use root/year/month/day/order/project/file. Keep their reservation root too.
+            // Otherwise changing the setting would lose the reservations for these working names.
+            var day = Path.GetDirectoryName(folder);
+            var month = Path.GetDirectoryName(day);
+            var year = Path.GetDirectoryName(month);
+            var previousRoot = Path.GetDirectoryName(year);
+            var date = Path.GetFileName(year) + "-" + Path.GetFileName(month) + "-" + Path.GetFileName(day);
+            if (folder is null || previousRoot is null || !DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+                throw new WorkflowValidationException("Не удалось определить папку заявки по пути существующего проекта.");
+            return (previousRoot, folder);
+        }
+        if (!WorkflowOrderNumbers.IsValid(order.ReferenceNumber))
+            throw new WorkflowValidationException("Не удалось определить дату заявки. Обновите журнал (F5).");
+        // The immutable number retains the creation day's business date after a UTC roundtrip or timezone change.
+        var number = order.ReferenceNumber;
+        var name = number + "-" + order.Id.ToString("N")[..8] + " " + SafeComponent(customer);
+        return (root, Path.Combine(root, number[..4], number.Substring(5, 2), number.Substring(8, 2), name));
     }
 
     private static string SafeComponent(string value)

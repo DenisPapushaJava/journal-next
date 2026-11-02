@@ -136,26 +136,27 @@ public sealed class WorkflowWaterjetShopTests
     }
 
     [AvaloniaFact]
-    public async Task PublicDiscoveryUsesRealPdfTextAndExistingOneClickCopyWithoutChangingSource()
+    public async Task PublicDiscoverySignsRealPdfBeforeOneClickCopyAndKeepsOriginalBackup()
     {
         using var f = new ShopFixture("ГАР", true); File.Delete(f.Project.NativePath!); File.Delete(Path.Combine(f.Source, "Лист.nc")); File.Delete(Path.Combine(f.Source, "Карта.pdf"));
         var native = Path.Combine(f.Source, "job.dig"); await File.WriteAllTextAsync(native, "synthetic working project", Token);
         var project = f.Project with { NativePath = native }; var order = f.Order with { Projects = [project] }; var book = f.Book with { Orders = [order] };
         await File.WriteAllTextAsync(Path.Combine(f.Source, "renamed-sheet.NC"), "mock comments only", Token);
         var pdf = Path.Combine(f.Source, "renamed-sheet_pp.pdf");
-        using (var writer = new PdfDocumentBuilder())
-        {
-            var font = writer.AddStandard14Font(Standard14Font.Helvetica); var page = writer.AddPage(612, 792);
-            var y = 760;
-            foreach (var (label, value) in new[] { ("Files", ""), ("CNC file", "stale.NC"), ("Drawing", "job.dig"), ("Sheet size", "1000 x 2000"), ("Tool setup", "") })
-            { page.AddText(label, 10, new PdfPoint(25, y), font); if (value.Length > 0) page.AddText(value, 10, new PdfPoint(125, y), font); y -= 20; }
-            await File.WriteAllBytesAsync(pdf, writer.Build(), Token);
-        }
+        using var maps = new MapSigningFixture("ГАР");
+        File.Copy(WaterjetMapFixture.Create(maps, native: "job.dig", cnc: "stale.NC"), pdf);
+        var original = await File.ReadAllBytesAsync(pdf, Token);
         var before = await ShopFileSystem.TreeAsync(f.Source, Token); string? copied = null;
         var model = new WorkflowShopTransferViewModel(f.ShopRoot, "test-db", order, book, _ => Task.CompletedTask, text => { copied = text; return Task.CompletedTask; });
         await model.RefreshAsync(); Assert.Null(model.Error); Assert.True(model.CanStartAutomatically);
         await model.CopyAsync(); Assert.Null(model.Error); Assert.True(model.AllPrepared); Assert.True(model.TextCopied); Assert.Contains("ГАР", copied);
         Assert.True(File.Exists(Path.Combine(model.Projects[0].Destination, "renamed-sheet.NC")));
-        Assert.True(ShopFileSystem.SameTree(before, await ShopFileSystem.TreeAsync(f.Source, Token)));
+        var after = await ShopFileSystem.TreeAsync(f.Source, Token);
+        foreach (var file in before.Files.Where(file => file.RelativePath != Path.GetFileName(pdf)))
+            Assert.Contains(file, after.Files);
+        var backup = Assert.Single(Directory.EnumerateFiles(Path.Combine(f.Source, WorkflowMapSigning.BackupFolder), "*.pdf", SearchOption.AllDirectories));
+        Assert.Equal(original, await File.ReadAllBytesAsync(backup, Token));
+        using var signed = UglyToad.PdfPig.PdfDocument.Open(Path.Combine(model.Projects[0].Destination, Path.GetFileName(pdf)));
+        Assert.Contains("БЛЦБ-009337", signed.GetPage(1).Text);
     }
 }

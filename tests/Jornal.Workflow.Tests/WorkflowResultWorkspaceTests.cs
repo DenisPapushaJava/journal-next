@@ -43,6 +43,11 @@ public sealed class WorkflowResultWorkspaceTests
             window.Show(); await Until(() => !f.Model.IsBusy); f.Model.OrderTabIndex = 0; Pump();
             var before = JsonSerializer.Serialize(await f.Store.ReadAsync(Token));
             Click(window.FindControl<Button>("OpenWorkflowResult")!); Assert.Equal(1, f.Model.OrderTabIndex); Assert.NotEmpty(f.Model.ResultText);
+            var generated = f.Model.ResultText; Assert.EndsWith("\n\n", generated);
+            Click(window.FindControl<Button>("CopyWorkflowResult")!); await Until(() => window.Copied is not null);
+            var firstCopy = window.Copied; Assert.Equal(generated, firstCopy!.Text);
+            Click(window.FindControl<Button>("CopyWorkflowResult")!); Pump();
+            Assert.Equal(firstCopy, window.Copied); Assert.Equal(generated, f.Model.ResultText);
             var editor = window.FindControl<TextBox>("WorkflowResultEditor")!; var toolbar = window.FindControl<Grid>("WorkflowResultToolbar")!;
             Assert.False(editor.IsReadOnly); Assert.Equal(10m * 96 / 72, (decimal)editor.FontSize, 8);
             var paper = window.FindControl<Border>("WorkflowResultPaper")!;
@@ -93,7 +98,7 @@ public sealed class WorkflowResultWorkspaceTests
             Assert.Equal(editor.Text, editor.SelectedText); menu.Hide();
             Assert.Equal(before, JsonSerializer.Serialize(await f.Store.ReadAsync(Token))); Assert.Empty(log.Errors);
         }
-        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); }
     }
 
     [Fact]
@@ -132,7 +137,7 @@ public sealed class WorkflowResultWorkspaceTests
             f.Model.SelectedOrder = f.Model.Orders.Single(o => o.Order.Id == original); Pump();
             Assert.Equal("Ручной текст первой заявки", f.Model.ResultText);
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     [Fact]

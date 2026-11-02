@@ -147,6 +147,8 @@ public sealed class WorkflowWordMapTests
         { Assert.Skip("Requires Windows, installed Word, and explicit private DOC fixture / application / project name."); return; }
         var bytes = await File.ReadAllBytesAsync(source, Token); var hash = SHA256.HashData(bytes);
         var editor = new WorkflowWordMapProcess(executable);
+        var references = await editor.InspectAsync(bytes, Token); Assert.NotNull(references); Assert.NotEmpty(references);
+        Assert.Equal(hash, SHA256.HashData(await File.ReadAllBytesAsync(source, Token)));
         var caption = "(4 мм)  1029-121314,  Юрченко,  (ЗПТО),  БЛЦБ-009337";
         var result = await editor.PrepareAsync(bytes, project, caption, Token);
         Assert.NotNull(result); Assert.NotNull(result.Bytes);

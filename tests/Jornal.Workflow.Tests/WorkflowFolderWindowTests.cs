@@ -43,7 +43,7 @@ public sealed class WorkflowFolderWindowTests
             Assert.Equal(2, book.Orders.Single().Specifications.Length);
             Assert.All(book.Orders.Single().Specifications, s => Assert.NotNull(s.Current.Report));
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     private static Button FolderButton(Window window, DataGrid grid, object row)

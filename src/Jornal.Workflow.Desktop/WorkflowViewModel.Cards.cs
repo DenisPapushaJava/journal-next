@@ -9,7 +9,7 @@ public partial class WorkflowViewModel
     private sealed record CardState(long Version, bool HasEdits, SpecificationDraft[] Drafts, Guid? SelectedDraftId,
         Guid? SelectedProjectId, string ManagerName, Guid? TechnologistId, string? Blcb,
         string Result, bool ResultExpanded, bool ResultStale, PlanState Plan, bool LetterOnly = false, int TabIndex = 0,
-        WorkflowOrder? SourceOrder = null, string? GeneratedResult = null);
+        WorkflowOrder? SourceOrder = null, string? GeneratedResult = null, CuttingTaskEdit? TaskEdit = null);
     private readonly Dictionary<Guid, CardState> _cards = [];
     private bool _selectingCard;
     public bool IsCardVisible => IsOrderOpen && !IsCreating;
@@ -30,7 +30,8 @@ public partial class WorkflowViewModel
         _cards[order.Id] = new(CardVersion, HasCurrentCardEdits, Drafts.ToArray(), SelectedDraft?.Id,
             SelectedProject?.Project.Id, ManagerName, Technologist?.Id, Blcb,
             ResultText, IsResultExpanded, ResultIsStale, new(IsPlanning, PlanMachine?.Id,
-                PlanThickness, _redoItem, _preparedProject), TabIndex: OrderTabIndex, SourceOrder: order, GeneratedResult: _generatedResultText);
+                PlanThickness, _redoItem, _preparedProject), TabIndex: OrderTabIndex, SourceOrder: order, GeneratedResult: _generatedResultText,
+            TaskEdit: _cuttingTaskEdit);
     }
     private void SwitchCard(WorkflowOrder order)
     {
@@ -61,6 +62,7 @@ public partial class WorkflowViewModel
         ResultText = state.Result; IsResultExpanded = state.ResultExpanded;
         OrderTabIndex = state.LetterOnly ? (state.ResultExpanded ? 1 : 0) : Math.Clamp(state.TabIndex, 0, 1);
         ResultIsStale = !string.IsNullOrWhiteSpace(state.Result) && (state.ResultStale || state.Version != order.Version);
+        _cuttingTaskEdit = state.TaskEdit;
         OnPropertyChanged(nameof(CanEditPlan)); OnPropertyChanged(nameof(PlanTitle));
         if (state.HasEdits && state.Version != order.Version)
             Error = "Заявка изменена в другом окне. Ваш черновик сохранён; перед записью нужно проверить изменения.";

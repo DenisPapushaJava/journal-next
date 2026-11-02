@@ -23,7 +23,7 @@ internal static partial class WorkflowMapPdf
     internal static MapPdfEdit? Prepare(byte[] source, CuttingProject project, WorkflowShopDiscovery.Rule rule, string text, CancellationToken token)
     {
         using var pdf = PigDocument.Open(source);
-        if (pdf.NumberOfPages > 100) throw new WorkflowValidationException("В PDF больше 100 страниц. Подпишите карту вручную.");
+        if (pdf.NumberOfPages > 100) throw new WorkflowValidationException("В PDF больше 100 страниц. Разделите карты на несколько PDF и обновите подбор.");
         var document = ToDocument(pdf, token);
         var waterjet = rule == WorkflowShopDiscovery.Rule.Waterjet;
         var nativeKey = WorkflowShopDiscovery.Key(Path.GetFileName(project.NativePath!));
@@ -93,7 +93,7 @@ internal static partial class WorkflowMapPdf
         {
             token.ThrowIfCancellationRequested();
             var p = document.Pages[page.Number - 1]; var name = WorkflowShopDiscovery.Field(p, "ПРОЕКТ", "ПРОЭКТ");
-            if (name.Length == 0 && IsTableContinuation(p) && cells.Count > 0) continue;
+            if (name.Length == 0 && WorkflowShopDiscovery.IsBlockContinuation(p) && cells.Count > 0) continue;
             if (WorkflowShopDiscovery.Key(name) != nativeKey)
                 throw Problem(page.Number, "проект не совпадает или страница не распознана как продолжение таблицы");
             // CAM station labels are free text and can be shared by gas and plasma.
@@ -101,10 +101,10 @@ internal static partial class WorkflowMapPdf
             var programExtension = rule switch
             {
                 WorkflowShopDiscovery.Rule.Laser => ".cnc",
-                WorkflowShopDiscovery.Rule.Gas or WorkflowShopDiscovery.Rule.PlasmaManual => ".nc",
+                WorkflowShopDiscovery.Rule.Gas or WorkflowShopDiscovery.Rule.Plasma => ".nc",
                 _ => null
             };
-            var cnc = WorkflowShopDiscovery.Field(p, "CNC");
+            var cnc = WorkflowShopDiscovery.Field(p, "CNC").Trim().Trim('"');
             if (programExtension is null || !cnc.EndsWith(programExtension, StringComparison.OrdinalIgnoreCase))
                 throw Problem(page.Number, "ссылка CNC не соответствует станку проекта");
             var cell = FindCell(page); cells.Add(new(page.Number, cell, ReadCell(page, cell)));
@@ -122,13 +122,6 @@ internal static partial class WorkflowMapPdf
                 w.BoundingBox.Left, w.BoundingBox.Bottom, w.BoundingBox.Right, w.BoundingBox.Top)).ToArray()));
         }
         return new(Jornal.Parsing.Documents.DocumentKind.Pdf, null, [], pages);
-    }
-
-    private static bool IsTableContinuation(Jornal.Parsing.Documents.PdfPage page)
-    {
-        var words = page.Words.Select(w => w.Text.ToUpperInvariant()).ToHashSet();
-        return !words.Contains("CNC") && !words.Contains("КОММЕНТАРИЙ") &&
-            words.Contains("НАЗВАНИЕ") && words.Contains("ДЕТАЛИ") && words.Contains("КОЛ-ВО") && words.Contains("ВСЕГО");
     }
 
     private static PdfRectangle FindCell(Page page)

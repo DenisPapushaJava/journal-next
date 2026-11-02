@@ -57,7 +57,7 @@
     </StackPanel>
     <ProgressBar Grid.Row="5" IsIndeterminate="True" IsVisible="{Binding IsBusy}" Height="3" Margin="0,8,0,0" />
     <Grid Grid.Row="7" ColumnDefinitions="*,8,Auto,8,Auto,8,Auto">
-      <TextBlock Text="Исходные файлы сохраняются. После подготовки текст задания попадёт в буфер обмена." TextWrapping="Wrap" Classes="muted" FontSize="12" VerticalAlignment="Center" />
+      <TextBlock Text="Перед копированием подпишем выбранные карты с резервными копиями. Затем текст задания попадёт в буфер обмена." TextWrapping="Wrap" Classes="muted" FontSize="12" VerticalAlignment="Center" />
       <ui:JournalButton Grid.Column="2" Label="Копировать текст" Command="{Binding CopyTextCommand}" IsVisible="{Binding AllPrepared}" IsEnabled="{Binding CanCopyText}" />
       <ui:JournalButton x:Name="ShopCopy" Grid.Column="4" Label="Подготовить в цех" Classes="primary" Command="{Binding CopyCommand}" IsEnabled="{Binding CanCopy}" IsVisible="{Binding !AllPrepared}" />
       <ui:JournalButton x:Name="ShopClose" Grid.Column="6" Label="{Binding CloseCaption}" IsEnabled="{Binding CanCloseOrCancel}" Click="OnClose" />

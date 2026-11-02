@@ -190,13 +190,19 @@ public sealed class ProjectMaintenanceTests
         Assert.Equal(hashes, Hashes(before.ProjectRoot!)); Assert.Equal(2, f.Model.Drafts.Count);
     }
 
-    [Fact]
-    public async Task TrashAndRestoreDoNotNeedThePhysicalFolder()
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task TrashAndRestoreDoNotNeedThePhysicalFolderAndTrashIsNeverIncluded(bool included)
     {
         using var f = new ProjectFixture(); await f.InitializeAsync(); var p = await f.AddAsync();
+        if (!included) await f.Model.SetProjectIncludedAsync(p.Id, false);
         var source = Path.GetDirectoryName(p.NativePath)!; var moved = source + "-перемещено-вручную"; Directory.Move(source, moved);
         await f.Model.SetProjectTrashAsync(p.Id, true); Assert.Null(f.Model.Error); Assert.Empty(f.Model.Projects);
+        f.Model.ShowTrashedProjects = true;
+        var trashed = Assert.Single(f.Model.Projects);
+        Assert.False(trashed.IsIncluded); Assert.False(trashed.DisplayedIncluded); Assert.False(trashed.CanHitToggle);
         await f.Model.SetProjectTrashAsync(p.Id, false); Assert.Null(f.Model.Error); Assert.Single(f.Model.Projects);
+        Assert.Equal(included, f.Model.Projects[0].IsIncluded); Assert.Equal(included, f.Model.Projects[0].DisplayedIncluded);
         Assert.False(Directory.Exists(source)); Assert.True(Directory.Exists(moved)); Assert.Equal(p.NativePath, f.Model.Projects[0].Project.NativePath);
     }
 

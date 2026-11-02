@@ -9,9 +9,9 @@ public partial class WorkflowViewModel
     private bool _isExactNumberSearch;
     public bool HasSearchText => Search.Length > 0;
     public bool HasSearchQuery => !string.IsNullOrWhiteSpace(Search);
-    public string SearchSummary => _readingDatabase ? "Загрузка заявок…" : (_isExactNumberSearch ? "По номеру заявки: " : HasSearchQuery ? "Найдено заявок: " : "Заявок: ") +
+    public string SearchSummary => _readingDatabase || _searchPending ? "Загрузка заявок…" : (_isExactNumberSearch ? "По номеру заявки: " : HasSearchQuery || HasOrderFilters ? "Найдено заявок: " : "Заявок: ") +
         (_store is Infrastructure.IWorkflowQueryStore query && query.HasMore ? $"{Orders.Count} из {Math.Max(Orders.Count, query.TotalCount)}" : Orders.Count.ToString()) + " · " +
-        (FilterDate is { } day ? day.ToString("dd.MM.yyyy") : "Все даты");
+        PeriodCaption;
 
     [RelayCommand] private void ClearSearch()
     {

@@ -128,7 +128,7 @@ public sealed class ProjectMaintenanceWindowTests
         {
             foreach (var owned in window.OwnedWindows.ToArray())
             { foreach (var child in owned.OwnedWindows.ToArray()) child.Close(); owned.Close(); }
-            window.Close();
+            WorkflowTestWindows.Close(window);
         }
     }
 

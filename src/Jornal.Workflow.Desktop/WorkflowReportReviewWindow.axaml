@@ -1,12 +1,12 @@
 <Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Jornal.Workflow.Desktop" xmlns:ui="using:Jornal.Desktop.Controls"
         x:Class="Jornal.Workflow.Desktop.WorkflowReportReviewWindow" x:DataType="vm:WorkflowReportReviewViewModel"
-        Title="Подбор спецификаций" Width="1366" Height="768" MinWidth="1120" MinHeight="700"
+        Title="{Binding Title}" Width="1366" Height="768" MinWidth="1120" MinHeight="700"
         Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
   <Grid RowDefinitions="Auto,*,12,Auto" Margin="20">
     <Grid ColumnDefinitions="*,12,Auto" Margin="0,0,0,16">
       <StackPanel Spacing="4">
-        <TextBlock Text="Подбор спецификаций" FontSize="22" FontWeight="SemiBold" />
+        <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="SemiBold" />
         <TextBlock Text="{Binding Summary}" Classes="muted" TextWrapping="Wrap" />
       </StackPanel>
       <ui:JournalButton Grid.Column="2" Label="Повторить подбор" Icon="refresh-cw" Command="{Binding RefreshCommand}" VerticalAlignment="Center" />
@@ -17,11 +17,11 @@
         <ColumnDefinition Width="12" />
         <ColumnDefinition Width="6*" MinWidth="580" />
       </Grid.ColumnDefinitions>
-      <DataGrid RowHeight="NaN" x:Name="WorkflowReportCandidates" ItemsSource="{Binding Candidates}" SelectedItem="{Binding Selected}"
+      <DataGrid RowHeight="NaN" x:Name="WorkflowReportCandidates" ItemsSource="{Binding VisibleCandidates}" SelectedItem="{Binding Selected}"
                 AutoGenerateColumns="False" IsReadOnly="True" IsEnabled="{Binding CanEdit}" SelectionMode="Single"
                 HeadersVisibility="Column" GridLinesVisibility="None">
         <DataGrid.Columns>
-          <DataGridTemplateColumn Header="✓" Width="48">
+          <DataGridTemplateColumn Header="✓" Width="48" IsVisible="{Binding !IsGuided}">
             <DataGridTemplateColumn.CellTemplate>
               <DataTemplate x:DataType="vm:WorkflowReportCandidate">
                 <CheckBox IsChecked="{Binding IsSelected}" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -50,18 +50,37 @@
       <Border x:Name="ReviewDetailsPanel" Grid.Column="2" Classes="panel" Padding="16">
         <Grid RowDefinitions="Auto,12,*,12,Auto">
           <StackPanel Spacing="4">
-            <TextBlock Text="{Binding Selected.CardTitle}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,12,Auto">
+              <TextBlock Text="{Binding Selected.CardTitle}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <ui:JournalButton Grid.Column="2" Label="Папка проекта" Click="OnOpenProjectFolder" IsEnabled="{Binding CanEdit}" />
+            </Grid>
             <TextBlock Text="{Binding Selected.ProjectName}" Classes="muted" TextWrapping="Wrap" />
           </StackPanel>
           <ScrollViewer x:Name="ReviewDetailsScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" IsEnabled="{Binding CanEdit}">
             <StackPanel Spacing="12" DataContext="{Binding Selected}" x:DataType="vm:WorkflowReportCandidate">
               <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
-              <StackPanel Spacing="4">
+              <StackPanel Spacing="4" IsVisible="{Binding HasSourceChoice}">
                 <TextBlock Text="Исходный отчёт" Classes="muted" />
                 <ComboBox ItemsSource="{Binding Choices}" SelectedItem="{Binding SelectedFile}" HorizontalAlignment="Stretch"
                           PlaceholderText="Выберите отчёт" AutomationProperties.Name="Исходный отчёт">
                   <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:WorkflowReportChoice"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
                 </ComboBox>
+              </StackPanel>
+              <StackPanel Spacing="6" IsVisible="{Binding MaterialNeedsReview}" DataContext="{Binding Draft}" x:DataType="vm:SpecificationDraft">
+                <TextBlock Text="Уточните марку стали из спецификации AWJC" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <ui:EntrySuggestionComboBox x:Name="ReviewMaterialInput" Value="{Binding Material}" MaxWidth="300" HorizontalAlignment="Left" MinWidth="180"
+                    Suggestions="{Binding MaterialSuggestions}" AutomationProperties.Name="Марка стали" />
+              </StackPanel>
+              <StackPanel IsVisible="{Binding ShowMaterialCheck}">
+                <CheckBox x:Name="ReviewMaterialConfirmed" DataContext="{Binding Draft}" x:DataType="vm:SpecificationDraft" Content="Марка стали верна" IsChecked="{Binding MaterialConfirmed}" />
+              </StackPanel>
+              <StackPanel Spacing="6" IsVisible="{Binding ShowPierceQuestion}">
+                <TextBlock Text="В отчёте нет количества пробивок. Укажите его для расчёта; 0 — если пробивок нет." TextWrapping="Wrap" />
+                <TextBox x:Name="ReviewMissingPierces" DataContext="{Binding Draft}" x:DataType="vm:SpecificationDraft" Text="{Binding Pierces}" Width="120" HorizontalAlignment="Left" AutomationProperties.Name="Количество пробивок" />
+              </StackPanel>
+              <StackPanel Spacing="6" IsVisible="{Binding ShowCategoryQuestion}">
+                <TextBlock Text="Выберите категорию тарифа HansLaser" TextWrapping="Wrap" />
+                <ui:EntrySuggestionComboBox x:Name="ReviewMissingCategory" DataContext="{Binding Draft}" x:DataType="vm:SpecificationDraft" Value="{Binding MaterialGroup}" Suggestions="{x:Static vm:WorkflowViewModel.KnownMaterialGroups}" MaxWidth="300" HorizontalAlignment="Left" MinWidth="220" />
               </StackPanel>
               <ItemsControl ItemsSource="{Binding Conflicts}">
                 <ItemsControl.ItemTemplate>
@@ -83,7 +102,8 @@
               <StackPanel Spacing="12" DataContext="{Binding Draft}" x:DataType="vm:SpecificationDraft">
                 <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,4,Auto,12,Auto,4,Auto,12,Auto,4,Auto,12,Auto,4,Auto">
                   <TextBlock Text="Материал" Classes="muted" /><TextBlock Grid.Column="2" Text="Толщина, мм" Classes="muted" />
-                  <TextBox Grid.Row="2" Text="{Binding Material}" AutomationProperties.Name="Материал спецификации" />
+                  <ui:EntrySuggestionComboBox x:Name="ReviewReportMaterialInput" Grid.Row="2" Value="{Binding Material}"
+                      Suggestions="{Binding MaterialSuggestions}" HorizontalAlignment="Stretch" AutomationProperties.Name="Материал спецификации" />
                   <TextBox Classes="tabular" Grid.Row="2" Grid.Column="2" Text="{Binding Thickness}" AutomationProperties.Name="Толщина спецификации, мм" />
                   <TextBlock Grid.Row="4" Text="Заготовка" Classes="muted" /><TextBlock Grid.Row="4" Grid.Column="2" Text="Количество, шт." Classes="muted" />
                   <TextBox Classes="tabular" Grid.Row="6" Text="{Binding BlankSize}" /><TextBox Classes="tabular" Grid.Row="6" Grid.Column="2" Text="{Binding Quantity}" />
@@ -94,7 +114,7 @@
                 </Grid>
                 <StackPanel Spacing="4" IsVisible="{Binding UsesMaterialCategories}">
                   <TextBlock Text="Категория тарифа HansLaser" Classes="muted" />
-                  <TextBox Text="{Binding MaterialGroup}" />
+                  <ui:EntrySuggestionComboBox Value="{Binding MaterialGroup}" Suggestions="{x:Static vm:WorkflowViewModel.KnownMaterialGroups}" />
                 </StackPanel>
                 <Expander Header="Номер и дата спецификации" HorizontalAlignment="Stretch">
                   <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,4,Auto" Margin="0,8,0,0">
@@ -106,7 +126,6 @@
               </Expander>
               <Grid IsVisible="{Binding HasDraft}">
               <StackPanel DataContext="{Binding Draft}" x:DataType="vm:SpecificationDraft" Spacing="8">
-                <CheckBox Content="Материал проверен" IsVisible="{Binding MaterialNeedsReview}" IsChecked="{Binding MaterialConfirmed}" />
                 <StackPanel Orientation="Horizontal" Spacing="16">
                   <CheckBox x:Name="ReviewHasChamfer" Content="Фаска" IsChecked="{Binding HasChamfer}" />
                   <CheckBox Content="Гибка" IsChecked="{Binding HasBending}" />
@@ -134,7 +153,7 @@
     </Grid>
     <Grid Grid.Row="3" RowDefinitions="Auto,8,Auto" ColumnDefinitions="*,12,Auto,8,Auto">
       <TextBlock Grid.ColumnSpan="5" Text="{Binding Error}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
-      <TextBlock Grid.Row="2" Text="Отмеченные готовые отчёты сохраняются вместе" Classes="muted" VerticalAlignment="Center" />
+      <TextBlock Grid.Row="2" Text="{Binding Footer}" TextWrapping="Wrap" Classes="muted" VerticalAlignment="Center" />
       <ui:JournalButton x:Name="SaveWorkflowReports" Grid.Row="2" Grid.Column="2" Label="{Binding SaveCaption}" Classes="primary" Command="{Binding SaveCommand}" />
       <ui:JournalButton Grid.Row="2" Grid.Column="4" Label="Закрыть" Click="OnClose" />
     </Grid>

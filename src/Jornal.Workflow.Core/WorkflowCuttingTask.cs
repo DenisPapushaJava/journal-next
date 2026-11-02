@@ -36,9 +36,9 @@ public static class WorkflowCuttingTask
             if (variants.Length == 0) continue;
             var current = variants.SingleOrDefault(p => p.Id == item.CurrentProjectId);
             if (current is null || variants[0].Variant > item.ReviewedThroughVariant)
-                return Block($"Позиция {item.Number}: проверьте и выберите вариант для задания.", CuttingTaskTarget.Project, variants[0].Id);
+                return Block($"Позиция {item.Number}: выберите актуальный вариант проекта «{variants[0].Name}».", CuttingTaskTarget.Project, variants[0].Id);
             if (!saved.ContainsKey(current.Id))
-                return Block($"Позиция {item.Number}: загрузите спецификацию и сохраните расчёт.", CuttingTaskTarget.Project, current.Id);
+                return Block($"Проект «{current.Name}»: загрузите спецификацию и сохраните расчёт.", CuttingTaskTarget.Project, current.Id);
         }
 
         var specifications = order.ActiveSpecifications.ToArray();
@@ -47,13 +47,17 @@ public static class WorkflowCuttingTask
         foreach (var spec in specifications)
         {
             var p = spec.Current.Parameters;
-            if (p.MaterialNeedsReview || Line(p.Material).Length == 0 || p.ThicknessMm <= 0 ||
-                !names.TryGetValue(p.MachineId, out var name) || name.Length == 0)
-                return Block("Проверьте материал, толщину и станок спецификации.", CuttingTaskTarget.Project, spec.Id);
+            var label = order.Projects.SingleOrDefault(project => project.Id == spec.Id)?.Name ?? spec.Current.DocumentNumber;
+            if (p.MaterialNeedsReview || Line(p.Material).Length == 0)
+                return Block($"Проект «{label}»: укажите или подтвердите материал спецификации.", CuttingTaskTarget.Project, spec.Id);
+            if (p.ThicknessMm <= 0)
+                return Block($"Проект «{label}»: укажите толщину спецификации.", CuttingTaskTarget.Project, spec.Id);
+            if (!names.TryGetValue(p.MachineId, out var name) || name.Length == 0)
+                return Block($"Проект «{label}»: станок спецификации не найден в каталоге.", CuttingTaskTarget.Project, spec.Id);
         }
 
         var text = new StringBuilder().Append(ShortNumber(Line(order.Blcb))).Append("  ")
-            .Append(manager).Append(" (").Append(customer).Append(")\n");
+            .Append(manager).Append(" (").Append(customer).Append(")\n\n");
         var machineOrder = machines.Select((m, index) => (m.Id, index)).ToDictionary(x => x.Id, x => x.index);
         var groups = specifications.GroupBy(s => s.Current.Parameters.MachineId).OrderBy(g => machineOrder[g.Key]).ToArray();
         for (var index = 0; index < groups.Length; index++)
@@ -73,7 +77,7 @@ public static class WorkflowCuttingTask
                 text.Append('\n');
             }
         }
-        return new(text.ToString());
+        return new(text.Append('\n').ToString());
     }
 
     private static string Line(string? value) => string.Join(" ", new string((value ?? "").Select(c => char.IsControl(c) ? ' ' : c).ToArray())

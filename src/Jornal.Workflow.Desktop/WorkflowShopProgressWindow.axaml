@@ -1,0 +1,86 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Workflow.Desktop"
+        xmlns:infra="using:Jornal.Workflow.Infrastructure"
+        x:Class="Jornal.Workflow.Desktop.WorkflowShopProgressWindow" x:DataType="vm:WorkflowShopTransferViewModel"
+        Title="Отправка в цех" Width="560" Height="380" CanResize="False" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner" Background="{DynamicResource JournalBackground}">
+  <Window.Styles>
+    <Style Selector="Border.shop-step"><Setter Property="Background" Value="{DynamicResource JournalRaised}" /><Setter Property="BorderBrush" Value="{DynamicResource JournalBorder}" /></Style>
+    <Style Selector="Border.shop-step.current"><Setter Property="Background" Value="{DynamicResource JournalAccent}" /><Setter Property="BorderBrush" Value="{DynamicResource JournalAccent}" /></Style>
+    <Style Selector="Border.shop-step.done"><Setter Property="Background" Value="{DynamicResource JournalAccentSoft}" /></Style>
+  </Window.Styles>
+  <Grid Margin="20" RowDefinitions="Auto,12,Auto,12,Auto,4,18,8,64,4,32,8,*,12,Auto">
+    <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" />
+    <ItemsControl Grid.Row="2" ItemsSource="{Binding ProgressSteps}">
+      <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1" Columns="5" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:WorkflowShopProgressStep">
+          <StackPanel Spacing="4" HorizontalAlignment="Center">
+            <Border Classes="shop-step" Classes.current="{Binding IsCurrent}" Classes.done="{Binding IsDone}"
+                    Width="18" Height="18" CornerRadius="9" BorderThickness="1" HorizontalAlignment="Center">
+              <Grid>
+                <Ellipse Width="4" Height="4" Fill="{DynamicResource JournalOnAccent}" IsVisible="{Binding IsCurrent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Path Data="M2,6 L5,9 L11,2" Stroke="{DynamicResource JournalAccent}" StrokeThickness="1.6" Stretch="Uniform"
+                      Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding IsDone}" />
+              </Grid>
+            </Border>
+            <TextBlock Text="{Binding Caption}" FontSize="11" Classes="muted" />
+          </StackPanel>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <TextBlock x:Name="ShopProgressTitle" Grid.Row="4" Text="{Binding ProgressTitle}" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" />
+    <TextBlock Grid.Row="6" Text="{Binding ProgressCount}" FontSize="12" Classes="muted tabular" />
+    <Grid Grid.Row="8" Grid.RowSpan="5" RowDefinitions="64,4,32,8,*" IsVisible="{Binding !MapDetailsExpanded}">
+      <Grid ColumnDefinitions="62,8,*" RowDefinitions="30,4,30" IsVisible="{Binding !IsProgressSuccessful}">
+        <TextBlock Text="Проект" Classes="muted" FontSize="12" IsVisible="{Binding HasProgressProject}" />
+        <TextBlock x:Name="ShopProgressProject" Grid.Column="2" Text="{Binding ProgressProject}" FontSize="12" TextWrapping="Wrap" MaxLines="2"
+                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ProgressProject}" />
+        <TextBlock Grid.Row="2" Text="Файл" Classes="muted" FontSize="12" IsVisible="{Binding HasProgressFile}" />
+        <TextBlock x:Name="ShopProgressFile" Grid.Row="2" Grid.Column="2" Text="{Binding ProgressFile}" FontSize="12" TextWrapping="Wrap" MaxLines="2"
+                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ProgressFile}" />
+      </Grid>
+      <StackPanel Spacing="4" IsVisible="{Binding IsProgressSuccessful}">
+        <TextBlock Text="{Binding MapSigningSummary}" FontSize="12" TextWrapping="Wrap" />
+        <TextBlock Text="Комплекты файлов подготовлены." FontSize="12" />
+        <TextBlock Text="Отметка сохранена, текст сообщения скопирован." FontSize="12" TextWrapping="Wrap" />
+      </StackPanel>
+      <TextBlock Grid.Row="2" Text="{Binding ProgressActivity}" FontSize="12" Classes="muted" TextWrapping="Wrap" />
+      <ProgressBar x:Name="ShopProgressBar" Grid.Row="3" Height="3" IsIndeterminate="True" IsVisible="{Binding IsBusy}" VerticalAlignment="Center" />
+      <ScrollViewer Grid.Row="4" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <SelectableTextBlock x:Name="ShopProgressError" Text="{Binding Error}" TextWrapping="Wrap" FontSize="12"
+                             Foreground="{DynamicResource JournalDangerForeground}" />
+      </ScrollViewer>
+    </Grid>
+    <Grid Grid.Row="8" Grid.RowSpan="5" RowDefinitions="Auto,8,*" IsVisible="{Binding MapDetailsExpanded}">
+      <StackPanel Spacing="4">
+        <TextBlock Text="{Binding MapSigningSummary}" FontSize="12" TextWrapping="Wrap" />
+        <ScrollViewer MaxHeight="96" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" IsVisible="{Binding HasError}">
+          <SelectableTextBlock Text="{Binding Error}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource JournalDangerForeground}" />
+        </ScrollViewer>
+      </StackPanel>
+      <ListBox x:Name="ShopMapDetails" Grid.Row="2" ItemsSource="{Binding MapDetails}"
+               Background="Transparent" BorderThickness="0" Padding="0"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+        <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+        <ListBox.Styles><Style Selector="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="Padding" Value="4,8" /></Style></ListBox.Styles>
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="infra:MapSigningResult">
+            <StackPanel Spacing="4">
+              <SelectableTextBlock Text="{Binding Details}" FontSize="12" TextWrapping="Wrap" />
+              <TextBlock Text="Подпись" Classes="muted" FontSize="11" IsVisible="{Binding HasCaption}" />
+              <SelectableTextBlock Text="{Binding Caption}" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding HasCaption}" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Grid>
+    <Grid Grid.Row="14" ColumnDefinitions="*,12,Auto">
+      <TextBlock Text="Готовые комплекты и подписанные карты сохраняются при отмене." Classes="muted" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center" IsVisible="{Binding IsBusy}" />
+      <Button x:Name="ShopMapDetailsToggle" Content="{Binding MapDetailsCaption}" Classes="command" HorizontalAlignment="Left"
+              IsVisible="{Binding HasMapDetails}" Click="OnMapDetails" />
+      <Button x:Name="ShopProgressCancel" Grid.Column="2" Content="Отменить" Classes="command" IsEnabled="{Binding CanCancel}" Click="OnCancel" />
+      <Button x:Name="ShopProgressClose" Grid.Column="2" Content="Вернуться к заявке" Classes="command" IsVisible="False" Click="OnClose" />
+    </Grid>
+  </Grid>
+</Window>

@@ -41,7 +41,7 @@ public sealed class WorkflowCurrentStateWindowTests
             Click(open); await Until(() => f.Model.Error is not null); Assert.Single(window.OpenedReports);
             Assert.Contains("повреждена", f.Model.Error); Save("corrupt"); Assert.Empty(log.Errors);
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
 
         void Save(string state)
         {

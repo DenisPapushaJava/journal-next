@@ -1,0 +1,26 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:vm="using:Jornal.Workflow.Desktop">
+  <ControlTheme x:Key="{x:Type vm:WorkflowBadge}" TargetType="vm:WorkflowBadge">
+    <Setter Property="Height" Value="22" />
+    <Setter Property="Padding" Value="6,2" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{DynamicResource JournalText}" />
+    <Setter Property="Background" Value="{DynamicResource JournalRaised}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource JournalBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <Path x:Name="BadgeIcon" IsVisible="False" Data="{TemplateBinding Icon}" Width="14" Height="14" Margin="0,0,4,0"
+                  Stretch="Uniform" Stroke="{TemplateBinding Foreground}" StrokeThickness="1.6" StrokeLineCap="Round" StrokeJoin="Round" />
+            <TextBlock Text="{TemplateBinding Label}" Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}"
+                       FontFeatures="tnum" VerticalAlignment="Center" />
+          </StackPanel>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:icon /template/ Path#BadgeIcon"><Setter Property="IsVisible" Value="True" /></Style>
+  </ControlTheme>
+</ResourceDictionary>

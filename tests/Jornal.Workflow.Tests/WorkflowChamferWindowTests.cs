@@ -53,10 +53,10 @@ public sealed class WorkflowChamferWindowTests
             }
             finally { options.Close(); }
             f.Model.GenerateResultCommand.Execute(null); Assert.Null(f.Model.Error);
-            Assert.Contains("Резка: 1500 ₽.", f.Model.ResultText); Assert.EndsWith("   ФАСКА\n", f.Model.ResultText);
+            Assert.Contains("Резка: 1500 ₽.", f.Model.ResultText); Assert.EndsWith("   ФАСКА\n\n", f.Model.ResultText);
             Assert.True(log.Errors.Count == 0, string.Join("\n", log.Errors));
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
 
         void SaveFrame(Window target, string state)
         {

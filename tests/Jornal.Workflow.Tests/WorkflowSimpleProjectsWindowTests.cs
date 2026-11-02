@@ -39,10 +39,10 @@ public sealed class WorkflowSimpleProjectsWindowTests
             Assert.DoesNotContain(window.GetVisualDescendants().OfType<JournalButton>(), button => button.Label is "Ручной ввод" or "Импорт вне проекта…" or "Сохранить тариф");
             Select(a.Id); Assert.True(pane.IsEffectivelyVisible); Assert.Empty(window.OwnedWindows);
             Assert.Equal(a.Id, f.Model.SelectedDraft!.Id);
-            InViewport(window.FindControl<TextBox>("WorkflowCalculationMaterial")!, fields);
+            InViewport(window.FindControl<EntrySuggestionComboBox>("WorkflowCalculationMaterial")!, fields);
             InViewport(window.FindControl<TextBox>("WorkflowCalculationLength")!, fields);
             InWindow(save, window); InWindow(coefficient, window);
-            Assert.DoesNotContain(pane.GetVisualDescendants().OfType<ComboBox>(), c => c.IsEffectivelyVisible);
+            Assert.DoesNotContain(pane.GetVisualDescendants().OfType<ComboBox>(), c => c.IsEffectivelyVisible && c.Name != "WorkflowCalculationMaterial");
             Assert.False(window.FindControl<Expander>("WorkflowCalculationDetails")!.IsExpanded);
             var firstDraft = f.Model.SelectedDraft; EditCoefficient("1,3"); Assert.Equal("1,3", firstDraft.Coefficient);
             Assert.True(f.Model.SelectedProject!.HasLocalChanges); Assert.Contains("не сохранены", f.Model.SelectedProject.State);
@@ -85,7 +85,7 @@ public sealed class WorkflowSimpleProjectsWindowTests
                 frame?.Save(Path.Combine(output, $"simple-projects-{state}-{width}-{(dark ? "dark" : "light")}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
             }
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
     private static void Click(Control control)
     {

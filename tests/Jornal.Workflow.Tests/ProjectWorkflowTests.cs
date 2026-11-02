@@ -13,11 +13,11 @@ internal sealed class ProjectFixture : IDisposable
     public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), "workflow-projects-" + Guid.NewGuid().ToString("N"));
     public LocalWorkflowWorkspaceStore Store { get; }
     public WorkflowViewModel Model { get; }
-    public ProjectFixture(Func<LocalWorkflowWorkspaceStore, WorkflowViewModel>? modelFactory = null)
+    public ProjectFixture(Func<LocalWorkflowWorkspaceStore, WorkflowViewModel>? modelFactory = null, IWorkflowWordMapEditor? wordMapEditor = null)
     {
         Directory.CreateDirectory(DirectoryPath);
         Store = new(Path.Combine(DirectoryPath, "workspace.json"));
-        Model = modelFactory?.Invoke(Store) ?? new(Store, new AppUpdatesViewModel(new WorkflowAppUpdater()));
+        Model = modelFactory?.Invoke(Store) ?? new(Store, new AppUpdatesViewModel(new WorkflowAppUpdater()), wordMapEditor: wordMapEditor ?? new ShopWordEditor());
     }
     public async Task InitializeAsync()
     {

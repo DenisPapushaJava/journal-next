@@ -19,10 +19,11 @@ public sealed class WorkflowCuttingTaskFlowTests
         var before = JsonSerializer.Serialize(await f.Store.ReadAsync(Token));
         await f.Model.CopyCuttingTaskAsync(text => { copies.Add(text); return Task.CompletedTask; });
         Assert.Single(copies); Assert.StartsWith("9337  Иванов", copies[0]); Assert.Contains("скопировано", f.Model.CuttingTaskNotice);
+        Assert.Contains("\n\n6 мм", copies[0]); Assert.EndsWith("\n\n", copies[0]);
         Assert.Equal(before, JsonSerializer.Serialize(await f.Store.ReadAsync(Token)));
         f.Model.SelectedDraft!.HasChamfer = true;
         await f.Model.CopyCuttingTaskAsync(text => { copies.Add(text); return Task.CompletedTask; });
-        Assert.Single(copies); Assert.Equal(p.Id, f.Model.SelectedDraft.Id); Assert.Contains("Сохраните", f.Model.CuttingTaskNotice);
+        Assert.Single(copies); Assert.Equal(p.Id, f.Model.SelectedDraft.Id); Assert.Contains("сохраните", f.Model.CuttingTaskNotice);
         await f.Model.SaveSpecificationCommand.ExecuteAsync(null);
         Assert.DoesNotContain("Задание скопировано", f.Model.CuttingTaskNotice);
         await f.Model.CopyCuttingTaskAsync(text => { copies.Add(text); return Task.CompletedTask; }); Assert.Contains("ФАСКА", copies[1]);

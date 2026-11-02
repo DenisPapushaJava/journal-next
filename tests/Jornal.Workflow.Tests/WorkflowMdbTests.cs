@@ -37,6 +37,21 @@ internal sealed class MemoryMdb : IWorkflowAccessTransport, IWorkflowDatabaseSer
             if (LoseNextWriteReply) { LoseNextWriteReply = false; throw new WorkflowOutcomeUnknownException(); }
             ids = [mark.OrderId];
         }
+        if (r.Operation == WorkflowAccessOperation.RecordProjectHandoffs)
+        {
+            var mark = r.ProjectHandoffs!;
+            var next = WorkflowChanges.RecordProjectHandoffs(Book, mark.OrderId, mark.ExpectedOrderVersion, mark.ProjectIds, mark.ActorId, mark.At);
+            if (!ReferenceEquals(next, Book)) Book = next with { Version = Book.Version + 1 };
+            if (LoseNextWriteReply) { LoseNextWriteReply = false; throw new WorkflowOutcomeUnknownException(); }
+            ids = [mark.OrderId];
+        }
+        if (r.Operation == WorkflowAccessOperation.ClearShopHandoff)
+        {
+            var clear = r.ClearShopHandoff!;
+            Book = WorkflowChanges.ClearShopHandoff(Book, clear.OrderId, clear.ExpectedOrderVersion, clear.Expected, clear.ActorId) with { Version = Book.Version + 1 };
+            if (LoseNextWriteReply) { LoseNextWriteReply = false; throw new WorkflowOutcomeUnknownException(); }
+            ids = [clear.OrderId];
+        }
         if (r.Operation == WorkflowAccessOperation.Purge)
         {
             Book = WorkflowChanges.PurgeTrashedOrders(Book, r.TrashTargets!, r.ActorId!.Value) with { Version = Book.Version + 1 };
@@ -59,7 +74,7 @@ internal sealed class MemoryMdb : IWorkflowAccessTransport, IWorkflowDatabaseSer
                         Number = orders.Select(o => o.Number).DefaultIfEmpty().Max() + 1,
                         ReferenceNumber = WorkflowOrderNumbers.Allocate(orders.Select(o => o.ReferenceNumber).ToHashSet(StringComparer.Ordinal), next.CreatedAt)
                     };
-                    orders.Add(next);
+                    orders.Add(WorkflowShopHandoff.PreserveRecorded(old, next));
                 }
             }
             Book = (p.Catalog ?? WorkflowCatalog.From(Book)).WithOrders(Book.Version + 1, orders.ToArray()); Book.Validate();
@@ -71,7 +86,8 @@ internal sealed class MemoryMdb : IWorkflowAccessTransport, IWorkflowDatabaseSer
         {
             var q = r.Query ?? new(); var search = new WorkflowSearchQuery(q.Search); var index = new WorkflowOrderSearchIndex(Book);
             var candidates = Book.Orders.Where(o => o.IsDeleted == (r.Operation == WorkflowAccessOperation.ReadTrash) &&
-                (q.From is null || o.CreatedAt >= q.From) && (q.Until is null || o.CreatedAt < q.Until) && index.CreateDocument(o).Matches(search, out _)).ToArray();
+                (q.From is null || o.CreatedAt >= q.From) && (q.Until is null || o.CreatedAt < q.Until) &&
+                (r.Operation == WorkflowAccessOperation.ReadTrash || (q.Filter ?? WorkflowOrderFilter.All).Matches(o)) && index.CreateDocument(o).Matches(search, out _)).ToArray();
             total = candidates.Length;
             candidates = candidates.Where(o => q.BeforeUpdated is null || o.UpdatedAt < q.BeforeUpdated || o.UpdatedAt == q.BeforeUpdated && o.Number < q.BeforeNumber)
                 .OrderByDescending(o => o.UpdatedAt).ThenByDescending(o => o.Number).ToArray();

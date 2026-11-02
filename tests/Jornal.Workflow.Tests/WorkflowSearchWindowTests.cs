@@ -33,7 +33,7 @@ public sealed class WorkflowSearchWindowTests
             window.KeyPress(Key.F, RawInputModifiers.Control, PhysicalKey.F, "f"); Pump(); Assert.True(input.IsFocused);
             input.Text = "пример ИВАН Ст3"; Pump();
             Assert.Equal(input.Text, f.Model.Search); Assert.Single(f.Model.Orders); Assert.True(clear.IsVisible);
-            Assert.Contains("Найдено заявок: 1 · Все даты", summary.Text); Assert.Contains("Материал:", f.Model.Orders[0].SearchDetail);
+            Assert.Contains("Найдено заявок: 1 · " + f.Model.FilterDate!.Value.ToString("dd.MM.yyyy"), summary.Text); Assert.Contains("Материал:", f.Model.Orders[0].SearchDetail);
             InWindow(input, window); InWindow(clear, window); InWindow(summary, window);
             var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame); Save(window, dark, width, "matches");
             Click(clear); Assert.Equal("", input.Text); Assert.Equal("", f.Model.Search); Assert.True(input.IsFocused); Assert.False(clear.IsVisible);
@@ -46,7 +46,7 @@ public sealed class WorkflowSearchWindowTests
             Save(window, dark, width, "project");
             Assert.True(log.Errors.Count == 0, string.Join("\n", log.Errors.Distinct()));
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     private static void Pump() => Dispatcher.UIThread.RunJobs();

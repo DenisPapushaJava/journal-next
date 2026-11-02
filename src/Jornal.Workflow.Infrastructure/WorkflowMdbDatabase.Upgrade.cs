@@ -9,9 +9,9 @@ public sealed partial class WorkflowMdbDatabase
     private static void UpgradeSchema(string path, Guid? expected)
     {
         using (var read = new WorkflowMdbSession(path, false))
-            if (ReadMetadata(read, expected, allowVersionOne: true).SchemaVersion == WorkflowMdbSchema.Version) return;
+            if (ReadMetadata(read, expected, allowEarlierSchema: true).SchemaVersion == WorkflowMdbSchema.Version) return;
         var stage = Path.Combine(Path.GetDirectoryName(path)!, ".Workflow-upgrade-" + Guid.NewGuid().ToString("N") + ".mdb");
-        var backup = path + ".schema-v1-" + Guid.NewGuid().ToString("N") + ".bak";
+        string? backup = null;
         try
         {
             // ReadWrite ownership excludes another upgrader or writer. ReplaceFile needs
@@ -24,16 +24,17 @@ public sealed partial class WorkflowMdbDatabase
             WorkflowServiceFiles.TryHide(stage);
             using (var copy = new WorkflowMdbSession(stage, true))
             {
-                var metadata = ReadMetadata(copy, expected, allowVersionOne: true);
+                var metadata = ReadMetadata(copy, expected, allowEarlierSchema: true);
                 if (metadata.SchemaVersion == WorkflowMdbSchema.Version) return;
-                foreach (var sql in WorkflowMdbSchema.CreateSql().Where(sql => sql.Contains("[order_shop_handoffs]", StringComparison.Ordinal))) copy.Execute(sql);
+                backup = path + $".schema-v{metadata.SchemaVersion}-" + Guid.NewGuid().ToString("N") + ".bak";
+                foreach (var sql in WorkflowMdbSchema.UpgradeSql(metadata.SchemaVersion)) copy.Execute(sql);
                 ValidateSchema(copy);
                 copy.Execute($"UPDATE [app_metadata] SET [schema_version]={WorkflowMdbSchema.Version},[revision]=[revision]+1 WHERE [singleton]=1");
                 ReadMetadata(copy, metadata.DatabaseId);
             }
             File.SetAttributes(stage, File.GetAttributes(path));
-            File.Replace(stage, path, backup);
-            WorkflowServiceFiles.TryHide(backup);
+            File.Replace(stage, path, backup!);
+            WorkflowServiceFiles.TryHide(backup!);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Data.OleDb.OleDbException or NotSupportedException)
         { throw new WorkflowValidationException("Не удалось обновить структуру MDB. Закройте подключения к этой базе на других компьютерах, проверьте доступ к папке и повторите подключение. Обновление выполняется через отдельную копию; исходные заявки не переписываются."); }

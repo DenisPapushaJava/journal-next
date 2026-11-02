@@ -60,8 +60,23 @@ public sealed class WorkflowShopTransferTests
         Assert.True(Directory.Exists(Path.Combine(plan.Destination, "ГИБКА", "пустая")));
         Assert.True(File.Exists(Path.Combine(plan.Destination, "ГИБКА", "вложенная", "рабочий.rcam")));
         Assert.False(Directory.Exists(Path.Combine(plan.Destination, "материал"))); Assert.False(File.Exists(Path.Combine(plan.Destination, "цены.xlsx")));
-        Assert.Equal(f.Project.Name, Path.GetFileName(plan.Destination));
+        Assert.Equal(f.Project.Name + " БЛЦБ-009337", Path.GetFileName(plan.Destination));
         Assert.NotNull(await WorkflowShopTransfer.DestinationRevisionAsync(plan, "test-db", f.Order.Id, Token));
+    }
+
+    [Fact]
+    public async Task NewBlcbFolderIsRepeatableAndDoesNotRenameOrChangeAnEarlierDestination()
+    {
+        using var f = new ShopFixture(); var plan = Assert.Single(await f.Discover());
+        var oldPlan = plan with { Destination = Path.Combine(Path.GetDirectoryName(plan.Destination)!, f.Project.Name) };
+        Assert.True(Assert.Single(await f.Copy(ShopFixture.Choose(oldPlan))).Success);
+        var previous = await ShopFileSystem.TreeAsync(oldPlan.Destination, Token);
+        var copied = Assert.Single(await f.Copy(ShopFixture.Choose(plan))); Assert.True(copied.Success);
+        Assert.EndsWith(" БЛЦБ-009337", plan.Destination);
+        Assert.True(await WorkflowShopTransfer.HasOwnedDestinationAsync(plan, "test-db", f.Order.Id, Token));
+        Assert.True(Assert.Single(await f.Copy(ShopFixture.Choose(plan, copied.DestinationRevision))).Unchanged);
+        Assert.True(ShopFileSystem.SameTree(previous, await ShopFileSystem.TreeAsync(oldPlan.Destination, Token)));
+        Assert.Equal("Проект не менять", await File.ReadAllTextAsync(f.Project.NativePath!, Token));
     }
 
     [Fact]

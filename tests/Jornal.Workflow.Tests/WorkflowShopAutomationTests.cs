@@ -51,7 +51,7 @@ public sealed class WorkflowShopAutomationTests
     public async Task RepeatIsAutomaticButChangedDeliveredFilesRequireExplicitReplacement()
     {
         using var f = new ShopFixture("HansLaser"); var copied = 0;
-        WorkflowShopTransferViewModel Model() => new(f.ShopRoot, "test-db", f.Order, f.Book, _ => Task.CompletedTask, _ => { copied++; return Task.CompletedTask; });
+        WorkflowShopTransferViewModel Model() => new(f.ShopRoot, "test-db", f.Order, f.Book, _ => Task.CompletedTask, _ => { copied++; return Task.CompletedTask; }, wordMapEditor: new ShopWordEditor());
         var first = Model(); await first.RefreshAsync(); Assert.True(first.CanStartAutomatically); await first.CopyAsync();
         Assert.True(first.AllPrepared); Assert.True(first.TextCopied); Assert.Equal(1, copied);
         var path = Path.Combine(first.Projects[0].Destination, "Лист.GNC"); var modified = File.GetLastWriteTimeUtc(path);
@@ -98,7 +98,7 @@ public sealed class WorkflowShopAutomationTests
         using var f = new ShopFixture("HansLaser");
         var order = f.Order with { Items = [f.Order.Items[0] with { IsIncluded = false }] };
         var path = WorkflowShopFolderPaths.ForProject(f.ShopRoot, order, f.Project.Id, f.Book.Employees, f.Book.Customers, f.Book.Machines);
-        Assert.Equal(f.Project.Name, Path.GetFileName(path.Path)); Assert.Contains("БЛЦБ-009337", path.Path);
+        Assert.Equal(f.Project.Name + " БЛЦБ-009337", Path.GetFileName(path.Path)); Assert.Contains("БЛЦБ-009337", path.Path);
         Assert.False(Directory.Exists(f.ShopRoot)); Assert.False(order.Items[0].IsIncluded);
         Assert.Throws<WorkflowValidationException>(() => WorkflowShopFolderPaths.ForProject(f.ShopRoot, order with { Projects = [f.Project with { DeletedAt = DateTimeOffset.Now }] },
             f.Project.Id, f.Book.Employees, f.Book.Customers, f.Book.Machines));

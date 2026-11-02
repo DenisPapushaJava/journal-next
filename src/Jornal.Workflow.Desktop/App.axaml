@@ -2,7 +2,10 @@
              x:Class="Jornal.Workflow.Desktop.App" RequestedThemeVariant="Light">
   <Application.Resources>
     <ResourceDictionary>
-      <ResourceDictionary.MergedDictionaries><ResourceInclude Source="avares://Jornal.Desktop/Themes/Palette.axaml" /></ResourceDictionary.MergedDictionaries>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://Jornal.Desktop/Themes/Palette.axaml" />
+        <ResourceInclude Source="avares://Jornal.Workflow.Desktop/WorkflowBadge.axaml" />
+      </ResourceDictionary.MergedDictionaries>
       <FontFamily x:Key="JournalFont">avares://Avalonia.Fonts.Inter/Assets#Inter</FontFamily>
       <ControlTheme x:Key="WorkflowTabularCell" TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}">
         <Setter Property="FontFeatures" Value="tnum" />

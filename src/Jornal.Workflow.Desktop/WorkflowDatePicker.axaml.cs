@@ -7,11 +7,23 @@ using Avalonia.VisualTree;
 
 namespace Jornal.Workflow.Desktop;
 
+public sealed class WorkflowPeriodSelectedEventArgs(DateTime date, bool wholeMonth) : EventArgs
+{
+    public DateTime Date { get; } = date;
+    public bool WholeMonth { get; } = wholeMonth;
+}
+
 public partial class WorkflowDatePicker : UserControl
 {
     public static readonly StyledProperty<DateTime?> SelectedDateProperty =
         AvaloniaProperty.Register<WorkflowDatePicker, DateTime?>(nameof(SelectedDate), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
     public DateTime? SelectedDate { get => GetValue(SelectedDateProperty); set => SetValue(SelectedDateProperty, value); }
+    public static readonly StyledProperty<bool> AllowMonthSelectionProperty = AvaloniaProperty.Register<WorkflowDatePicker, bool>(nameof(AllowMonthSelection));
+    public bool AllowMonthSelection { get => GetValue(AllowMonthSelectionProperty); set => SetValue(AllowMonthSelectionProperty, value); }
+    public static readonly StyledProperty<bool> WholeMonthProperty = AvaloniaProperty.Register<WorkflowDatePicker, bool>(nameof(WholeMonth));
+    public bool WholeMonth { get => GetValue(WholeMonthProperty); set => SetValue(WholeMonthProperty, value); }
+    // One committed period event avoids two intermediate date/mode database requests.
+    public event EventHandler<WorkflowPeriodSelectedEventArgs>? PeriodSelected;
     public WorkflowCalendarViewModel Calendar { get; } = new();
     private Button DateButtonControl => this.FindControl<Button>("DateButton")!;
     private Flyout CalendarFlyout => (Flyout)DateButtonControl.Flyout!;
@@ -19,11 +31,13 @@ public partial class WorkflowDatePicker : UserControl
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == SelectedDateProperty)
+        if (change.Property == SelectedDateProperty || change.Property == WholeMonthProperty || change.Property == AllowMonthSelectionProperty)
         {
-            Calendar.SetSelection(SelectedDate);
+            Calendar.SetSelection(SelectedDate, AllowMonthSelection && WholeMonth);
+            var hint = AllowMonthSelection ? "Выбрать день или месяц заявок" : "Выбрать дату заявок";
+            ToolTip.SetTip(DateButtonControl, hint);
             Avalonia.Automation.AutomationProperties.SetName(DateButtonControl,
-                SelectedDate is { } date ? "Дата заявок: " + date.ToString("dd.MM.yyyy") + ". Выбрать другую дату" : "Выбрать дату заявок");
+                SelectedDate is not null ? "Период заявок: " + Calendar.Caption + ". " + hint : hint);
         }
     }
     private void OnOpened(object? sender, EventArgs e) { Calendar.Open(); FocusCell(); }
@@ -35,8 +49,16 @@ public partial class WorkflowDatePicker : UserControl
     {
         if (sender is not Button { DataContext: WorkflowCalendarCell cell } || cell.Caption.Length == 0) return;
         if (Calendar.Choose(cell) is { } date)
-        { SetCurrentValue(SelectedDateProperty, date); CalendarFlyout.Hide(); }
+        { Commit(date, false); }
         else FocusCell();
+    }
+    private void OnWholeMonth(object? sender, RoutedEventArgs e)
+    { if (AllowMonthSelection && Calendar.IsDays) Commit(Calendar.DisplayedMonth, true); }
+    private void Commit(DateTime date, bool wholeMonth)
+    {
+        if (AllowMonthSelection) PeriodSelected?.Invoke(this, new(date, wholeMonth));
+        else SetCurrentValue(SelectedDateProperty, date);
+        CalendarFlyout.Hide();
     }
     private void FocusCell() => Dispatcher.UIThread.Post(() =>
     {

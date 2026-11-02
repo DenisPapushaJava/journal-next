@@ -74,7 +74,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     partial void OnStatusChanged(string? value) => OnPropertyChanged(nameof(HasStatus));
     public string EntrySuggestionsSummary
     {
-        get { var value = _suggestions(); return $"Менеджеры: {value?.Managers.Length ?? 0} · Заказчики: {value?.Customers.Length ?? 0}"; }
+        get { var value = _suggestions(); return $"Менеджеры: {value?.Managers.Length ?? 0} · Заказчики: {value?.Customers.Length ?? 0} · Материалы: {value?.Materials.Length ?? 0}"; }
     }
     public WorkflowEntrySuggestionsViewModel CreateEntrySuggestionsEditor() => new(_suggestions(), _saveSuggestions);
     public void RefreshEntrySuggestionsSummary() => OnPropertyChanged(nameof(EntrySuggestionsSummary));

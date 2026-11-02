@@ -8,6 +8,7 @@ public sealed record ShopFile(string Name, string SourcePath, long Length, strin
 {
     public bool Ignored { get; init; }
     public bool IsReadable { get; init; } = true;
+    public bool ConfirmedProjectLink { get; init; }
 }
 public sealed record ShopTreeFile(string RelativePath, long Length, string Sha256);
 public sealed record ShopTree(ShopTreeFile[] Files, string[] Directories);
@@ -16,6 +17,9 @@ public sealed record ShopProjectFiles(CuttingProject Project, string Destination
     public string? ReviewReason { get; init; }
     public string[]? CandidateExtensions { get; init; }
     public string[]? NativeNames { get; init; }
+    public WorkflowMachine? Machine { get; init; }
+    public WordMapMatch? WordMatch { get; init; }
+    public ShopTreeFile[]? NativeProof { get; init; }
     public bool NeedsReview => ReviewReason is not null || Files.Any(f => !f.IsReadable || !f.Suggested && !f.Ignored);
 }
 public sealed record ShopTransferSelection(ShopProjectFiles Project, ShopFile[] Files, bool Reviewed, string? DestinationRevision);
@@ -58,7 +62,7 @@ internal static class ShopFileSystem
         return (length, hash);
     }
 
-    internal static async Task<ShopTree> TreeAsync(string root, CancellationToken token, string? ignoreName = null)
+    internal static async Task<ShopTree> TreeAsync(string root, CancellationToken token, string? ignoreName = null, Action<string>? onFile = null)
     {
         RequireOrdinaryPath(root);
         if (!Directory.Exists(root)) throw new WorkflowValidationException($"Папка недоступна: {root}");
@@ -72,7 +76,13 @@ internal static class ShopFileSystem
                 var relative = Path.GetRelativePath(root, path);
                 if (relative == ignoreName) continue;
                 if ((File.GetAttributes(path) & FileAttributes.Directory) != 0) { directories.Add(relative); pending.Push(path); }
-                else { var f = await FingerprintAsync(path, token); files.Add(new(relative, f.Length, f.Hash)); }
+                else
+                {
+                    onFile?.Invoke(relative);
+                    try { var f = await FingerprintAsync(path, token); files.Add(new(relative, f.Length, f.Hash)); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    { throw new WorkflowValidationException($"Файл «{relative}» в папке «{Path.GetFileName(root)}» недоступен. Закройте его или проверьте доступ."); }
+                }
             }
         }
         if (files.Select(f => f.RelativePath).Concat(directories).Distinct(PathComparer).Count() != files.Count + directories.Count)

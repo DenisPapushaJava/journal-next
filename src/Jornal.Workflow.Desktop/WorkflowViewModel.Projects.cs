@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Jornal.Workflow.Core;
@@ -12,13 +13,44 @@ public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, s
     SpecificationState? saved, bool included = true, bool legacyCalculation = false, bool hasAlternatives = false,
     bool hasLocalChanges = false) : ObservableObject
 {
-    public CuttingProject Project { get; } = project;
+    public CuttingProject Project { get; private set; } = project;
+    private WorkflowShopHandoff? _shopHandoff;
+    private bool _shopHandoffChanged;
+    private string _shopHandoffDescription = "";
+    private uint _shopHandoffColor = 0xFF80FFFF;
+    public bool HasShopHandoff => _shopHandoff is not null;
+    public bool HasShopHandoffChanges => HasShopHandoff && _shopHandoffChanged;
+    public IBrush ShopHandoffBrush => new SolidColorBrush(Color.FromUInt32(_shopHandoffColor));
+    public string ShopHandoffHint => HasShopHandoff ? _shopHandoffDescription + (IsExcluded ? "\nСейчас исключён из состава заявки." :
+        HasShopHandoffChanges ? "\nДля обновления комплекта повторно отправьте задание в цех." : "") : "";
+    internal void ApplyShopHandoff(WorkflowOrder order, IReadOnlyList<Employee> employees, uint color)
+    {
+        var current = order.Projects.SingleOrDefault(p => p.Id == Project.Id);
+        var stamp = current?.ShopHandoff;
+        var changed = stamp is not null && stamp.ContentHash != WorkflowShopHandoff.ProjectHash(order, Project.Id);
+        var description = stamp is null ? "" : "Передан в цех · " + stamp.At.ToLocalTime().ToString("dd.MM.yyyy HH:mm") +
+            "\nТехнолог: " + (employees.SingleOrDefault(e => e.Id == stamp.ActorId)?.Name ?? "не указан") +
+            (changed ? ChangedDescription(stamp, order, Project.Id) : "\nПереданный проект не изменён.");
+        if (current is not null) Project = current;
+        if (_shopHandoff == stamp && _shopHandoffChanged == changed && _shopHandoffColor == color && _shopHandoffDescription == description) return;
+        _shopHandoff = stamp; _shopHandoffChanged = changed; _shopHandoffColor = color; _shopHandoffDescription = description;
+        foreach (var name in new[] { nameof(Project), nameof(HasShopHandoff), nameof(HasShopHandoffChanges), nameof(ShopHandoffBrush), nameof(ShopHandoffHint) }) OnPropertyChanged(name);
+    }
+    private static string ChangedDescription(WorkflowShopHandoff stamp, WorkflowOrder order, Guid projectId)
+    {
+        var reasons = !order.Specifications.Any(s => s.Id == projectId) ? ["Отсутствует сохранённый расчёт проекта."] :
+            stamp.ProjectInputs?.Changes(WorkflowProjectHandoffInputs.Capture(order, projectId));
+        return "\nПосле передачи были изменения." + (reasons is { Length: > 0 }
+            ? "\n• " + string.Join("\n• ", reasons)
+            : "\nТочные отличия не сохранены для этой передачи.");
+    }
     public int ItemNumber { get; } = itemNumber;
     public string Machine { get; } = machine;
     public bool IsCurrent { get; } = isCurrent;
     public SpecificationState? Saved { get; } = saved;
     public bool IsLegacyCalculation { get; } = legacyCalculation;
     public bool HasProjectActions => !IsLegacyCalculation;
+    public bool CanViewHistory => Saved is not null && Project.NativePath is not null;
     public bool CanChooseForTotal => HasProjectActions && !IsDeleted && Saved is not null && hasAlternatives;
     private bool _hasLocalChanges = hasLocalChanges;
     public bool HasLocalChanges => _hasLocalChanges;
@@ -33,7 +65,7 @@ public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, s
     internal void ApplyIncluded(bool value)
     {
         if (!SetProperty(ref _included, value, nameof(Included))) return;
-        foreach (var name in new[] { nameof(IsIncluded), nameof(DisplayedIncluded), nameof(IsExcluded), nameof(State), nameof(DetailsHint) }) OnPropertyChanged(name);
+        foreach (var name in new[] { nameof(IsIncluded), nameof(DisplayedIncluded), nameof(IsExcluded), nameof(ShopHandoffHint), nameof(State), nameof(DetailsHint) }) OnPropertyChanged(name);
     }
     internal void SetInclusionWritePending(bool value, bool? requested = null)
     {
@@ -111,6 +143,7 @@ public partial class WorkflowViewModel
     public IReadOnlyList<WorkflowMachine> ProjectMachines => _workspace.Machines;
     public IReadOnlyList<string> CustomerSuggestions => _localPreferences.EntrySuggestions?.Customers ?? [];
     public IReadOnlyList<string> ManagerSuggestions => _localPreferences.EntrySuggestions?.Managers ?? [];
+    public IReadOnlyList<string> MaterialSuggestions => _localPreferences.EntrySuggestions?.Materials ?? [];
     public IReadOnlyList<string> PlanThicknessSuggestions => _workspace.Rates.Where(r => r.MachineId == PlanMachine?.Id)
         .Select(r => r.ThicknessMm).Distinct().Order().Select(SpecificationDraft.N).ToArray();
     public bool IsProjectListEmpty => Projects.Count == 0;
@@ -242,6 +275,11 @@ public partial class WorkflowViewModel
         PlanMachine = _workspace.Machines.SingleOrDefault(m => m.Id == selected);
         OnPropertyChanged(nameof(PlanThicknessSuggestions));
     }
+    private void NotifyProjectHandoffs()
+    {
+        if (CurrentOrder is not { } order) return;
+        foreach (var row in Projects) row.ApplyShopHandoff(order, _workspace.Employees, ShopHandoffColorArgb);
+    }
     private void RefreshProjects(Guid? select = null)
     {
         var id = select ?? SelectedDraft?.Id ?? SelectedProject?.Project.Id;
@@ -272,6 +310,7 @@ public partial class WorkflowViewModel
             SelectedProject = Projects.SingleOrDefault(p => p.Project.Id == id) ?? Projects.FirstOrDefault();
         }
         finally { _refreshingProjects = false; }
+        NotifyProjectHandoffs();
         NotifyShopFolderPaths();
         SelectedDraft = SelectedProject is { IsDeleted: false } selected ? Drafts.SingleOrDefault(d => d.Id == selected.Project.Id) : null;
         NotifyProjectMachines(); OnPropertyChanged(nameof(ProjectsStatus)); NotifyCompleteness();

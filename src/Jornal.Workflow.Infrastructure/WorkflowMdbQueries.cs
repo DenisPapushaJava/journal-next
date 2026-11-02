@@ -14,12 +14,24 @@ public static class WorkflowMdbQueries
         var where = new List<string> { trash ? "o.[deleted_at] IS NOT NULL" : "o.[deleted_at] IS NULL" };
         var values = new List<(WorkflowMdbColumn, object?)>();
         void Param(WorkflowMdbType type, object? value) => values.Add((new("p", null, type, false), value));
+        if (query.From is { } from) { where.Add("o.[created_at]>=?"); Param(WorkflowMdbType.Utc, from.UtcDateTime); }
+        if (query.Until is { } until) { where.Add("o.[created_at]<?"); Param(WorkflowMdbType.Utc, until.UtcDateTime); }
+        var filter = query.Filter ?? WorkflowOrderFilter.All;
+        if (!Enum.IsDefined(filter.Work)) throw new WorkflowValidationException("Неизвестный фильтр состояния заявки.");
+        if (!trash)
+        {
+            if (filter.TechnologistId is { } owner)
+            { where.Add("o.[technologist_id]=?"); Param(WorkflowMdbType.Guid, owner); }
+            if (filter.Work != WorkflowWorkFilter.All)
+                where.Add((filter.Work == WorkflowWorkFilter.NotSent ? "NOT " : "") +
+                    "EXISTS (SELECT * FROM [order_shop_handoffs] h WHERE h.[id]=o.[id])");
+            if (filter.WithBending) where.Add(HasOperation("has_bending"));
+            if (filter.WithChamfer) where.Add(HasOperation("has_chamfer"));
+        }
         if (terms.OrderReference is { } exact)
         { where.Add("o.[reference_number]=?"); Param(WorkflowMdbType.Text, exact); }
         else
         {
-            if (query.From is { } from) { where.Add("o.[created_at]>=?"); Param(WorkflowMdbType.Utc, from.UtcDateTime); }
-            if (query.Until is { } until) { where.Add("o.[created_at]<?"); Param(WorkflowMdbType.Utc, until.UtcDateTime); }
             foreach (var term in words)
             {
                 var parts = new List<string>();
@@ -58,4 +70,12 @@ public static class WorkflowMdbQueries
         return new($"SELECT TOP {query.Limit + 1} o.[id] FROM [orders] o WHERE " + string.Join(" AND ", where) + " ORDER BY o.[updated_at] DESC,o.[order_number] DESC",
             "SELECT COUNT(*) FROM [orders] o WHERE " + baseWhere, values.ToArray(), countValues);
     }
+
+    // Same active-specification rule as WorkflowOrder.ActiveSpecifications. EXISTS avoids duplicate orders.
+    private static string HasOperation(string column) =>
+        $"EXISTS (SELECT * FROM [specifications] fs WHERE fs.[order_id]=o.[id] AND fs.[{column}]<>0 AND (" +
+        "NOT EXISTS (SELECT * FROM [cutting_projects] fp WHERE fp.[id]=fs.[id]) OR (" +
+        "EXISTS (SELECT * FROM [cutting_projects] fp WHERE fp.[id]=fs.[id] AND fp.[deleted_at] IS NULL) AND " +
+        "EXISTS (SELECT * FROM [order_item_selections] sel WHERE sel.[order_id]=o.[id] AND sel.[project_id]=fs.[id] AND " +
+        "EXISTS (SELECT * FROM [order_items] fi WHERE fi.[id]=sel.[id] AND fi.[is_included]<>0)))))";
 }

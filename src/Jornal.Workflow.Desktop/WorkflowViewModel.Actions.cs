@@ -87,11 +87,12 @@ public partial class WorkflowViewModel
     }
     private void NotifyActionAvailability()
     {
+        NotifyNavigation(); NotifyCalculationState();
         NotifyNewOrderActions(); NotifyPlanActions(); NotifyResultState();
         foreach (var name in new[] { nameof(CanSaveHeader), nameof(SaveHeaderHint), nameof(CanAddProject), nameof(AddProjectHint),
             nameof(CanLoadReports), nameof(LoadReportsHint), nameof(CanSaveSpecification), nameof(SaveSpecificationHint),
             nameof(CanCancelDraft), nameof(CancelDraftHint), nameof(CanRefreshRate), nameof(RefreshRateHint),
-            nameof(CanMoveOrderToTrash), nameof(MoveOrderToTrashHint) }) OnPropertyChanged(name);
+            nameof(CanMoveOrderToTrash), nameof(MoveOrderToTrashHint), nameof(CanClearShopHandoff), nameof(ClearShopHandoffHint) }) OnPropertyChanged(name);
         SaveHeaderCommand.NotifyCanExecuteChanged(); AddProjectCommand.NotifyCanExecuteChanged();
         SaveSpecificationCommand.NotifyCanExecuteChanged(); CancelDraftCommand.NotifyCanExecuteChanged(); RefreshRateCommand.NotifyCanExecuteChanged();
     }

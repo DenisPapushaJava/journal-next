@@ -4,7 +4,11 @@ public partial class WorkflowViewModel
 {
     private WorkflowEntrySuggestions? CaptureEntrySuggestions() => _localPreferences.EntrySuggestions?.Normalize();
     private void NotifyEntrySuggestions()
-    { OnPropertyChanged(nameof(ManagerSuggestions)); OnPropertyChanged(nameof(CustomerSuggestions)); }
+    {
+        OnPropertyChanged(nameof(ManagerSuggestions)); OnPropertyChanged(nameof(CustomerSuggestions)); OnPropertyChanged(nameof(MaterialSuggestions));
+        foreach (var draft in Drafts) draft.SetMaterialSuggestions(MaterialSuggestions);
+        if (_reportReview is { } session) session.Review.MaterialSuggestions = MaterialSuggestions;
+    }
 
     private async Task<string?> SaveEntrySuggestionsAsync(WorkflowEntrySuggestions? expected, WorkflowEntrySuggestions value, CancellationToken token)
     {

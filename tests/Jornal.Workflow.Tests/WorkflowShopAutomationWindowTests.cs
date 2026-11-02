@@ -52,9 +52,10 @@ public sealed class WorkflowShopAutomationWindowTests
             Frame(window, $"shop-folder-disabled-{width}-{dark}");
             Click(window.FindControl<Button>("CopyWorkflowCuttingTask")!);
             await Until(() => !f.Model.IsBusy); var model = Assert.IsType<WorkflowShopTransferViewModel>(f.Model.ShopTransfer);
+            await WorkflowTestWindows.AcknowledgeShopProgressAsync(window);
             Assert.True(model.AllPrepared); Assert.True(model.TextCopied); Assert.Null(model.Error); Assert.Empty(window.OwnedWindows); Assert.Equal(1, window.CopyCount);
             Assert.Contains("9337", window.Copied); var row = Assert.Single(model.Projects);
-            Assert.True(File.Exists(Path.Combine(row.Destination, "Дополнительная.Gnf.DOC"))); Assert.Equal(project.Name, Path.GetFileName(row.Destination));
+            Assert.True(File.Exists(Path.Combine(row.Destination, "Дополнительная.Gnf.DOC"))); Assert.Equal(project.Name + " БЛЦБ-009337", Path.GetFileName(row.Destination));
             var file = Path.Combine(row.Destination, "Произвольное имя.GNC"); var before = File.GetLastWriteTimeUtc(file);
             var shopButton = window.FindControl<DataGrid>("WorkflowProjectsGrid")!.GetVisualDescendants().OfType<Button>()
                 .Single(b => AutomationProperties.GetName(b) == "Открыть папку задания в цехе");
@@ -66,6 +67,7 @@ public sealed class WorkflowShopAutomationWindowTests
             InWindow(window.FindControl<Grid>("WorkflowShopTransferNotice")!, window);
             Frame(window, $"shop-auto-success-{width}-{dark}");
             Click(window.FindControl<Button>("CopyWorkflowCuttingTask")!); await Until(() => !f.Model.IsBusy);
+            await WorkflowTestWindows.AcknowledgeShopProgressAsync(window);
             Assert.Equal(2, window.CopyCount); Assert.Empty(window.OwnedWindows); Assert.Equal(before, File.GetLastWriteTimeUtc(file));
             f.Model.Blcb = "unsaved"; Assert.False(f.Model.HasShopTransfer); f.Model.Blcb = "009337"; Assert.True(f.Model.HasShopTransfer); Pump();
             Click(window.FindControl<Button>("WorkflowShopTransferDetails")!); await Until(() => window.OwnedWindows.Count == 1);
@@ -75,7 +77,7 @@ public sealed class WorkflowShopAutomationWindowTests
             Frame(details, $"shop-auto-details-{width}-{dark}"); details.Close();
             Assert.Empty(log.Errors);
         }
-        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); }
     }
 
     [AvaloniaFact]
@@ -86,18 +88,19 @@ public sealed class WorkflowShopAutomationWindowTests
         try
         {
             window.Show(); await Until(() => !f.Model.IsBusy); Click(window.FindControl<Button>("CopyWorkflowCuttingTask")!); await Until(() => !f.Model.IsBusy);
+            await WorkflowTestWindows.AcknowledgeShopProgressAsync(window);
             var prepared = f.Model.ShopTransfer!; Assert.True(prepared.AllPrepared); Assert.True(prepared.NeedsClipboardRetry); Assert.Empty(window.OwnedWindows);
             var row = Assert.Single(prepared.Projects); var path = Path.Combine(row.Destination, "Произвольное имя.GNC"); var before = File.GetLastWriteTimeUtc(path);
             var retry = window.FindControl<Button>("RetryWorkflowShopTransferText")!; Assert.True(retry.IsEffectivelyVisible);
             window.FailCopy = false; Click(retry); await Until(() => !f.Model.IsBusy);
             Assert.Equal(1, window.CopyCount); Assert.False(prepared.NeedsClipboardRetry); Assert.Equal(before, File.GetLastWriteTimeUtc(path));
             await File.WriteAllTextAsync(Path.Combine(Path.GetDirectoryName(project.NativePath!)!, "Произвольное имя.GNC"), "updated UP", Token);
-            Click(window.FindControl<Button>("CopyWorkflowCuttingTask")!); await Until(() => window.OwnedWindows.Count == 1);
+            Click(window.FindControl<Button>("CopyWorkflowCuttingTask")!); await Until(() => window.OwnedWindows.OfType<WorkflowShopTransferWindow>().Any());
             var review = f.Model.ShopTransfer!; Assert.False(review.CanStartAutomatically); Assert.True(review.ShowReplacement); Assert.False(review.CanCopy);
             Assert.Equal("UP bytes", await File.ReadAllTextAsync(path, Token)); Assert.Equal(1, window.CopyCount);
             Frame(Assert.IsType<WorkflowShopTransferWindow>(window.OwnedWindows.Single()), "shop-auto-replacement-review");
         }
-        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); }
     }
 
     [AvaloniaFact]
@@ -110,15 +113,18 @@ public sealed class WorkflowShopAutomationWindowTests
         {
             window.Show(); await Until(() => !f.Model.IsBusy); Click(window.FindControl<Button>("CopyWorkflowCuttingTask")!);
             await Until(() => window.ClipboardStarted); Assert.True(f.Model.IsBusy);
+            Assert.True(window.FindControl<ProgressBar>("WorkflowShopTransferProgress")!.IsEffectivelyVisible);
             Assert.False(window.FindControl<Grid>("JournalWorkspace")!.IsEffectivelyEnabled);
             Assert.False(f.Model.ShopTransfer!.CanCancel);
             Assert.Null(await f.Model.PrepareShopTransferAsync(_ => Task.CompletedTask));
             window.Close(); Assert.True(window.IsVisible); Assert.False(window.FindControl<Button>("CopyWorkflowCuttingTask")!.IsEffectivelyEnabled);
             release.SetResult(); await Until(() => !f.Model.IsBusy); Assert.Equal(1, window.CopyCount);
+            await WorkflowTestWindows.AcknowledgeShopProgressAsync(window);
+            Assert.False(window.FindControl<ProgressBar>("WorkflowShopTransferProgress")!.IsEffectivelyVisible);
             await f.Model.ReloadCommand.ExecuteAsync(null); Assert.Null(f.Model.ShopTransfer);
             Assert.False(window.FindControl<Grid>("WorkflowShopTransferNotice")!.IsEffectivelyVisible);
         }
-        finally { release.TrySetResult(); await Until(() => !f.Model.IsBusy); window.Close(); }
+        finally { release.TrySetResult(); await Until(() => !f.Model.IsBusy); WorkflowTestWindows.Close(window); }
     }
 
     [AvaloniaFact]

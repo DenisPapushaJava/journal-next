@@ -14,27 +14,30 @@ public sealed class WorkflowOrderEntryTests
     public async Task PersonalListsNormalizeAndPersistWithoutChangingWorkspaceOrLearningFromOrders()
     {
         using var f = new ProjectFixture(); await f.InitializeAsync();
-        Assert.Empty(f.Model.ManagerSuggestions); Assert.Empty(f.Model.CustomerSuggestions);
+        Assert.Empty(f.Model.ManagerSuggestions); Assert.Empty(f.Model.CustomerSuggestions); Assert.Empty(f.Model.MaterialSuggestions);
         var before = await File.ReadAllBytesAsync(f.Store.FilePath, TestContext.Current.CancellationToken);
         var settings = Lists(f); settings.ManagersText = "  Сидоров  \n\nсидоров\nИванов";
         settings.CustomersText = "ООО, Заказчик\n Второй \nООО, Заказчик";
+        settings.MaterialsText = " Ст3 \nст3\n\n09Г2С";
         await settings.SaveCommand.ExecuteAsync(null); Assert.Null(settings.Error); Assert.False(settings.HasChanges);
         Assert.Equal(new[] { "Сидоров", "Иванов" }, f.Model.ManagerSuggestions);
         Assert.Equal(new[] { "ООО, Заказчик", "Второй" }, f.Model.CustomerSuggestions);
+        Assert.Equal(new[] { "Ст3", "09Г2С" }, f.Model.MaterialSuggestions);
         Assert.Equal(before, await File.ReadAllBytesAsync(f.Store.FilePath, TestContext.Current.CancellationToken));
         var client = new WorkflowViewModel(f.Store, new AppUpdatesViewModel(new WorkflowAppUpdater()));
         try
         {
             client.UseLocalPreferencesStore(Preferences(f)); await client.ReloadCommand.ExecuteAsync(null);
             Assert.Equal(f.Model.ManagerSuggestions, client.ManagerSuggestions);
+            Assert.Equal(f.Model.MaterialSuggestions, client.MaterialSuggestions);
             client.UseLocalPreferencesStore(new(Path.Combine(f.DirectoryPath, "another-pc.json")));
-            await client.ReloadCommand.ExecuteAsync(null); Assert.Empty(client.ManagerSuggestions); Assert.Empty(client.CustomerSuggestions);
+            await client.ReloadCommand.ExecuteAsync(null); Assert.Empty(client.ManagerSuggestions); Assert.Empty(client.CustomerSuggestions); Assert.Empty(client.MaterialSuggestions);
         }
         finally { client.Detach(); }
         f.Model.NewOrderCommand.Execute(null); f.Model.NewManager = "Новый менеджер"; f.Model.NewCustomer = "Новый заказчик";
         await f.Model.CreateOrderCommand.ExecuteAsync(null); Assert.Null(f.Model.Error);
         Assert.DoesNotContain("Новый менеджер", f.Model.ManagerSuggestions); Assert.DoesNotContain("Новый заказчик", f.Model.CustomerSuggestions);
-        settings.ManagersText = ""; settings.CustomersText = ""; await settings.SaveCommand.ExecuteAsync(null);
+        settings.ManagersText = ""; settings.CustomersText = ""; settings.MaterialsText = ""; await settings.SaveCommand.ExecuteAsync(null);
         Assert.Null(settings.Error); Assert.Empty(Preferences(f).Load().EntrySuggestions!.Managers);
         await f.Model.ReloadCommand.ExecuteAsync(null); Assert.Empty(f.Model.CustomerSuggestions);
     }
@@ -45,6 +48,7 @@ public sealed class WorkflowOrderEntryTests
         using var f = new ProjectFixture(); await f.InitializeAsync();
         var parent = f.Model.CreateGeneralSettings(); var first = parent.CreateEntrySuggestionsEditor(); var second = Lists(f); var preferences = Preferences(f);
         first.ManagersText = "Менеджер А"; second.ManagersText = "Менеджер Б";
+        first.MaterialsText = "Ст3"; second.MaterialsText = "09Г2С";
         parent.ProfileName = "Другой технолог"; parent.ProjectRoot = Path.Combine(f.DirectoryPath, "unsaved-root");
         preferences.Update(p => p with { DarkTheme = true });
         await first.SaveCommand.ExecuteAsync(null); Assert.Null(first.Error);
@@ -54,7 +58,9 @@ public sealed class WorkflowOrderEntryTests
         Assert.Equal("Менеджер А", Assert.Single(saved.EntrySuggestions!.Managers)); Assert.Equal("Менеджер А", Assert.Single(f.Model.ManagerSuggestions));
         await second.SaveCommand.ExecuteAsync(null); Assert.Contains("другом окне", second.Error);
         Assert.Equal("Менеджер Б", second.ManagersText); Assert.True(second.HasChanges);
-        second.ManagersText = "Менеджер А"; await second.SaveCommand.ExecuteAsync(null); Assert.Null(second.Error);
+        second.ManagersText = "Менеджер А"; await second.SaveCommand.ExecuteAsync(null); Assert.NotNull(second.Error);
+        Assert.Equal("09Г2С", second.MaterialsText); Assert.Equal("Ст3", Assert.Single(preferences.Load().EntrySuggestions!.Materials));
+        second.MaterialsText = "Ст3"; await second.SaveCommand.ExecuteAsync(null); Assert.Null(second.Error);
         Assert.False(second.HasChanges); Assert.Equal(saved, preferences.Load() with { EntrySuggestions = saved.EntrySuggestions });
         // A list save must not switch the visible identity to another instance's local choice.
         var actor = f.Model.CurrentEmployee.Id;

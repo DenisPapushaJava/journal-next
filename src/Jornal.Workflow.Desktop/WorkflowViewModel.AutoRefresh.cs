@@ -108,7 +108,7 @@ public partial class WorkflowViewModel
                 var current = book.Orders.SingleOrDefault(o => o.Id == old.Id);
                 if (current is null || current.IsDeleted)
                 {
-                    if (!dirty && ResultText.Length == 0) ForgetOpenCard();
+                    if (!HasCurrentCloseWork && ResultText.Length == 0) ForgetOpenCard();
                     else MarkResultStale();
                 }
                 else if (!dirty && current.Version != CardVersion)

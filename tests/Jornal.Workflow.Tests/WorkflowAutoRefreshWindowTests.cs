@@ -62,7 +62,7 @@ public sealed class WorkflowAutoRefreshWindowTests
             Assert.True(check.Bounds.Width > 100); Save(dialog, $"auto-settings-{width}-{dark}"); dialog.Close();
             Save(window, $"auto-insert-{width}-{dark}");
         }
-        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); }
     }
     private static (Guid Id, double Y)? FirstVisible(DataGrid grid) => grid.GetVisualDescendants().OfType<DataGridRow>()
         .Select(r => (Row: r, Y: r.TranslatePoint(default, grid)?.Y ?? double.MinValue))

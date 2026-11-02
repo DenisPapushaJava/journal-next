@@ -73,9 +73,9 @@ public sealed class WorkflowMapSigningStatusTests
             var replaced = clock.Timers.Last(); window.DataContext = null; Pump();
             Assert.True(replaced.Disposed); replaced.Fire(); Pump(); Assert.True(f.Model.ShowMapSigningStatus);
             window.DataContext = f.Model; Pump(); Assert.True(f.Model.ShowMapSigningStatus);
-            var last = clock.Timers.Last(); window.Close(); Assert.All(clock.Timers, t => Assert.True(t.Disposed)); last.Fire(); Pump();
+            var last = clock.Timers.Last(); WorkflowTestWindows.Close(window); Assert.All(clock.Timers, t => Assert.True(t.Disposed)); last.Fire(); Pump();
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     private sealed class PausedWord : IWorkflowWordMapEditor
@@ -112,7 +112,7 @@ public sealed class WorkflowMapSigningStatusTests
             Assert.Contains(backup, Assert.Single(f.Model.MapSigningResults).Details);
             Frame(window, "signing-needs-verification-" + dark);
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     [AvaloniaTheory]
@@ -149,7 +149,7 @@ public sealed class WorkflowMapSigningStatusTests
             await f.Model.ReloadCommand.ExecuteAsync(null); Pump(); Assert.False(f.Model.ShowMapSigningStatus); Assert.False(details.Flyout.IsOpen);
             Assert.All(clock.Timers, t => Assert.True(t.Disposed));
         }
-        finally { if (f.Model.IsBusy) { word.Pending.TrySetCanceled(Token); await Until(() => !f.Model.IsBusy); } window.Close(); }
+        finally { if (f.Model.IsBusy) { word.Pending.TrySetCanceled(Token); await Until(() => !f.Model.IsBusy); } WorkflowTestWindows.Close(window); }
     }
 
     private static Rect[] Geometry(Window window) => new[] { "WorkflowProjectsGrid", "WorkflowProjectWorkspace", "WorkflowOrderTotal", "WorkflowStatusBar" }
