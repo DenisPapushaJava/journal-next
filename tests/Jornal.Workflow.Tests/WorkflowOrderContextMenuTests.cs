@@ -80,7 +80,7 @@ public sealed class WorkflowOrderContextMenuTests
             f.Model.SelectedOrder = f.Model.Orders.Single(); Assert.Same(firstDraft, f.Model.SelectedDraft);
             Assert.Equal("Ручной результат первой заявки", f.Model.ResultText); Assert.Empty(log.Errors);
         }
-        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); }
     }
 
     [AvaloniaFact]
@@ -108,9 +108,9 @@ public sealed class WorkflowOrderContextMenuTests
             Assert.False(menu.IsOpen); Assert.True(f.Model.IsCreating); Assert.Equal("Черновик", f.Model.NewCustomer); f.Model.CancelNewOrderCommand.Execute(null);
             RightClick(Row(grid, f.Model.Orders.Single().Order.Id)); Assert.True(menu.IsOpen); window.DataContext = null; Pump(); Assert.False(menu.IsOpen);
             window.DataContext = f.Model; Pump(); RightClick(Row(grid, f.Model.Orders.Single().Order.Id)); Assert.True(menu.IsOpen);
-            window.Close(); Assert.False(menu.IsOpen); Assert.Null(grid.ContextMenu);
+            WorkflowTestWindows.Close(window); Assert.False(menu.IsOpen); Assert.Null(grid.ContextMenu);
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     [AvaloniaFact]
@@ -120,23 +120,24 @@ public sealed class WorkflowOrderContextMenuTests
         var project = f.Model.SelectedProject!.Project; f.Model.Blcb = "009337"; await f.Model.SaveHeaderCommand.ExecuteAsync(null);
         await f.Model.SaveShopRootAsync(null, Path.Combine(f.DirectoryPath, "shop"), Token);
         var source = Path.GetDirectoryName(project.NativePath!)!;
-        await File.WriteAllTextAsync(Path.Combine(source, "Лист.cnc"), "UP", Token); await File.WriteAllTextAsync(Path.Combine(source, "Карта.pdf"), "Map", Token);
+        await File.WriteAllTextAsync(Path.Combine(source, "Лист.cnc"), "UP", Token); ShopSigningTestData.WriteBlockMap(project, Path.Combine(source, "Карта.pdf"));
         await NewOrder(f, "Не отправлять эту заявку"); var secondId = f.Model.SelectedOrder!.Order.Id; var window = Window(f);
         try
         {
             window.Show(); await Until(() => !f.Model.IsBusy); var grid = window.FindControl<DataGrid>("WorkflowOrdersGrid")!;
             RightClick(Row(grid, firstId)); Assert.False(Directory.Exists(f.Model.ShopRoot)); Assert.Null(window.Copied);
-            Click(Item(grid.ContextMenu!, "WorkflowOrderMenuSend")); await Until(() => window.OwnedWindows.OfType<WorkflowShopTransferWindow>().Any());
-            Assert.False(grid.ContextMenu!.IsOpen); var dialog = window.OwnedWindows.OfType<WorkflowShopTransferWindow>().Single();
-            var transfer = Assert.IsType<WorkflowShopTransferViewModel>(dialog.DataContext); await Until(() => !transfer.IsBusy);
+            Click(Item(grid.ContextMenu!, "WorkflowOrderMenuSend")); await Until(() => f.Model.ShopTransfer?.AllPrepared == true && !f.Model.IsBusy);
+            await WorkflowTestWindows.AcknowledgeShopProgressAsync(window);
+            Assert.False(grid.ContextMenu!.IsOpen); Assert.Empty(window.OwnedWindows);
+            var transfer = f.Model.ShopTransfer!;
             var row = Assert.Single(transfer.Projects); Assert.Equal(project.Id, row.Plan.Project.Id);
-            Assert.False(Directory.Exists(f.Model.ShopRoot)); Assert.Null(window.Copied);
-            foreach (var file in row.Files) file.IsSelected = true; row.Reviewed = true; await transfer.CopyAsync();
-            Assert.True(transfer.AllPrepared); Assert.Contains("9337", window.Copied); Assert.True(File.Exists(Path.Combine(row.Destination, "Лист.cnc")));
+            Assert.Contains("9337", window.Copied); Assert.True(File.Exists(Path.Combine(row.Destination, "Лист.cnc")));
+            using (var pdf = UglyToad.PdfPig.PdfDocument.Open(Path.Combine(row.Destination, "Карта.pdf")))
+                Assert.Contains("БЛЦБ-009337", pdf.GetPage(1).Text);
             var book = await f.Store.ReadAsync(Token); Assert.True(book.Orders.Single(o => o.Id == firstId).HasCurrentShopHandoff);
-            Assert.False(book.Orders.Single(o => o.Id == secondId).HasCurrentShopHandoff); dialog.Close();
+            Assert.False(book.Orders.Single(o => o.Id == secondId).HasCurrentShopHandoff);
         }
-        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); }
     }
 
     private static MenuItem Item(ContextMenu menu, string name) => menu.Items.OfType<MenuItem>().Single(i => i.Name == name);

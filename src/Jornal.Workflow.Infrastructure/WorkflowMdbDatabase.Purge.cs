@@ -40,6 +40,8 @@ public sealed partial class WorkflowMdbDatabase
                 void Delete(string sql) => session.Execute(sql, args);
                 Delete("DELETE FROM [order_shop_handoffs] WHERE [id] IN (" + ids + ")");
                 Delete("DELETE FROM [accepted_reports] WHERE [specification_id] IN (SELECT [id] FROM [specifications] WHERE [order_id] IN (" + ids + "))");
+                Delete("DELETE FROM [project_shop_handoff_inputs] WHERE [id] IN (SELECT [id] FROM [cutting_projects] WHERE [order_id] IN (" + ids + "))");
+                Delete("DELETE FROM [project_shop_handoffs] WHERE [id] IN (SELECT [id] FROM [cutting_projects] WHERE [order_id] IN (" + ids + "))");
                 Delete("DELETE FROM [project_renames] WHERE [project_id] IN (SELECT [id] FROM [cutting_projects] WHERE [order_id] IN (" + ids + "))");
                 Delete("DELETE FROM [order_item_selections] WHERE [order_id] IN (" + ids + ")");
                 foreach (var table in new[] { "specifications", "cutting_projects", "order_items" })

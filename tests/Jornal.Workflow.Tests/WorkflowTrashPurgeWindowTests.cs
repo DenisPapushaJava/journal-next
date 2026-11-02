@@ -67,7 +67,7 @@ public sealed class WorkflowTrashPurgeWindowTests
         {
             foreach (var owned in window.OwnedWindows.ToArray())
             { foreach (var child in owned.OwnedWindows.ToArray()) child.Close(); owned.Close(); }
-            window.Close();
+            WorkflowTestWindows.Close(window);
         }
     }
 
@@ -104,7 +104,7 @@ public sealed class WorkflowTrashPurgeWindowTests
         {
             foreach (var owned in window.OwnedWindows.ToArray())
             { foreach (var child in owned.OwnedWindows.ToArray()) child.Close(); owned.Close(); }
-            window.Close();
+            WorkflowTestWindows.Close(window);
         }
     }
 

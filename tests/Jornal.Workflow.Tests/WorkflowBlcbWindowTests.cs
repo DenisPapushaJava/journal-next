@@ -53,7 +53,7 @@ public sealed class WorkflowBlcbWindowTests
             Save(window, dark, width);
             Assert.True(log.Errors.Count == 0, string.Join("\n", log.Errors.Distinct()));
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     private static void Pump() => Dispatcher.UIThread.RunJobs();

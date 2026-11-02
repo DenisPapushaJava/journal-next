@@ -41,7 +41,7 @@ public sealed class WorkflowSettingsWindowTests
             SaveFrame(settings, dark, 800, "workflow-first-profile");
             Assert.True(log.Errors.Count == 0, string.Join("\n", log.Errors));
         }
-        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); }
     }
 
     [AvaloniaTheory]
@@ -151,7 +151,7 @@ public sealed class WorkflowSettingsWindowTests
         finally
         {
             foreach (var child in window.OwnedWindows.ToArray()) child.Close();
-            window.Close();
+            WorkflowTestWindows.Close(window);
         }
     }
     private static void Click(Window window, string name)

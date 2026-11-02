@@ -45,7 +45,7 @@ public sealed class WorkflowWindowTests
             await model.SaveSpecificationCommand.ExecuteAsync(null); Assert.Null(model.Error); Assert.NotNull(model.SelectedDraft?.Saved);
             model.SelectedDraft!.HasBending = true; await model.SaveSpecificationCommand.ExecuteAsync(null);
             Assert.NotNull(model.SelectedDraft?.Saved); Assert.False(model.HasPendingEdits);
-            model.GenerateResultCommand.Execute(null); Assert.EndsWith("\n", model.ResultText); Assert.Contains("20", model.ResultText);
+            model.GenerateResultCommand.Execute(null); Assert.EndsWith("\n\n", model.ResultText); Assert.Contains("20", model.ResultText);
             window.Show(); window.FindControl<TabControl>("WorkflowOrderTabs")!.SelectedIndex = 0; Dispatcher.UIThread.RunJobs();
             Assert.Equal(dark ? ThemeVariant.Dark : ThemeVariant.Light, window.ActualThemeVariant);
             Assert.NotNull(window.FindControl<Button>("UpdatesBell")); Assert.NotNull(window.FindControl<DataGrid>("WorkflowProjectsGrid"));
@@ -57,7 +57,7 @@ public sealed class WorkflowWindowTests
             var output = Environment.GetEnvironmentVariable("JOURNAL_WORKFLOW_SCREENSHOTS");
             if (output is not null) { Directory.CreateDirectory(output); image!.Save(Path.Combine(output, dark ? "workflow-dark.png" : "workflow-light.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions()); }
         }
-        finally { window.Close(); Directory.Delete(dir, true); }
+        finally { WorkflowTestWindows.Close(window); Directory.Delete(dir, true); }
     }
 
     [AvaloniaTheory]
@@ -113,7 +113,7 @@ public sealed class WorkflowWindowTests
             Dispatcher.UIThread.RunJobs();
             Assert.True(bindingLog.Errors.Count == 0, string.Join("\n", bindingLog.Errors.Distinct().Take(12)));
         }
-        finally { window.Close(); model.Detach(); Directory.Delete(dir, true); }
+        finally { WorkflowTestWindows.Close(window); model.Detach(); Directory.Delete(dir, true); }
     }
 
     private sealed class CatalogSource : ILegacyPriceCatalogReader
@@ -171,7 +171,7 @@ public sealed class WorkflowWindowTests
             if (output is not null)
             { Directory.CreateDirectory(output); window.CaptureRenderedFrame()!.Save(Path.Combine(output, dark ? "workflow-catalog-dark.png" : "workflow-catalog-light.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions()); }
         }
-        finally { editor.Reload(); window.Close(); model.Detach(); Directory.Delete(dir, true); }
+        finally { editor.Reload(); WorkflowTestWindows.Close(window); model.Detach(); Directory.Delete(dir, true); }
     }
     internal sealed class BindingLog : ILogSink, IDisposable
     {

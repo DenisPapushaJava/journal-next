@@ -12,21 +12,26 @@ public sealed record WorkflowMdbRow(string Table, Guid Id, Dictionary<string, ob
 // JSON nodes are only a typed object mapper here. MDB columns contain scalar values, not JSON documents.
 public static class WorkflowMdbMapping
 {
-    public static WorkflowMdbRow HandoffRow(Guid orderId, WorkflowShopHandoff stamp) => new("order_shop_handoffs", orderId, new()
+    public static WorkflowMdbRow HandoffRow(Guid orderId, WorkflowShopHandoff stamp, string table = "order_shop_handoffs") => new(table, orderId, new()
     {
-        ["id"] = orderId, ["order_version"] = (decimal)stamp.OrderVersion, ["actor_id"] = stamp.ActorId, ["transferred_at"] = stamp.At.UtcDateTime
+        ["id"] = orderId, ["order_version"] = (decimal)stamp.OrderVersion, ["actor_id"] = stamp.ActorId, ["transferred_at"] = stamp.At.UtcDateTime, ["content_hash"] = stamp.ContentHash
     });
+    public static WorkflowMdbRow HandoffInputsRow(Guid projectId, WorkflowProjectHandoffInputs inputs) => Row("project_shop_handoff_inputs", inputs, projectId);
+    private static WorkflowMdbRow Row(string table, object value, Guid? owner = null)
+    {
+        var definition = WorkflowMdbSchema.Tables.Single(t => t.Name == table);
+        var json = JsonSerializer.SerializeToNode(value)!;
+        var values = new Dictionary<string, object?>();
+        foreach (var column in definition.Columns)
+            values[column.Name] = column.Path is null ? owner : ToDatabase(column, At(json, column.Path));
+        return new(table, (Guid)values["id"]!, values);
+    }
     public static IReadOnlyDictionary<string, Dictionary<Guid, WorkflowMdbRow>> Flatten(WorkflowWorkspace workspace, bool includeCatalog = true)
     {
         var result = WorkflowMdbSchema.Tables.ToDictionary(t => t.Name, _ => new Dictionary<Guid, WorkflowMdbRow>());
         void Add(string table, object value, Guid? owner = null)
         {
-            var definition = WorkflowMdbSchema.Tables.Single(t => t.Name == table);
-            var json = JsonSerializer.SerializeToNode(value)!;
-            var values = new Dictionary<string, object?>();
-            foreach (var column in definition.Columns)
-                values[column.Name] = column.Path is null ? owner : ToDatabase(column, At(json, column.Path));
-            var id = (Guid)values["id"]!; result[table].Add(id, new(table, id, values));
+            var row = Row(table, value, owner); result[table].Add(row.Id, row);
         }
         if (includeCatalog)
         {
@@ -54,6 +59,8 @@ public static class WorkflowMdbMapping
             foreach (var project in order.Projects)
             {
                 Add("cutting_projects", project, order.Id);
+                if (project.ShopHandoff is { } projectHandoff) result["project_shop_handoffs"].Add(project.Id, HandoffRow(project.Id, projectHandoff, "project_shop_handoffs"));
+                if (project.ShopHandoff?.ProjectInputs is { } inputs) Add("project_shop_handoff_inputs", inputs, project.Id);
                 if (project.Rename is { } rename) Add("project_renames", rename, project.Id);
             }
             foreach (var spec in order.Specifications)
@@ -88,6 +95,12 @@ public static class WorkflowMdbMapping
             json["Projects"] = Array(projects[row.Id].OrderBy(r => r.Values["variant_number"]).Select(r =>
             {
                 var project = ToObject(r);
+                if (data["project_shop_handoffs"].TryGetValue(r.Id, out var mark))
+                {
+                    var stamp = ToObject(mark);
+                    if (data["project_shop_handoff_inputs"].TryGetValue(r.Id, out var inputs)) stamp["ProjectInputs"] = ToObject(inputs);
+                    project["ShopHandoff"] = stamp;
+                }
                 if (renames.TryGetValue(r.Id, out var rename)) project["Rename"] = ToObject(rename);
                 return project;
             }));

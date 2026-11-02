@@ -54,13 +54,37 @@ public sealed class WorkflowPeriodWindowTests
             var day = panel.GetVisualDescendants().OfType<Button>().First(b => b.DataContext is WorkflowCalendarCell { IsOutside: false });
             var expected = ((WorkflowCalendarCell)day.DataContext!).Date; Click(day);
             Assert.Equal(expected, f.Model.FilterDate); Assert.False(flyout.IsOpen);
+            Click(button);
+            Click(panel.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "NextMonth"));
+            var month = picker.Calendar.DisplayedMonth;
+            Assert.False(f.Model.IsMonthPeriod); Assert.Equal(expected, f.Model.FilterDate);
+            Click(panel.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "WholeMonthButton"));
+            Assert.False(flyout.IsOpen); Assert.True(button.IsFocused); Assert.True(f.Model.IsMonthPeriod);
+            Assert.Equal(month, f.Model.FilterDate); Assert.Equal(f.Model.PeriodCaption, picker.Calendar.Caption);
+            Assert.False(f.Model.IsTodaySelected); Assert.False(f.Model.IsAllDatesSelected);
+            InWindow(picker, window); Save(window, dark, width, "month-period-panel");
+            Click(button); popup = TopLevel.GetTopLevel(panel)!;
+            Assert.Equal(DateTime.DaysInMonth(month.Year, month.Month), picker.Calendar.Cells.Count(c => c.IsSelected));
+            Save(popup, dark, width, "calendar-whole-month");
+            Click(panel.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "NextMonth"));
+            popup.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null); Pump();
+            Assert.True(f.Model.IsMonthPeriod); Assert.Equal(month, f.Model.FilterDate);
+            Click(button);
+            // A day commit must work even when the underlying date already equals the month's first day.
+            Click(panel.GetVisualDescendants().OfType<Button>().Single(b => b.DataContext is WorkflowCalendarCell c && c.Date == month));
+            Assert.False(f.Model.IsMonthPeriod); Assert.Equal(month, f.Model.FilterDate); Assert.False(flyout.IsOpen);
             Click(window.FindControl<RadioButton>("WorkflowAllDates")!); Assert.Null(f.Model.FilterDate); Assert.Null(picker.SelectedDate);
             Click(button); Assert.Equal(DateTime.Today, picker.Calendar.FocusDate); Assert.DoesNotContain(picker.Calendar.Cells, c => c.IsSelected);
             flyout.Hide(); Pump(); Click(window.FindControl<RadioButton>("WorkflowToday")!); Assert.True(f.Model.IsTodaySelected);
             Click(window.FindControl<RadioButton>("WorkflowToday")!); Assert.True(f.Model.IsTodaySelected); Assert.Single(f.Model.Orders);
+            f.Model.SelectMonth(new(2026, 9, 1)); Pump();
+            var label = button.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Text == "Сентябрь 2026");
+            var labelOrigin = label.TranslatePoint(default, button)!.Value;
+            Assert.InRange(labelOrigin.X, 0, button.Bounds.Width - label.Bounds.Width);
+            Save(window, dark, width, "month-long-caption");
             Assert.True(log.Errors.Count == 0, string.Join("\n", log.Errors.Distinct()));
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     private static void Pump() => Dispatcher.UIThread.RunJobs();

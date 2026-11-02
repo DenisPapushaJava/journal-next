@@ -65,7 +65,7 @@ public sealed class WorkflowUsabilityWindowTests
             Assert.True(f.Model.Projects.Single(p => p.Project.Id == ready.Id).HasAlternatives);
             f.Model.GoToReviewProjectCommand.Execute(null); Assert.Equal(variant.Id, f.Model.SelectedProject!.Project.Id);
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     [AvaloniaTheory]
@@ -87,16 +87,16 @@ public sealed class WorkflowUsabilityWindowTests
             review.Selected.Draft!.Length = "15"; review.Selected.Draft.Coefficient = "1,3"; review.Selected.Draft.Comment = "Сохранить мой ввод";
             review.Selected.Draft.HasChamfer = true; Assert.False(review.Selected.Ready);
             await ProjectFixture.WriteAsync(b, 20000); await review.RefreshCommand.ExecuteAsync(null); Assert.Null(review.Error);
-            var conflict = Assert.Single(review.Selected!.Conflicts); Assert.Equal(-1, conflict.Selection);
-            Click(importing.FindControl<Button>("SaveWorkflowReports")!);
-            await Until(() => window.OwnedWindows.Count == 0);
-            Assert.True(review.WasSaved); Assert.Contains("Принято 1", f.Model.ReportImportNotice);
+            Assert.Empty(review.Selected!.Conflicts);
+            Assert.False(review.SaveCommand.CanExecute(null)); // The ready project was accepted automatically; only the conflict remains.
+            importing.Close(); await Until(() => window.OwnedWindows.Count == 0);
+            Assert.False(review.WasSaved); Assert.Contains("Обновлено 1", f.Model.ReportImportNotice);
             Assert.True(f.Model.HasPendingEdits);
             Assert.Equal("Готово 1 из 3", f.Model.CompletenessCaption); Assert.Equal(1, f.Model.WaitingProjectCount); Assert.Equal(1, f.Model.ReviewProjectCount);
             importing = await OpenReview(); review = (WorkflowReportReviewViewModel)importing.DataContext!;
             review.Selected = review.Candidates.Single(c => c.Project.Id == b.Id);
-            var candidate = review.Selected; var draft = candidate.Draft!; conflict = Assert.Single(candidate.Conflicts);
-            Assert.Equal("15", draft.Length); Assert.Equal("1,3", draft.Coefficient); Assert.Equal("Сохранить мой ввод", draft.Comment); Assert.True(draft.HasChamfer);
+            var candidate = review.Selected; var draft = candidate.Draft!; Assert.Empty(candidate.Conflicts);
+            Assert.Equal("21", draft.Length); Assert.Equal("1,3", draft.Coefficient); Assert.Equal("Сохранить мой ввод", draft.Comment); Assert.True(draft.HasChamfer);
             var source = candidate.SelectedFile;
             Click(importing.FindControl<Button>("ConfigureReviewPrices")!);
             await Until(() => importing.OwnedWindows.Count == 1);
@@ -105,13 +105,13 @@ public sealed class WorkflowUsabilityWindowTests
             Assert.Equal(b.MachineId, catalog.SelectedMachine!.Id); Assert.Equal("6", catalog.SelectedRate!.Thickness);
             catalog.SelectedRate.PricePerMeter = "200"; catalog.SelectedRate.PricePerPierce = "2";
             await catalog.SaveCommand.ExecuteAsync(null); Assert.Null(catalog.Error); catalogWindow.Close(); Pump();
-            Assert.Same(candidate, review.Selected); Assert.Same(draft, candidate.Draft); Assert.Same(source, candidate.SelectedFile); Assert.Same(conflict, Assert.Single(candidate.Conflicts));
-            Assert.Equal("200", draft.PricePerMeter); Assert.Equal("15", draft.Length); Assert.Equal("1,3", draft.Coefficient); Assert.True(draft.HasChamfer);
+            Assert.Same(candidate, review.Selected); Assert.Same(draft, candidate.Draft); Assert.Same(source, candidate.SelectedFile); Assert.Empty(candidate.Conflicts);
+            Assert.Equal("200", draft.PricePerMeter); Assert.Equal("21", draft.Length); Assert.Equal("1,3", draft.Coefficient); Assert.True(draft.HasChamfer);
             Assert.Equal("100", f.Model.Drafts.Single(d => d.Id == a.Id).PricePerMeter);
-            Assert.False(candidate.Ready); conflict.Selection = 0; Assert.True(candidate.Ready);
+            Assert.True(candidate.Ready);
             SaveFrame(importing, $"review-tariff-{dark}");
             Click(importing.FindControl<Button>("SaveWorkflowReports")!); await Until(() => window.OwnedWindows.Count == 0);
-            Assert.Equal("Готово 2 из 3", f.Model.CompletenessCaption); Assert.Contains("ещё 1", f.Model.ReportImportNotice);
+            Assert.Equal("Готово 2 из 3", f.Model.CompletenessCaption); Assert.Contains("ещё 1", f.Model.ReportImportNotice); Assert.Contains(missing.Name, f.Model.CalculationNotice); Assert.Empty(f.Model.ResultText);
             Assert.False(f.Model.HasPendingEdits);
             Click(window.FindControl<Button>("WorkflowWaitingProjects")!); Assert.Equal(missing.Id, f.Model.SelectedProject!.Project.Id);
             SaveFrame(window, $"accepted-notice-{dark}");
@@ -125,7 +125,7 @@ public sealed class WorkflowUsabilityWindowTests
         }
         finally
         {
-            foreach (var owned in window.OwnedWindows.ToArray()) owned.Close(); window.Close();
+            foreach (var owned in window.OwnedWindows.ToArray()) owned.Close(); WorkflowTestWindows.Close(window);
         }
     }
 
@@ -143,7 +143,7 @@ public sealed class WorkflowUsabilityWindowTests
             window.Show(); await review.SaveCommand.ExecuteAsync(null); Pump();
             Assert.True(window.IsVisible); Assert.False(review.WasSaved); Assert.NotNull(review.Error); Assert.False(review.IsBusy);
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     private static Rect Bounds(Control control, Window window) => new(control.TranslatePoint(default, window)!.Value, control.Bounds.Size);

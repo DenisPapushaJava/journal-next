@@ -52,7 +52,7 @@ public static partial class WorkflowResultFormatter
             if (p.HasBending) result.Append("   ГИБКА");
             result.Append('\n');
         }
-        return result.ToString();
+        return result.Append('\n').ToString();
     }
 
     private static string Number(decimal value) => value.ToString("0.############################", Culture);

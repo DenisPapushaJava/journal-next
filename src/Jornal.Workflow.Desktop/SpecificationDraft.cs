@@ -20,6 +20,15 @@ public partial class SpecificationDraft : ObservableObject
     public string FolderHint => HasFolder ? "Открыть папку спецификации" : "У спецификации пока нет файла и папки";
     public string? ImportProfile { get; set; }
     public ReportFileSnapshot? IncomingReport { get; set; }
+    private IReadOnlyList<string> _materialSuggestions = [];
+    public IReadOnlyList<string> MaterialSuggestions => _materialSuggestions;
+    internal void SetMaterialSuggestions(IReadOnlyList<string> values)
+    {
+        if (ReferenceEquals(_materialSuggestions, values)) return;
+        _materialSuggestions = values;
+        // Local presentation data does not recalculate or mark the specification dirty.
+        base.OnPropertyChanged(new PropertyChangedEventArgs(nameof(MaterialSuggestions)));
+    }
     public string? ImportNotice { get; init; }
     public bool HasImportNotice => !string.IsNullOrWhiteSpace(ImportNotice);
     public bool IsNew => Saved is null;

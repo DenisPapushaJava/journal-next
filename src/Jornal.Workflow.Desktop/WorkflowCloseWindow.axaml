@@ -1,0 +1,16 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="using:Jornal.Desktop.Controls" x:Class="Jornal.Workflow.Desktop.WorkflowCloseWindow"
+        Width="540" SizeToContent="Height" CanResize="False" Background="{DynamicResource JournalBackground}"
+        WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="24" Spacing="16">
+    <TextBlock x:Name="CloseHeading" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+    <ScrollViewer MaxHeight="280" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+      <TextBlock x:Name="CloseMessage" TextWrapping="Wrap" />
+    </ScrollViewer>
+    <WrapPanel HorizontalAlignment="Right">
+      <ui:JournalButton x:Name="CancelWorkflowClose" Label="Продолжить работу" Click="OnCancel" Classes="primary" Margin="0,0,8,8" />
+      <ui:JournalButton x:Name="DiscardWorkflowClose" Click="OnDiscard" Margin="0,0,8,8" />
+      <ui:JournalButton x:Name="SaveWorkflowClose" Label="Сохранить" Click="OnSave" Margin="0,0,0,8" />
+    </WrapPanel>
+  </StackPanel>
+</Window>

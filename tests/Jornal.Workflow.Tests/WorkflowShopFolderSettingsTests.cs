@@ -10,7 +10,7 @@ public sealed class WorkflowShopFolderSettingsTests
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Theory]
-    [InlineData("005072")] [InlineData("БЛЦБ-005072")] [InlineData("12345678901234567890")]
+    [InlineData("005072")] [InlineData("БЛЦБ-005072")] [InlineData("блцб-005072")] [InlineData("12345678901234567890")]
     public async Task FullNumberAndEstablishedProjectNameArePreservedWithoutFilesystemAccess(string blcb)
     {
         using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync("Плазма");
@@ -21,10 +21,10 @@ public sealed class WorkflowShopFolderSettingsTests
         var customers = book.Customers.Select(c => c.Id == order.CustomerId ? c with { Name = "ФОРММАТ" } : c).ToArray();
         var root = Path.Combine(f.DirectoryPath, "Принтер на складе");
         var plan = Assert.Single(WorkflowShopFolderPaths.Plan(root, order, employees, customers, book.Machines));
-        var number = blcb.StartsWith("БЛЦБ-", StringComparison.Ordinal) ? blcb : "БЛЦБ-" + blcb;
-        Assert.Equal(Path.Combine(root, "Плазма", "Голубева", number + " ФОРММАТ", name), plan.Path);
+        var number = blcb.StartsWith("БЛЦБ-", StringComparison.OrdinalIgnoreCase) ? blcb : "БЛЦБ-" + blcb;
+        Assert.Equal(Path.Combine(root, "Плазма", "Голубева", number + " ФОРММАТ", name + " " + number), plan.Path);
         Assert.Equal(name, plan.ProjectName); Assert.Equal(project.Id, plan.ProjectId);
-        Assert.Equal(name, Path.GetFileName(plan.Path)); Assert.False(Directory.Exists(root));
+        Assert.Equal(name + " " + number, Path.GetFileName(plan.Path)); Assert.False(Directory.Exists(root));
     }
 
     [Fact]
@@ -41,7 +41,20 @@ public sealed class WorkflowShopFolderSettingsTests
         var plan = Assert.Single(WorkflowShopFolderPaths.Plan(Path.Combine(f.DirectoryPath, "shop"), order, employees, book.Customers, book.Machines));
         Assert.Equal(project.Id, plan.ProjectId); Assert.Contains("Менеджер_отдел", plan.Path);
         Assert.Equal("Менеджер/отдел", employees.Single(e => e.Id == order.ManagerId).Name);
-        Assert.Equal(project.Name, Path.GetFileName(plan.Path));
+        Assert.Equal(project.Name + " БЛЦБ-000001", Path.GetFileName(plan.Path));
+    }
+
+    [Fact]
+    public void CombinedFolderNameChecksTheWindowsLimitWithoutShorteningTheProjectOrNumber()
+    {
+        using var f = new ShopFixture(); var suffix = " БЛЦБ-009337";
+        var name = new string('1', 255 - suffix.Length);
+        var order = f.Order with { Projects = [f.Project with { Name = name }] };
+        var path = Assert.Single(WorkflowShopFolderPaths.Plan(f.ShopRoot, order, f.Book.Employees, f.Book.Customers, f.Book.Machines));
+        Assert.Equal(name + suffix, Path.GetFileName(path.Path)); Assert.Equal(255, Path.GetFileName(path.Path).Length);
+        order = order with { Projects = [f.Project with { Name = name + "1" }] };
+        var error = Assert.Throws<WorkflowValidationException>(() => WorkflowShopFolderPaths.Plan(f.ShopRoot, order, f.Book.Employees, f.Book.Customers, f.Book.Machines));
+        Assert.Contains("255", error.Message); Assert.Contains("БЛЦБ", error.Message); Assert.False(Directory.Exists(f.ShopRoot));
     }
 
     [Theory]

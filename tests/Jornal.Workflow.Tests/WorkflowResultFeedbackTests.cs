@@ -51,10 +51,10 @@ public sealed class WorkflowResultFeedbackTests
             window.DataContext = null; Pump(); Assert.True(detached.Disposed); detached.Fire(); Pump();
             Assert.Equal("Результат сформирован", f.Model.ResultStatus);
             window.DataContext = f.Model; Pump(); var closed = clock.Timers.Last();
-            window.Close(); Assert.All(clock.Timers, timer => Assert.True(timer.Disposed)); closed.Fire(); Pump();
+            WorkflowTestWindows.Close(window); Assert.All(clock.Timers, timer => Assert.True(timer.Disposed)); closed.Fire(); Pump();
             Assert.Equal("Результат сформирован", f.Model.ResultStatus);
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     private static Rect[] Geometry(Window w) => new[] { "WorkflowResultEditor", "WorkflowResultWorkspace", "WorkflowOrderTotal" }

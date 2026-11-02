@@ -27,13 +27,32 @@ public partial class WorkflowViewModel
         string Text, string? Generated, bool Stale);
     private ClearedResult? _clearedResult;
 
+    private bool HasIncludedCalculationEdits
+    {
+        get
+        {
+            if (HasHeaderChanges || IsPlanning) return true;
+            if (CurrentOrder is not { } order) return false;
+            var ids = CalculationProjectIds(order); return Drafts.Any(d => ids.Contains(d.Id) && d.IsDirty);
+        }
+    }
+    private bool HasIncludedReportWork
+    {
+        get
+        {
+            if (CurrentOrder is not { } order || CurrentReportReview is not { } review) return false;
+            var ids = CalculationProjectIds(order);
+            return review.Candidates.Any(c => ids.Contains(c.Project.Id) && (review.IsGuided ? !c.WasAccepted && c.Status != "Без изменений" : c.NeedsAttention));
+        }
+    }
     public bool IsResultTab => OrderTabIndex == 1;
     public bool CanEditResult => CanUse && IsCardVisible && !_isCopyingResult && !IsCopyingCuttingTask;
     private string? ResultGenerationProblem => !CanEditResult ? "Дождитесь завершения операции или откройте заявку." :
-        CardActionProblem ?? (HasCurrentCardEdits || HasPendingReportEdits ? "Сохраните или отмените изменения перед формированием результата." :
+        CardActionProblem ?? (HasIncludedCalculationEdits ? "Сохраните или отмените изменения перед формированием результата." :
+        HasIncludedReportWork ? "Уточните расчёты найденных спецификаций перед формированием результата." :
         CurrentOrder?.HasProjectRename == true ? "Завершите изменение параметров проекта." :
         HasUnselectedVariant ? "Выберите актуальный вариант для каждой включённой позиции." :
-        CurrentOrder?.PendingProjectCount > 0 ? "Загрузите спецификации и сохраните расчёты всех включённых позиций." :
+        CurrentOrder?.PendingProjectCount > 0 ? "Нажмите «Рассчитать»: программа найдёт спецификации включённых проектов." :
         CurrentOrder?.ActiveSpecifications.Any() != true ? "Добавьте или включите проект и сохраните его расчёт." : null);
     public bool CanGenerateResult => ResultGenerationProblem is null;
     public bool CanOpenResult => CanEditResult && (ResultText.Length > 0 || CanGenerateResult);
@@ -131,12 +150,17 @@ public partial class WorkflowViewModel
     private void ResultTextEdited(string value)
     {
         _resultTextRevision++; _clearedResult = null;
-        if (value.Length > 0) IsResultExpanded = true;
         SetResultFeedback("");
     }
     partial void OnResultIsStaleChanged(bool value) => NotifyResultState();
     private void ResetResultPresentation()
     { _generatedResultText = null; _clearedResult = null; SetResultFeedback(""); }
+
+    internal bool KeepCurrentManualResult()
+    {
+        if (!HasManualResultText || ResultIsStale || !CanGenerateResult) return false;
+        SetResultFeedback("Расчёт актуален. Ручной текст сохранён.", transient: true); return true;
+    }
 
     internal WorkflowResultGeneration? PrepareResultGeneration()
     {
@@ -152,14 +176,16 @@ public partial class WorkflowViewModel
         { SetResultFeedback(ex.Message, true); return null; }
     }
 
-    internal bool ApplyResultGeneration(WorkflowResultGeneration draft)
+    internal bool ApplyResultGeneration(WorkflowResultGeneration draft, bool openResult = true)
     {
         if (PrepareResultGeneration() is not { } latest) return false;
         if (!ReferenceEquals(draft.Source, latest.Source) || draft.OrderId != latest.OrderId || draft.Version != latest.Version ||
             draft.PreviousText != latest.PreviousText || draft.Text != latest.Text)
         { SetResultFeedback("Данные или текст изменились. Сформируйте результат заново.", true); return false; }
         _generatedResultText = draft.Text; _clearedResult = null; ResultText = draft.Text;
-        ResultIsStale = false; OrderTabIndex = 1; SetResultFeedback("Результат сформирован", transient: true); return true;
+        ResultIsStale = false;
+        if (openResult) OrderTabIndex = 1;
+        SetResultFeedback("Результат сформирован", transient: true); return true;
     }
 
     [RelayCommand(CanExecute = nameof(CanOpenResult))]

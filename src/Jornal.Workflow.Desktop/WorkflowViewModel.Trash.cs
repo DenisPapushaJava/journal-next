@@ -65,7 +65,7 @@ public partial class WorkflowViewModel
     private void ApplyTrashSnapshot(WorkflowWorkspace book)
     {
         CaptureCard(); var dirty = HasCurrentCardEdits; _loadedOrderSnapshot = CurrentOrder; _workspace = book;
-        if (!IsCreating && !dirty && IsCurrentOrderMissing && string.IsNullOrEmpty(ResultText)) ForgetOpenCard();
+        if (!IsCreating && !HasCurrentCloseWork && IsCurrentOrderMissing && string.IsNullOrEmpty(ResultText)) ForgetOpenCard();
         RefreshEmployees(CurrentEmployee?.Id); RefreshOrders();
         if (!IsCreating && !dirty && CurrentOrder is { } order) LoadOrder(order);
         else if (!IsCreating && !dirty && CurrentOrder is null && SelectedOrder is { } selected) SwitchCard(selected.Order);

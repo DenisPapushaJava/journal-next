@@ -26,9 +26,9 @@ public sealed class WorkflowActionAvailabilityTests
         try
         {
             window.Show(); await Until(() => !f.Model.IsBusy);
-            Check(window, "OpenWorkflowResult", false); Check(window, "CopyWorkflowCuttingTask", false);
+            Check(window, "OpenWorkflowResult", false); Check(window, "CopyWorkflowCuttingTask", true);
             Check(window, "RefreshWorkflowReports", false); Assert.False(f.Model.SaveHeaderCommand.CanExecute(null));
-            MenuMatches(window, f.Model, false, false);
+            MenuMatches(window, f.Model, false, true);
             f.Model.OrderTabIndex = 1; Pump(); Check(window, "GenerateWorkflowResult", false); Check(window, "CopyWorkflowResult", false);
             Assert.Equal(f.Model.GenerateResultHint, f.Model.ResultStatus); Assert.False(f.Model.HasResultStatusError);
             Frame(window, $"empty-result-{width}-{dark}");
@@ -38,16 +38,16 @@ public sealed class WorkflowActionAvailabilityTests
             Click(window.FindControl<Button>("CreateWorkflowProject")!); await Until(() => !f.Model.IsBusy && !f.Model.IsPlanning);
             Check(window, "RefreshWorkflowReports", true); Check(window, "OpenWorkflowResult", false);
             var project = f.Model.SelectedProject!.Project; await ProjectFixture.WriteAsync(project); await f.AcceptAsync(); Pump();
-            Check(window, "OpenWorkflowResult", true); Check(window, "CopyWorkflowCuttingTask", false);
+            Check(window, "OpenWorkflowResult", true); Check(window, "CopyWorkflowCuttingTask", true);
             Assert.Contains("БЛЦБ", f.Model.SendToWorkHint); Assert.True(f.Model.GenerateResultCommand.CanExecute(null));
-            MenuMatches(window, f.Model, true, false);
+            MenuMatches(window, f.Model, true, true);
             Click(window.FindControl<Button>("OpenWorkflowResult")!); Assert.NotEmpty(f.Model.ResultText); Check(window, "CopyWorkflowResult", true);
             f.Model.SelectedDraft!.Coefficient = "1,5"; Pump();
-            Check(window, "GenerateWorkflowResult", false); Check(window, "CopyWorkflowResult", true);
+            Check(window, "GenerateWorkflowResult", true); Check(window, "CopyWorkflowResult", true);
             Assert.True(f.Model.CanOpenResult); Assert.True(f.Model.CanSaveSpecification); Assert.True(f.Model.CanCancelDraft);
             Assert.False(f.Model.CanAddProject); Assert.False(f.Model.CanLoadReports); Assert.False(f.Model.CanMoveOrderToTrash);
             f.Model.ResultText = "Сохранить ручной текст"; Frame(window, $"dirty-result-{width}-{dark}");
-            MenuMatches(window, f.Model, true, false);
+            MenuMatches(window, f.Model, true, true);
             f.Model.OrderTabIndex = 0; Pump(); Click(window.FindControl<Button>("CancelWorkflowSpecification")!);
             Assert.True(f.Model.CanGenerateResult); Assert.False(f.Model.CanSaveSpecification); Assert.False(f.Model.CanCancelDraft);
             Assert.Equal("Сохранить ручной текст", f.Model.ResultText);
@@ -68,7 +68,7 @@ public sealed class WorkflowActionAvailabilityTests
             Assert.Equal(before, JsonSerializer.Serialize(await f.Store.ReadAsync(Token)));
             Assert.Equal("Сохранить ручной текст", f.Model.ResultText); Assert.Empty(log.Errors);
         }
-        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); }
     }
 
     [Fact]

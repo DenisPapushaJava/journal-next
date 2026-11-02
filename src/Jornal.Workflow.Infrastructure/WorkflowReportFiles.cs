@@ -13,6 +13,15 @@ public static partial class WorkflowReportFiles
     private const int MaximumBytes = 32 * 1024 * 1024;
     public static bool IsReport(string path) => Path.GetExtension(path).ToLowerInvariant() is ".htm" or ".html" or ".pdf";
 
+    // BLOK specifications are HTML; adjacent PDF cutting maps are a different document.
+    // Keep PDF specifications available for HansLaser and AWJC, independent of file names.
+    public static bool IsReport(string path, string? profile) => profile switch
+    {
+        "block-html/v1" => Path.GetExtension(path).ToLowerInvariant() is ".htm" or ".html",
+        "hans-pdf/v1" or "waterjet-awjc/v1" => Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase),
+        _ => IsReport(path)
+    };
+
     public static async Task<ReportFileSnapshot> ReadAsync(string path, CancellationToken token = default)
     {
         if (!IsReport(path)) throw new WorkflowValidationException("Выберите HTML или PDF-спецификацию.");

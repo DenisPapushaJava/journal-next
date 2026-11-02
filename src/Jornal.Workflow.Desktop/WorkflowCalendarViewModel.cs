@@ -15,11 +15,14 @@ public sealed class WorkflowCalendarViewModel : ObservableObject
 {
     private static readonly CultureInfo Russian = CultureInfo.GetCultureInfo("ru-RU");
     private DateTime? _selectedDate;
+    private bool _selectedMonth;
     private DateTime _displayDate = DateTime.Today;
     private int _level;
     public ObservableCollection<WorkflowCalendarCell> Cells { get; } = [];
     public string[] Weekdays { get; } = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
-    public string Caption => _selectedDate?.ToString("dd.MM.yyyy", Russian) ?? "Выбрать дату";
+    public string Caption => _selectedDate is { } date ? _selectedMonth
+        ? Russian.TextInfo.ToTitleCase(date.ToString("MMMM yyyy", Russian)) : date.ToString("dd.MM.yyyy", Russian) : "Выбрать дату";
+    public DateTime DisplayedMonth => new(_displayDate.Year, _displayDate.Month, 1);
     public string Title => _level switch
     {
         1 => _displayDate.Year.ToString(Russian),
@@ -33,9 +36,9 @@ public sealed class WorkflowCalendarViewModel : ObservableObject
     public bool CanNext => _level switch { 2 => YearStart + 11 < 9999, 1 => _displayDate.Year < 9999, _ => _displayDate.Year < 9999 || _displayDate.Month < 12 };
     public DateTime FocusDate { get; private set; } = DateTime.Today;
 
-    public void SetSelection(DateTime? date)
+    public void SetSelection(DateTime? date, bool month = false)
     {
-        _selectedDate = date?.Date;
+        _selectedDate = date?.Date; _selectedMonth = month && date is not null;
         OnPropertyChanged(nameof(Caption));
         Refresh();
     }
@@ -91,7 +94,7 @@ public sealed class WorkflowCalendarViewModel : ObservableObject
                 var dayNumber = Math.Clamp(start + i, DateOnly.MinValue.DayNumber, DateOnly.MaxValue.DayNumber);
                 var date = DateOnly.FromDayNumber(dayNumber).ToDateTime(TimeOnly.MinValue);
                 Add(date, start + i == dayNumber ? date.Day.ToString(Russian) : "", date.Month != first.Month,
-                    date == today, date == _selectedDate);
+                    date == today, _selectedMonth ? date.Month == _selectedDate?.Month && date.Year == _selectedDate?.Year : date == _selectedDate);
             }
         }
         foreach (var name in new[] { nameof(Title), nameof(IsDays), nameof(Columns), nameof(CanPrevious), nameof(CanNext) }) OnPropertyChanged(name);

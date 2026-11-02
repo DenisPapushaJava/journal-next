@@ -55,6 +55,7 @@ public sealed class WorkflowMapSigningReviewTests
         Assert.Equal(partial ? 2 : 1, results.Length);
         var uncertain = Assert.Single(results, r => r.Status == MapSigningStatus.NeedsVerification);
         Assert.True(uncertain.NeedsAttention); Assert.True(uncertain.MayHaveChanged);
+        Assert.Null(uncertain.Caption); Assert.False(uncertain.HasCaption);
         Assert.Equal(affected, uncertain.FilePath); Assert.NotNull(uncertain.BackupPath);
         Assert.Contains(uncertain.BackupPath, uncertain.Details); Assert.Contains("остановлено", uncertain.Message);
         Assert.DoesNotContain("повторите", uncertain.Message); Assert.DoesNotContain("private", uncertain.Details);

@@ -24,9 +24,16 @@ public partial class WorkflowWindow
         => await PrepareShopTransferAsync(true);
     private async Task PrepareShopTransferAsync(bool reviewOnly)
     {
-        if (Model is not { } model || OwnedWindows.Count > 0 || !(reviewOnly ? model.CanCopyCuttingTask : model.CanSendToWork)) return;
+        if (Model is not { } model || OwnedWindows.Count > 0 || !(reviewOnly ? model.CanCopyCuttingTask : model.CanRequestSendToWork)) return;
         try
         {
+            if (!reviewOnly && !model.CanSendToWork)
+            {
+                model.ExplainSendToWork();
+                if (model.HasCuttingTaskText && (model.IsCuttingTaskTextStale || string.IsNullOrWhiteSpace(model.CuttingTaskText)))
+                    ToggleWorkflowCuttingTaskPreview.Flyout?.ShowAt(ToggleWorkflowCuttingTaskPreview);
+                return;
+            }
             if (model.HasCuttingTaskText && string.IsNullOrWhiteSpace(model.CuttingTaskText))
             {
                 ToggleWorkflowCuttingTaskPreview.Flyout?.ShowAt(ToggleWorkflowCuttingTaskPreview);
@@ -40,7 +47,8 @@ public partial class WorkflowWindow
                 await ShowSettingsAsync(1);
                 if (!IsVisible || model.ShopRoot is null) return;
             }
-            var preview = await model.PrepareShopTransferAsync(WriteCuttingTaskClipboardAsync, reviewOnly);
+            var operation = model.PrepareShopTransferAsync(WriteCuttingTaskClipboardAsync, reviewOnly);
+            var preview = reviewOnly ? await operation : await WithShopProgressAsync(operation);
             if (!IsVisible || preview is null || _lifetime.IsCancellationRequested) return;
             if (reviewOnly || !preview.AllPrepared && !preview.WasCancelled && preview.Error is null)
                 await ShowShopTransferDetailsAsync(preview);
@@ -104,7 +112,7 @@ public partial class WorkflowWindow
                 if (DiscardWorkflowCardChanges.IsEffectivelyVisible) DiscardWorkflowCardChanges.Focus();
                 else Model?.ReloadCommand.Execute(null);
                 break;
-            case CuttingTaskTarget.Reports: OnRefreshReports(sender, e); break;
+            case CuttingTaskTarget.Reports: OnCalculateOrder(sender, e); break;
         }
     }
 

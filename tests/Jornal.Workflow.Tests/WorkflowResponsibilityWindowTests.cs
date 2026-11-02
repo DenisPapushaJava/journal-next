@@ -53,7 +53,7 @@ public sealed class WorkflowResponsibilityWindowTests
                 Click(menu.Items.OfType<MenuItem>().Single(i => Equals(i.Header, "Сменить ответственного…"))); Pump();
             }
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
 
         void Save(TopLevel root, string state)
         {

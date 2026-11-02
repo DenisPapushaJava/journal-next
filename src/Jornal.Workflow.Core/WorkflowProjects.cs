@@ -15,6 +15,7 @@ public sealed record CuttingProject(Guid Id, Guid ItemId, int Variant, Guid Mach
     public DateTimeOffset? DeletedAt { get; init; }
     public Guid? DeletedBy { get; init; }
     public ProjectRename? Rename { get; init; }
+    public WorkflowShopHandoff? ShopHandoff { get; init; }
     [System.Text.Json.Serialization.JsonIgnore] public bool IsDeleted => DeletedAt is not null;
 }
 
@@ -65,7 +66,8 @@ public static class WorkflowProjectNames
     }
 
     private static string Name(WorkflowMachine machine, decimal thickness, string timestamp) =>
-        (machine.ImportProfile is null ? "" : thickness.ToString("0.############################", CultureInfo.InvariantCulture) +
+        // Vintech removes decimal points from project names; use a comma consistently for every machine.
+        (machine.ImportProfile is null ? "" : thickness.ToString("0.############################", CultureInfo.GetCultureInfo("ru-RU")) +
         (machine.ImportProfile == "hans-pdf/v1" ? " mm " : " мм ")) +
         timestamp + "--" + Tag(machine);
 }
@@ -90,6 +92,7 @@ public static partial class WorkflowProjects
             if (existing == project) return workspace;
             throw new WorkflowValidationException("Проект с таким ID уже существует.");
         }
+        if (project.ShopHandoff is not null) throw new WorkflowValidationException("Новый проект не может наследовать отметку передачи.");
         var item = order.Items.SingleOrDefault(i => i.Id == project.ItemId);
         if (project.Variant != order.Projects.Where(p => p.ItemId == project.ItemId).Select(p => p.Variant).DefaultIfEmpty().Max() + 1)
             throw new WorkflowConflictException();

@@ -13,7 +13,7 @@ using Jornal.Workflow.Infrastructure;
 
 namespace Jornal.Workflow.Desktop;
 
-public sealed class WorkflowOrderRow(WorkflowOrder order, string customer, string manager, string technologist) : ObservableObject
+public sealed partial class WorkflowOrderRow(WorkflowOrder order, string customer, string manager, string technologist) : ObservableObject
 {
     public WorkflowOrder Order { get; private set; } = order;
     public string Customer { get; private set; } = customer;
@@ -24,10 +24,12 @@ public sealed class WorkflowOrderRow(WorkflowOrder order, string customer, strin
     public string CreatorDescription => Creator is { } creator ? "Создал: " + creator.Name +
         (creator.ColorArgb is null ? " · цвет не выбран" : "") : "Автор создания не указан";
     public Employee? ShopHandoffActor { get; set; }
-    public bool HasShopHandoff => !IsMissing && Order.HasCurrentShopHandoff;
+    private bool _handoffChanged = order.HasShopHandoff && !order.HasCurrentShopHandoff;
+    public bool HasShopHandoff => !IsMissing && Order.HasShopHandoff;
+    public bool HasShopHandoffChanges => HasShopHandoff && _handoffChanged;
     public string ShopHandoffHint => HasShopHandoff && Order.ShopHandoff is { } stamp ?
         "Передано в цех · " + stamp.At.ToLocalTime().ToString("dd.MM.yyyy HH:mm") + "\nТехнолог: " + (ShopHandoffActor?.Name ?? "не указан") +
-        "\nПоследняя успешная передача сохранённой версии заявки." : "";
+         (HasShopHandoffChanges ? "\nПосле передачи были изменения." : "\nПосле передачи значимых изменений нет.") : "";
     private uint _shopHandoffColor = 0xFF80FFFF;
     public IBrush ShopHandoffBrush => new SolidColorBrush(Color.FromUInt32(_shopHandoffColor));
     internal void ApplyShopHandoffColor(uint color)
@@ -46,6 +48,11 @@ public sealed class WorkflowOrderRow(WorkflowOrder order, string customer, strin
     public string SearchDetail { get; set; } = "";
     public bool HasSearchDetail => SearchDetail.Length > 0;
     public string Details => (IsMissing ? "Удалена · локальный черновик · " : HasDraft ? "Черновик · " : "") + Manager + " · БЛЦБ " + Blcb;
+    internal void ApplyDraftState(bool value)
+    {
+        if (HasDraft == value) return;
+        HasDraft = value; OnPropertyChanged(nameof(HasDraft)); OnPropertyChanged(nameof(Details));
+    }
     internal void Apply(WorkflowOrderRow incoming)
     {
         var changed = Order.Version != incoming.Order.Version || Customer != incoming.Customer || Manager != incoming.Manager ||
@@ -53,12 +60,14 @@ public sealed class WorkflowOrderRow(WorkflowOrder order, string customer, strin
             IsMissing != incoming.IsMissing || SearchDetail != incoming.SearchDetail || Order.ShopHandoff != incoming.Order.ShopHandoff || ShopHandoffActor != incoming.ShopHandoffActor;
         Order = incoming.Order; Customer = incoming.Customer; Manager = incoming.Manager; Technologist = incoming.Technologist;
         Creator = incoming.Creator; HasDraft = incoming.HasDraft; IsMissing = incoming.IsMissing; SearchDetail = incoming.SearchDetail;
-        ShopHandoffActor = incoming.ShopHandoffActor; ApplyShopHandoffColor(incoming._shopHandoffColor);
+        _handoffChanged = incoming._handoffChanged; ShopHandoffActor = incoming.ShopHandoffActor; ApplyShopHandoffColor(incoming._shopHandoffColor);
         if (!changed) return;
+        OperationBadges = incoming.OperationBadges;
         foreach (var name in new[] { nameof(Order), nameof(Customer), nameof(Manager), nameof(Technologist), nameof(Creator),
             nameof(CreatorBrush), nameof(CreatorDescription), nameof(Number), nameof(NumberDate), nameof(NumberTime), nameof(NumberCaption),
             nameof(NumberHint), nameof(Blcb), nameof(SpecificationCount), nameof(Total), nameof(Updated), nameof(HasDraft), nameof(IsMissing),
-            nameof(SearchDetail), nameof(HasSearchDetail), nameof(Details), nameof(HasShopHandoff), nameof(ShopHandoffHint) }) OnPropertyChanged(name);
+            nameof(SearchDetail), nameof(HasSearchDetail), nameof(Details), nameof(HasShopHandoff), nameof(HasShopHandoffChanges), nameof(ShopHandoffHint),
+            nameof(OperationBadges), nameof(HasOperationBadges) }) OnPropertyChanged(name);
     }
 }
 public partial class WorkflowViewModel : ObservableObject
@@ -75,7 +84,8 @@ public partial class WorkflowViewModel : ObservableObject
     public ObservableCollection<WorkflowOrderRow> Orders { get; } = [];
     public ObservableCollection<Employee> Employees { get; } = [];
     public ObservableCollection<SpecificationDraft> Drafts { get; } = [];
-    public IReadOnlyList<string> MaterialGroups { get; } = ["Базовая", "Нержавеющая сталь", "Цветные металлы"];
+    public static IReadOnlyList<string> KnownMaterialGroups { get; } = ["Базовая", "Нержавеющая сталь", "Цветные металлы"];
+    public IReadOnlyList<string> MaterialGroups => KnownMaterialGroups;
     [ObservableProperty] private WorkflowOrderRow? _selectedOrder;
     [ObservableProperty] private SpecificationDraft? _selectedDraft;
     [ObservableProperty] private Employee? _currentEmployee;
@@ -88,7 +98,7 @@ public partial class WorkflowViewModel : ObservableObject
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string? _error;
     public bool HasError => !string.IsNullOrWhiteSpace(Error);
-    partial void OnErrorChanged(string? value) => OnPropertyChanged(nameof(HasError));
+    partial void OnErrorChanged(string? value) { OnPropertyChanged(nameof(HasError)); NotifyNavigation(); }
     [ObservableProperty] private string _resultText = "";
     [ObservableProperty] private string _search = "";
     public bool IsJournal => _openOrderId is null;
@@ -145,7 +155,7 @@ public partial class WorkflowViewModel : ObservableObject
             finally { _initialProfileReadFinished = true; NotifyProfile(); }
             _reportReview = null; _reportImportOrderId = null;
             ResetCuttingTask();
-            _workspace = workspace; _hasLoadedOrders = true; RecordListedSnapshot(workspace);
+            _workspace = workspace; _hasLoadedOrders = true; _orderQueryFailed = false; RecordListedSnapshot(workspace);
             if (IsCurrentOrderMissing && string.IsNullOrEmpty(ResultText)) ForgetOpenCard();
             RefreshEmployees(_connection.EmployeeId);
             Technologist ??= CurrentEmployee;
@@ -213,7 +223,7 @@ public partial class WorkflowViewModel : ObservableObject
         var index = Drafts.IndexOf(draft);
         if (saved is null) { Drafts.Remove(draft); SelectedDraft = Drafts.FirstOrDefault(); RefreshProjects(SelectedDraft?.Id); }
         else { Drafts[index] = CreateDraft(saved); SelectedDraft = Drafts[index]; }
-        Error = null;
+        Error = null; NotifyCompleteness();
     }
     [RelayCommand(CanExecute = nameof(CanSaveHeader))]
     private async Task SaveHeaderAsync()
@@ -263,6 +273,10 @@ public partial class WorkflowViewModel : ObservableObject
                 report = draft.Saved?.Report?.Sha256 == incoming.Sha256 ? draft.Saved.Report :
                     await WorkflowReportFiles.ArchiveAsync(incoming, WorkflowReportCandidate.Values(FromReport(incoming.Parsed, incoming.SourcePath, _workspace.Machines)));
             }
+            if (order.Projects.Any(p => p.Id == draft.Id && p.NativePath is not null) &&
+                order.Specifications.SingleOrDefault(s => s.Id == draft.Id)?.Current is { } before &&
+                WorkflowCalculationSnapshots.ProjectFolder(order, draft.Id, draft.SourcePath) is not null)
+                await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(order, draft.Id, actorId, before, null, draft.SourcePath, CancellationToken.None));
             _workspace = await _store.WriteOrderAsync(order.Id, expected, book => WorkflowChanges.SaveSpecification(book, order.Id, expected,
                 draft.Id, parameters, documentNumber, date, actorId, DateTimeOffset.UtcNow, draft.SourcePath, draft.ImportProfile, rate, report));
             _loadedOrderVersion = CurrentOrder!.Version;
@@ -353,6 +367,7 @@ public partial class WorkflowViewModel : ObservableObject
 
     private void LoadOrder(WorkflowOrder order)
     {
+        _cardClosedManually = false;
         var sameOrder = _openOrderId == order.Id;
         if (sameOrder && _loadedOrderVersion != order.Version) MarkResultStale();
         else if (!sameOrder) { ResetResultPresentation(); ResultText = ""; IsResultExpanded = false; OrderTabIndex = 0; ResultIsStale = false; }
@@ -373,16 +388,17 @@ public partial class WorkflowViewModel : ObservableObject
             var query = new WorkflowSearchQuery(Search); var index = OrderSearchIndex;
             var exactId = index.FindExactOrder(query); _isExactNumberSearch = exactId is not null;
             foreach (var id in _cards.Where(pair => !_workspace.Orders.Any(o => o.Id == pair.Key) &&
-                !pair.Value.HasEdits && pair.Value.Result.Length == 0).Select(pair => pair.Key).ToArray()) _cards.Remove(id);
+                !pair.Value.HasEdits && pair.Value.Result.Length == 0 && pair.Value.TaskEdit is null).Select(pair => pair.Key).ToArray()) _cards.Remove(id);
             var rows = new List<WorkflowOrderRow>();
             if (!preserveRows) Orders.Clear();
-            foreach (var order in _workspace.Orders.Where(o => !o.IsDeleted && IsInPeriod(o)).OrderByDescending(o => o.UpdatedAt).ThenByDescending(o => o.Number))
+            var filter = CurrentOrderFilter;
+            foreach (var order in _workspace.Orders.Where(o => !o.IsDeleted && IsInPeriod(o) && filter.Matches(o)).OrderByDescending(o => o.UpdatedAt).ThenByDescending(o => o.Number))
             {
                 var detail = "";
                 if (exactId is { } exact ? order.Id != exact : !index.Documents[order.Id].Matches(query, out detail)) continue;
                 var row = new WorkflowOrderRow(order, CustomerName(order.CustomerId), EmployeeName(order.ManagerId), EmployeeName(order.TechnologistId))
                 {
-                    HasDraft = HasDraftForOrder(order.Id),
+                    HasDraft = HasWorkForOrder(order.Id),
                     SearchDetail = detail,
                     Creator = _workspace.Employees.SingleOrDefault(e => e.Id == order.CreatedById),
                     ShopHandoffActor = _workspace.Employees.SingleOrDefault(e => e.Id == order.ShopHandoff?.ActorId)
@@ -391,16 +407,16 @@ public partial class WorkflowViewModel : ObservableObject
                 if (preserveRows) rows.Add(row); else Orders.Add(row);
             }
             foreach (var state in _cards.Where(pair => !_workspace.Orders.Any(o => o.Id == pair.Key) &&
-                (pair.Value.HasEdits || pair.Value.Result.Length > 0)).Select(pair => pair.Value))
+                (pair.Value.HasEdits || pair.Value.Result.Length > 0 || pair.Value.TaskEdit is not null)).Select(pair => pair.Value))
             {
-                if (state.SourceOrder is not { } source || !IsInPeriod(source)) continue;
+                if (state.SourceOrder is not { } source || !IsInPeriod(source) || !filter.Matches(source)) continue;
                 if (exactId is not null || !index.CreateDocument(source).Matches(query, out var detail)) continue;
                 var row = new WorkflowOrderRow(source, CustomerName(source.CustomerId), EmployeeName(source.ManagerId), EmployeeName(source.TechnologistId))
                 { HasDraft = true, IsMissing = true, SearchDetail = detail, Creator = _workspace.Employees.SingleOrDefault(e => e.Id == source.CreatedById) };
                 if (preserveRows) rows.Add(row); else Orders.Add(row);
             }
             if (preserveRows) SynchronizeOrderRows(rows);
-            SelectedOrder = Orders.FirstOrDefault(o => o.Order.Id == selected) ?? (_openOrderId is null ? Orders.FirstOrDefault() : null);
+            SelectedOrder = Orders.FirstOrDefault(o => o.Order.Id == selected) ?? (_openOrderId is null && !_cardClosedManually ? Orders.FirstOrDefault() : null);
             if (!preserveRows) NotifyProfile();
             OnPropertyChanged(nameof(TrashCaption));
             NotifyOrderList();
@@ -411,8 +427,7 @@ public partial class WorkflowViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(HasSearchText)); OnPropertyChanged(nameof(HasSearchQuery));
         if (_refreshing) return;
-        if (FilterDate is not null) FilterDate = null;
-        else if (_store is IWorkflowQueryStore) ScheduleDatabaseSearch();
+        if (_store is IWorkflowQueryStore) ScheduleDatabaseSearch();
         else RefreshOrders();
         if (!IsOrderOpen) SelectedOrder = null;
     }
@@ -438,8 +453,11 @@ public partial class WorkflowViewModel : ObservableObject
     }
     private void DraftChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(SpecificationDraft.MaterialSuggestions)) return;
+        ++_closeRevision;
         if (e.PropertyName == nameof(SpecificationDraft.IsDirty))
         {
+            NotifyCurrentDraftIndicator();
             OnPropertyChanged(nameof(HasPendingEdits));
             if (sender is SpecificationDraft changed)
                 Projects.SingleOrDefault(p => p.Project.Id == changed.Id)?.ApplyLocalChanges(changed.IsDirty);
@@ -461,13 +479,15 @@ public partial class WorkflowViewModel : ObservableObject
         Orders.FirstOrDefault(r => r.Order.ManagerId == id)?.Manager ?? Orders.FirstOrDefault(r => r.Order.TechnologistId == id)?.Technologist ?? "Сотрудник недоступен";
     private void NotifyOrder()
     {
+        NotifyProjectHandoffs();
+        NotifyNavigation();
         NotifyResultState();
         NotifyShopFolderPaths();
         NotifyCompleteness();
         NotifyBendingFolders();
         foreach (var name in new[] { nameof(IsJournal), nameof(IsOrderOpen), nameof(IsCardVisible), nameof(IsNoCardSelected), nameof(HeaderSummary),
             nameof(OrderTitle), nameof(TotalText), nameof(BendingText), nameof(ProjectsStatus), nameof(IsCurrentOrderActive), nameof(IsCurrentCardStale),
-            nameof(HasCardReview), nameof(CardReviewText), nameof(TrashCaption), nameof(IsCurrentOrderMissing), nameof(HasPendingEdits) }) OnPropertyChanged(name);
+            nameof(HasCardReview), nameof(CardReviewText), nameof(TrashCaption), nameof(IsCurrentOrderMissing), nameof(HasPendingEdits), nameof(HasRecordedShopHandoff), nameof(CanClearShopHandoff) }) OnPropertyChanged(name);
         SaveSpecificationCommand.NotifyCanExecuteChanged();
     }
     partial void OnIsBusyChanged(bool value)

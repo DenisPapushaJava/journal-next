@@ -26,10 +26,10 @@ public sealed partial class WorkflowMdbDatabase
         if (request.Operation == WorkflowAccessOperation.Inspect) UpgradeSchema(path, request.DatabaseId);
         if (request.Operation == WorkflowAccessOperation.Apply) return Apply(path, request);
         if (request.Operation == WorkflowAccessOperation.Purge) return Purge(path, request);
-        if (request.Operation == WorkflowAccessOperation.RecordShopHandoff) return RecordShopHandoff(path, request);
+        if (request.Operation is WorkflowAccessOperation.RecordShopHandoff or WorkflowAccessOperation.ClearShopHandoff or WorkflowAccessOperation.RecordProjectHandoffs) return RecordShopHandoff(path, request);
         return ReadSnapshot(path, request);
     }
-    private static Metadata ReadMetadata(WorkflowMdbSession session, Guid? expected, bool allowVersionOne = false)
+    private static Metadata ReadMetadata(WorkflowMdbSession session, Guid? expected, bool allowEarlierSchema = false)
     {
         try
         {
@@ -38,7 +38,7 @@ public sealed partial class WorkflowMdbDatabase
             if (!reader.Read() || Convert.ToInt32(reader[0], CultureInfo.InvariantCulture) != 1 || Convert.ToString(reader[1], CultureInfo.InvariantCulture) != WorkflowMdbSchema.ProductId)
                 throw WrongDatabase();
             var schema = Convert.ToInt32(reader[2], CultureInfo.InvariantCulture);
-            if (schema != WorkflowMdbSchema.Version && !(allowVersionOne && schema == 1)) throw new WorkflowValidationException(schema > WorkflowMdbSchema.Version ?
+            if (schema != WorkflowMdbSchema.Version && !(allowEarlierSchema && schema is >= 1 and < WorkflowMdbSchema.Version)) throw new WorkflowValidationException(schema > WorkflowMdbSchema.Version ?
                 "База создана более новой версией программы «Заявки». Обновите программу." : "Версия этой MDB пока не поддерживается. Файл не изменён.");
             var id = (Guid)reader[3];
             if (id == Guid.Empty || expected is { } database && database != id) throw new WorkflowValidationException("По этому пути другая база программы «Заявки». Подключите её явно в настройках.");

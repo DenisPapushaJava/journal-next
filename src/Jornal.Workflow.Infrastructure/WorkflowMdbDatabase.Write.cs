@@ -8,7 +8,7 @@ namespace Jornal.Workflow.Infrastructure;
 public sealed partial class WorkflowMdbDatabase
 {
     private static readonly string[] CatalogTables = ["employees", "customers", "machines", "cutting_rates", "price_import_keys"];
-    private static readonly string[] OrderTables = ["orders", "order_items", "cutting_projects", "order_item_selections", "specifications", "accepted_reports", "project_renames", "order_shop_handoffs"];
+    private static readonly string[] OrderTables = ["orders", "order_items", "cutting_projects", "project_shop_handoffs", "project_shop_handoff_inputs", "order_item_selections", "specifications", "accepted_reports", "project_renames", "order_shop_handoffs"];
 
     private static WorkflowAccessResponse Apply(string path, WorkflowAccessRequest request)
     {
@@ -58,7 +58,7 @@ public sealed partial class WorkflowMdbDatabase
                 else if (value.Version <= current.Version || value.Number != current.Number || value.ReferenceNumber != current.ReferenceNumber ||
                     value.CreatedAt != current.CreatedAt || value.CreatedById != current.CreatedById)
                     throw new WorkflowValidationException("Некорректная версия или неизменяемые реквизиты заявки.");
-                changed.Add(value);
+                changed.Add(WorkflowShopHandoff.PreserveRecorded(current, value));
             }
             var catalog = ReadCatalog(session, meta, patch.Catalog is not null);
             var nextCatalog = patch.Catalog ?? catalog;
@@ -90,7 +90,7 @@ public sealed partial class WorkflowMdbDatabase
                 session.Execute("DELETE FROM [order_item_selections] WHERE [id]=?", (WorkflowMdbSession.GuidColumn, selected.Id));
                 oldRows["order_item_selections"].Remove(selected.Id);
             }
-            foreach (var table in new[] { "order_shop_handoffs", "accepted_reports", "specifications", "project_renames", "cutting_projects", "order_items", "orders" })
+            foreach (var table in new[] { "project_shop_handoff_inputs", "project_shop_handoffs", "order_shop_handoffs", "accepted_reports", "specifications", "project_renames", "cutting_projects", "order_items", "orders" })
                 foreach (var row in oldRows[table].Values.Where(r => !newRows[table].ContainsKey(r.Id)).OrderBy(r => r.Id))
                     session.Execute($"DELETE FROM [{table}] WHERE [id]=?", (WorkflowMdbSession.GuidColumn, row.Id));
             if (patch.Catalog is not null)

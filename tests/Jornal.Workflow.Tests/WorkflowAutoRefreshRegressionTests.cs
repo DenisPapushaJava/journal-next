@@ -150,7 +150,7 @@ public sealed class WorkflowAutoRefreshRegressionTests
                 Assert.Equal(machines.Single(m => m.Id == selected.Id), f.Model.PlanMachine);
             }
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     private static WorkflowOrder AnotherOrder(WorkflowOrder original) => original with

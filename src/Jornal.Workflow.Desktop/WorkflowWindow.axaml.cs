@@ -18,10 +18,12 @@ public partial class WorkflowWindow : Window
     private WorkflowViewModel? Model => DataContext as WorkflowViewModel;
     public WorkflowWindow() : this(new WorkflowPreferencesStore(WorkflowIdentity.PreferencesPath)) { }
     public WorkflowWindow(WorkflowPreferencesStore preferences, WorkflowPreferences? initialPreferences = null, TimeProvider? journalRefreshClock = null,
-        Func<string, Action<bool>, Action, Task<IDisposable>>? journalSubscribe = null, TimeProvider? mapStatusClock = null, TimeProvider? resultFeedbackClock = null)
+        Func<string, Action<bool>, Action, Task<IDisposable>>? journalSubscribe = null, TimeProvider? mapStatusClock = null, TimeProvider? resultFeedbackClock = null,
+        TimeProvider? shopStatusClock = null)
     {
         _mapStatusClock = mapStatusClock ?? TimeProvider.System;
         _resultFeedbackClock = resultFeedbackClock ?? TimeProvider.System;
+        _shopStatusClock = shopStatusClock ?? TimeProvider.System;
         _journalClock = journalRefreshClock; _journalSubscribe = journalSubscribe;
         _preferences = preferences; _restart = new(Path.Combine(preferences.DirectoryPath, "update-restart.json"));
         WorkflowPreferences settings;
@@ -29,14 +31,14 @@ public partial class WorkflowWindow : Window
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException)
         { settings = new(); }
         RequestedThemeVariant = settings.DarkTheme ? ThemeVariant.Dark : ThemeVariant.Light;
-        InitializeComponent(); InitializeJournalInputTracking(); InitializeOrderContextMenu(); InitializeMapSigningStatus(); InitializeResultFeedback(); ThemeSwitch.IsChecked = settings.DarkTheme; ApplyTheme();
+        InitializeComponent(); InitializeJournalInputTracking(); InitializeOrderContextMenu(); InitializeMapSigningStatus(); InitializeResultFeedback(); InitializeShopStatus(); ThemeSwitch.IsChecked = settings.DarkTheme; ApplyTheme();
         _loadingTheme = false;
     }
     protected override async void OnOpened(EventArgs e)
     {
-        base.OnOpened(e); SyncMapSigningStatus(); ScheduleResultFeedbackExpiration(); if (Model is not { } model) return;
+        base.OnOpened(e); SyncMapSigningStatus(); SyncShopStatus(); ScheduleResultFeedbackExpiration(); if (Model is not { } model) return;
         model.UseLocalPreferencesStore(_preferences);
-        model.Updates.ConfigureRestart(() => model.CanUse && !model.IsCopyingCuttingTask && !model.HasPendingEdits && OwnedWindows.All(w => w is WorkflowSettingsWindow { CanRestart: true } or WorkflowUpdatesWindow { CanClose: true }),
+        model.Updates.ConfigureRestart(() => model.CanUse && !model.IsCopyingCuttingTask && !model.HasPendingEdits && !model.HasUnfinishedTaskText && OwnedWindows.All(w => w is WorkflowSettingsWindow { CanRestart: true } or WorkflowUpdatesWindow { CanClose: true }),
             () => _restart.Save(model.CreateRestartDraft()), Close);
         await model.ReloadCommand.ExecuteAsync(null);
         if (!IsVisible || !ReferenceEquals(Model, model) || _lifetime.IsCancellationRequested) return;
@@ -54,10 +56,18 @@ public partial class WorkflowWindow : Window
         await model.Updates.RunAutomaticChecksAsync(_lifetime.Token);
     }
     protected override void OnClosing(WindowClosingEventArgs e)
-    { if (Model?.IsBusy == true || OwnedWindows.Any(w => w is WorkflowProjectEditorWindow or WorkflowShopTransferWindow) || Model?.Updates is { IsApplying: true, RestartScheduled: false }) e.Cancel = true; base.OnClosing(e); }
+    {
+        if (!_confirmedApplicationClose && Model is { } model && !model.Updates.RestartScheduled)
+        {
+            if (_closeDialogPending || OwnedWindows.Count > 0 || !model.CanCloseWorkspace) e.Cancel = true;
+            else if (model.PrepareClose(application: true) is { NeedsConfirmation: true })
+            { e.Cancel = true; _ = RequestCloseAsync(application: true); }
+        }
+        base.OnClosing(e);
+    }
     protected override void OnClosed(EventArgs e)
     {
-        StopOrderContextMenu(); StopResultFeedback(); StopMapSigningStatus(); StopJournalRefresh(); _pressedPointers.Clear(); _lifetime.Cancel(); Model?.Updates.ClearRestart(); Model?.Updates.CheckCommand.Cancel(); Model?.Updates.DownloadCommand.Cancel();
+        StopOrderContextMenu(); StopResultFeedback(); StopMapSigningStatus(); StopShopStatus(); StopJournalRefresh(); _pressedPointers.Clear(); _lifetime.Cancel(); Model?.Updates.ClearRestart(); Model?.Updates.CheckCommand.Cancel(); Model?.Updates.DownloadCommand.Cancel();
         Model?.Detach(); _lifetime.Dispose(); base.OnClosed(e);
     }
     protected override void OnKeyDown(KeyEventArgs e)
@@ -74,6 +84,11 @@ public partial class WorkflowWindow : Window
         Model?.ClearSearchCommand.Execute(null);
         WorkflowSearchInput.Focus();
     }
+    private void OnOrderFiltersOpened(object? sender, EventArgs e)
+    {
+        if (sender is Flyout { Content: Control content }) content.DataContext = Model;
+    }
+    private void OnClearOrderFilters(object? sender, RoutedEventArgs e) => WorkflowOrderFiltersButton.Focus();
     private void OnSearchKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter && Model is { } searching) { _ = searching.SearchDatabaseNowAsync(); e.Handled = true; return; }
@@ -200,6 +215,10 @@ public partial class WorkflowWindow : Window
         if (Model is not { CanLoadReports: true } model || OwnedWindows.Count > 0) return;
         var review = await model.CreateReportReviewAsync(_lifetime.Token);
         if (review is null || !IsVisible || _lifetime.IsCancellationRequested) return;
+        await ShowReportReviewAsync(model, review);
+    }
+    private async Task ShowReportReviewAsync(WorkflowViewModel model, WorkflowReportReviewViewModel review)
+    {
         var window = new WorkflowReportReviewWindow(candidate =>
         {
             var catalog = model.CreateCatalogSettings();
@@ -207,6 +226,7 @@ public partial class WorkflowWindow : Window
             return new(() => model.CreateDatabaseSettings()) { DataContext = catalog };
         })
         { DataContext = review, RequestedThemeVariant = ActualThemeVariant };
+        if (review.IsGuided) { window.Width = 1120; window.Height = 700; }
         await window.ShowDialog(this);
         model.ReportReviewClosed();
     }

@@ -36,8 +36,11 @@ public partial class WorkflowViewModel
     public IBrush ProfileBrush => new SolidColorBrush(Color.FromUInt32(ActiveEmployee?.ColorArgb ?? PendingStartupProfile?.ColorArgb ?? 0xFF628DB2));
     public string ProfileHint => ProfileName + (PendingStartupProfile is not null ? " · сохранён на этом ПК, ожидает подтверждения из БД" : "") +
         " · изменить: Настройки → Общие → Технолог";
-    partial void OnCurrentEmployeeChanged(Employee? value)
-    { _connection = _connection with { EmployeeId = value?.Id }; NotifyProfile(); }
+    partial void OnCurrentEmployeeChanged(Employee? oldValue, Employee? newValue)
+    {
+        _connection = _connection with { EmployeeId = newValue?.Id }; NotifyProfile(); NotifyOrderFilters();
+        if (OnlyMyOrders && oldValue?.Id != newValue?.Id) OrderFiltersChanged();
+    }
     private void NotifyProfile()
     { OnPropertyChanged(nameof(ProfileName)); OnPropertyChanged(nameof(ProfileBrush)); OnPropertyChanged(nameof(ProfileHint)); NotifyActionAvailability(); }
 

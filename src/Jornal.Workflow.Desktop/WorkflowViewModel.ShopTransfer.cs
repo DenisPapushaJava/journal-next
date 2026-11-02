@@ -11,7 +11,13 @@ public partial class WorkflowViewModel
     private WorkflowShopTransferViewModel? _shopTransfer;
     private long _shopTransferVersion;
     public bool HasShopTransfer => ShopTransfer is not null && IsCuttingTaskVisible && CurrentOrder?.Version == _shopTransferVersion && TaskPreview.IsReady;
-    partial void OnShopTransferChanged(WorkflowShopTransferViewModel? value) => NotifyCuttingTask();
+    public bool ShowShopTransferNotice => HasShopTransfer && ShopTransfer is { ShowNotice: true };
+    partial void OnShopTransferChanging(WorkflowShopTransferViewModel? value)
+    { if (ShopTransfer is { } old) old.PropertyChanged -= OnShopTransferNoticeChanged; }
+    partial void OnShopTransferChanged(WorkflowShopTransferViewModel? value)
+    { if (value is { } current) current.PropertyChanged += OnShopTransferNoticeChanged; NotifyCuttingTask(); }
+    private void OnShopTransferNoticeChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    { if (e.PropertyName == nameof(WorkflowShopTransferViewModel.ShowNotice)) OnPropertyChanged(nameof(ShowShopTransferNotice)); }
     private void ResetShopTransfer() { ShopTransfer?.Cancel(); ShopTransfer = null; }
 
     public async Task<WorkflowShopTransferViewModel?> PrepareShopTransferAsync(Func<string, Task> clipboard, bool reviewOnly = false)
@@ -38,7 +44,7 @@ public partial class WorkflowViewModel
     {
         if (!CanCopyCuttingTask || CurrentOrder is not { } order) return null;
         _cuttingTaskSource = _store; _cuttingTaskOrderId = order.Id; NotifyCuttingTask();
-        if (!TaskPreview.IsReady || string.IsNullOrWhiteSpace(CuttingTaskText)) return null;
+        if (!TaskPreview.IsReady || IsCuttingTaskTextStale || string.IsNullOrWhiteSpace(CuttingTaskText)) return null;
         if (ShopRoot is not { } root) { Error = "Укажите папку заданий в цех: Настройки → Хранилище."; return null; }
         Error = null;
         var source = _store; var snapshot = _workspace; var epoch = _cuttingTaskEpoch; var text = TaskPreview.Text;
@@ -80,6 +86,13 @@ public partial class WorkflowViewModel
             _workspace = saved;
             RefreshOrders(preserveRows: true); NotifyOrder();
         }
+        async Task RecordProjects(Guid[] projectIds, DateTimeOffset at, CancellationToken token)
+        {
+            var saved = await source.RecordProjectHandoffsAsync(order.Id, order.Version, projectIds, actor, at, token);
+            if (_cuttingTaskDetached || epoch != _cuttingTaskEpoch || !ReferenceEquals(source, _store) || CurrentOrder?.Id != order.Id ||
+                CurrentOrder.Version != order.Version || ShopRoot != root) throw new WorkflowValidationException("Отметки проектов сохранены. Обновите журнал и проверьте результат.");
+            _workspace = saved; RefreshOrders(preserveRows: true); NotifyOrder();
+        }
         async Task CopyText(string value)
         {
             var text = CuttingTaskText;
@@ -88,6 +101,6 @@ public partial class WorkflowViewModel
             await clipboard(text);
             RememberCuttingTaskCopy(source, order, epoch, value, text);
         }
-        return new(root, sourceId, order, snapshot, Validate, CopyText, Transferred, Record);
+        return new(root, sourceId, order, snapshot, Validate, CopyText, Transferred, Record, _wordMapEditor, RecordProjects);
     }
 }

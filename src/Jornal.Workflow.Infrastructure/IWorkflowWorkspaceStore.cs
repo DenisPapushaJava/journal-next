@@ -16,12 +16,16 @@ public interface IWorkflowWorkspaceStore
     Task<WorkflowWorkspace> PurgeTrashedOrdersAsync(IReadOnlyList<WorkflowTrashTarget> targets, Guid actor, CancellationToken token = default);
     Task<(WorkflowWorkspace Workspace, Guid OrderId)> CreateOrderFromNamesAsync(string manager, string customer, Guid actor, DateTimeOffset at, CancellationToken token = default);
     Task<WorkflowWorkspace> WriteProjectRootAsync(string? expectedRoot, string? root, CancellationToken token = default);
+    Task<WorkflowWorkspace> RecordProjectHandoffsAsync(Guid orderId, long expectedOrderVersion, Guid[] projectIds, Guid actor, DateTimeOffset at, CancellationToken token = default) =>
+        WriteOrderAsync(orderId, expectedOrderVersion, w => WorkflowChanges.RecordProjectHandoffs(w, orderId, expectedOrderVersion, projectIds, actor, at), token);
+    Task<WorkflowWorkspace> ClearShopHandoffAsync(Guid orderId, long expectedOrderVersion, WorkflowHandoffClearExpected expected, Guid actor, CancellationToken token = default) =>
+        WriteOrderAsync(orderId, expectedOrderVersion, w => WorkflowChanges.ClearShopHandoff(w, orderId, expectedOrderVersion, expected, actor), token);
     Task<WorkflowWorkspace> RecordShopHandoffAsync(Guid orderId, long expectedOrderVersion, Guid actor, DateTimeOffset at, CancellationToken token = default) =>
         WriteOrderAsync(orderId, expectedOrderVersion, w => WorkflowChanges.RecordShopHandoff(w, orderId, expectedOrderVersion, actor, at), token);
 }
 
 public sealed record WorkflowReadQuery(DateTimeOffset? From = null, DateTimeOffset? Until = null, string Search = "", int Limit = 100,
-    DateTimeOffset? BeforeUpdated = null, long? BeforeNumber = null, Guid[]? RetainIds = null);
+    DateTimeOffset? BeforeUpdated = null, long? BeforeNumber = null, Guid[]? RetainIds = null, WorkflowOrderFilter? Filter = null);
 
 public interface IWorkflowQueryStore : IWorkflowWorkspaceStore
 {

@@ -69,7 +69,7 @@ public sealed class WorkflowProgramSettingsTests
             Click(window, "UpdatesBell"); Assert.Same(settings, Assert.Single(window.OwnedWindows)); Assert.Equal(2, model.SelectedSectionIndex);
             Assert.Empty(bindingLog.Errors);
         }
-        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); }
     }
 
     [AvaloniaTheory]
@@ -120,7 +120,7 @@ public sealed class WorkflowProgramSettingsTests
             Assert.NotNull(restart); Assert.Contains(restart.Results!, result => result.Text == client.ResultText);
             if (failRestart) { Assert.NotNull(updates.Error); Assert.True(model.CanClose); Assert.False(updates.IsApplying); }
         }
-        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); client.Detach(); }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); client.Detach(); }
     }
 
     [AvaloniaTheory]
@@ -156,7 +156,7 @@ public sealed class WorkflowProgramSettingsTests
             client.CancelDraftCommand.Execute(null); updates.InstallCommand.Execute(null); Pump();
             Assert.Equal(1, updater.Restarts); Assert.False(compact.IsVisible); Assert.False(window.IsVisible);
         }
-        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); window.Close(); client.Detach(); }
+        finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); client.Detach(); }
     }
 
     [AvaloniaTheory]
@@ -187,7 +187,7 @@ public sealed class WorkflowProgramSettingsTests
             Assert.True(panel.FindControl<Button>("DownloadWorkflowUpdate")!.IsEffectivelyEnabled);
             Frame(window, $"workflow-update-error-{dark}");
         }
-        finally { updates.DownloadCommand.Cancel(); gate.TrySetResult(); window.Close(); }
+        finally { updates.DownloadCommand.Cancel(); gate.TrySetResult(); WorkflowTestWindows.Close(window); }
     }
 
     [Fact]

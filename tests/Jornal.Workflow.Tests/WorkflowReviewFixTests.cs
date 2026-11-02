@@ -48,7 +48,7 @@ public sealed class WorkflowReviewFixTests
                 Assert.Equal(workspaceBytes, await File.ReadAllBytesAsync(f.Store.FilePath, Token));
                 model.NewOrderCommand.Execute(null); Assert.True(model.IsCreating);
             }
-            finally { window.Close(); }
+            finally { WorkflowTestWindows.Close(window); }
         }
     }
 
@@ -62,7 +62,7 @@ public sealed class WorkflowReviewFixTests
         using (var lease = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
         {
             var plan = Assert.Single(await f.Discover()); Assert.Null(plan.Problem); Assert.Equal(3, plan.Files.Length);
-            Assert.True(plan.NeedsReview); Assert.Contains("недоступные", plan.ReviewReason);
+            Assert.True(plan.NeedsReview); Assert.Contains(Path.GetFileName(path), plan.ReviewReason); Assert.Contains("Файл недоступен", plan.ReviewReason);
             var row = new WorkflowShopProjectChoice(plan, null, null);
             var unavailable = Assert.Single(row.Files, file => !file.CanSelect);
             Assert.Equal(Path.GetFileName(path), unavailable.Name); Assert.Contains("Файл недоступен", unavailable.Detail);
@@ -85,7 +85,7 @@ public sealed class WorkflowReviewFixTests
     }
 
     [Fact]
-    public async Task ManualExclusionDoesNotSkipHashChecksOfOtherReadableCandidates()
+    public async Task ManualExclusionStillChecksSelectedFileBytes()
     {
         using var f = new ShopFixture("HansLaser");
         var locked = Path.Combine(f.Source, "Недоступная.DOC");
@@ -95,7 +95,7 @@ public sealed class WorkflowReviewFixTests
         using var lease = new FileStream(locked, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
         var plan = Assert.Single(await f.Discover());
         var selected = plan.Files.Where(file => file.IsReadable && file.SourcePath != ignored).ToArray();
-        await File.WriteAllTextAsync(ignored, "changed!", Token);
+        await File.WriteAllTextAsync(selected.First(file => file.Kind == ShopFileKind.Program).SourcePath, "changed!", Token);
         var result = Assert.Single(await f.Copy(new(plan, selected, true, null)));
         Assert.False(result.Success); Assert.Contains("Изменился файл", result.Message);
         Assert.False(Directory.Exists(plan.Destination));
@@ -124,7 +124,7 @@ public sealed class WorkflowReviewFixTests
         using var lease = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
         string? text = null;
         var model = new WorkflowShopTransferViewModel(f.ShopRoot, "test-db", f.Order, f.Book, _ => Task.CompletedTask,
-            value => { text = value; return Task.CompletedTask; });
+            value => { text = value; return Task.CompletedTask; }, wordMapEditor: new ShopWordEditor());
         var window = new WorkflowShopTransferWindow { DataContext = model, RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light, Width = 800, Height = 540 };
         try
         {
@@ -146,7 +146,7 @@ public sealed class WorkflowReviewFixTests
             Assert.False(File.Exists(Path.Combine(row.Destination, Path.GetFileName(path))));
             Assert.Empty(log.Errors);
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
 
     private static async Task Until(Func<bool> ready)

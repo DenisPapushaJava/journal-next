@@ -58,10 +58,12 @@ internal static class WorkflowWordMap
             word.AutomationSecurity = 3; // msoAutomationSecurityForceDisable; DisplayAlerts does not disable macros.
             options = scope.Keep(word.Options); updateLinks = options.UpdateLinksAtOpen; options.UpdateLinksAtOpen = false;
             document = Open(documents, Path.Combine(folder, "input.doc"), scope);
+            if (request.InspectOnly)
+                return new(false, false, 0, 0, References: WorkflowWordMapRules.References(ReadCells(document, scope).Tables));
             if ((int)document.ProtectionType != -1 || (bool)document.TrackRevisions)
                 throw new WorkflowValidationException("DOC защищён или содержит запись исправлений. Проверьте карту вручную.");
             CardCells beforeCells = ReadCells(document, scope);
-            var comments = WorkflowWordMapRules.Comments(beforeCells.Tables, request.ProjectFileName);
+            var comments = WorkflowWordMapRules.Comments(beforeCells.Tables, request.ProjectFileName, request.Match);
             if (comments is null) return new(false, false, 0, 0);
             Layout before = Inspect(document, beforeCells, comments, scope);
             if (before.Pages is < 1 or > 100) throw new WorkflowValidationException("В DOC больше 100 страниц. Подпишите карту вручную.");
@@ -88,7 +90,7 @@ internal static class WorkflowWordMap
             }
             if (changed == 0) return new(true, false, before.Pages, 0);
             CardCells afterCells = ReadCells(document, scope);
-            var afterComments = WorkflowWordMapRules.Comments(afterCells.Tables, request.ProjectFileName)!;
+            var afterComments = WorkflowWordMapRules.Comments(afterCells.Tables, request.ProjectFileName, request.Match)!;
             if (Inspect(document, afterCells, afterComments, scope) != before)
                 throw new WorkflowValidationException("После подписи изменилась разметка DOC. Исходник не изменён.");
             var output = Path.Combine(folder, "output.doc");
@@ -96,7 +98,7 @@ internal static class WorkflowWordMap
             document.Close(SaveChanges: 0); document = null;
             document = Open(documents, output, scope);
             CardCells savedCells = ReadCells(document, scope);
-            var savedComments = WorkflowWordMapRules.Comments(savedCells.Tables, request.ProjectFileName);
+            var savedComments = WorkflowWordMapRules.Comments(savedCells.Tables, request.ProjectFileName, request.Match);
             if (savedComments is null || savedComments.Length != comments.Length || Inspect(document, savedCells, savedComments, scope) != before ||
                 savedCells.Tables.SelectMany(t => t).Where(c => savedComments.Contains(c.Index)).Any(c => WorkflowWordMapRules.Normalize(c.Text) != WorkflowWordMapRules.Normalize(request.Caption)))
                 throw new WorkflowValidationException("Не удалось проверить сохранённую DOC-карту. Исходник не изменён.");

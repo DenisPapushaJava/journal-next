@@ -58,7 +58,7 @@ public sealed class WorkflowStartupTests
             else { Assert.Null(model.Error); Assert.Equal(employee, model.CurrentEmployee); Assert.DoesNotContain("ожидает подтверждения", model.ProfileHint); }
             SaveFrame(window, $"startup-finished-{dark}-{fail}");
         }
-        finally { wire.Release.TrySetResult(); await Until(() => !model.IsBusy); window.Close(); model.Detach(); }
+        finally { wire.Release.TrySetResult(); await Until(() => !model.IsBusy); WorkflowTestWindows.Close(window); model.Detach(); }
     }
 
     [Theory]

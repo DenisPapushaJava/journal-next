@@ -1,0 +1,13 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="using:Jornal.Desktop.Controls" x:Class="Jornal.Workflow.Desktop.WorkflowHandoffClearWindow"
+        Title="Снять «В работе»" Width="460" SizeToContent="Height" CanResize="False"
+        Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="24" Spacing="16">
+    <TextBlock Text="Снять «В работе»?" FontSize="20" FontWeight="SemiBold" />
+    <TextBlock Text="Отметки заявки и проектов будут сняты. Уже скопированные файлы останутся в папке цеха." TextWrapping="Wrap" />
+    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <ui:JournalButton x:Name="CancelHandoffClear" Label="Отмена" Click="OnCancel" />
+      <ui:JournalButton x:Name="ConfirmHandoffClear" Label="Снять" Click="OnConfirm" />
+    </StackPanel>
+  </StackPanel>
+</Window>

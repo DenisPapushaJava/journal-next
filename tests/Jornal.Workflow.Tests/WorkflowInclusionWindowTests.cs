@@ -70,7 +70,7 @@ public sealed class WorkflowInclusionWindowTests
         }
         finally
         {
-            gate.Release.TrySetResult(); await Until(() => !f.Model.IsBusy); window.Close();
+            gate.Release.TrySetResult(); await Until(() => !f.Model.IsBusy); WorkflowTestWindows.Close(window);
         }
     }
 
@@ -90,7 +90,7 @@ public sealed class WorkflowInclusionWindowTests
             Assert.True(row.IsIncluded); Assert.Contains("подтвердить", f.Model.Error); Assert.Equal(1, gate.Calls);
             Assert.True(window.FindControl<Grid>("JournalWorkspace")!.IsEffectivelyEnabled);
         }
-        finally { gate.Release.TrySetResult(); await Until(() => !f.Model.IsBusy); window.Close(); }
+        finally { gate.Release.TrySetResult(); await Until(() => !f.Model.IsBusy); WorkflowTestWindows.Close(window); }
     }
 
     private static CheckBox Check(DataGrid grid, WorkflowProjectRow row) => grid.GetVisualDescendants().OfType<CheckBox>().Single(b => ReferenceEquals(b.DataContext, row));

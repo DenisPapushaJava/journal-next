@@ -23,7 +23,7 @@ public sealed record WorkflowMdbForeignKey(string Name, string Table, string[] C
 public static class WorkflowMdbSchema
 {
     public const string ProductId = "DenisPapusha.JournalWorkflow";
-    public const int Version = 2;
+    public const int Version = 5;
     private static WorkflowMdbColumn C(string name, string? path, WorkflowMdbType type, bool required = true, int size = 255) => new(name, path, type, required, size);
     private static WorkflowMdbColumn Id() => C("id", "Id", WorkflowMdbType.Guid);
     private static WorkflowMdbColumn Owner(string name) => C(name, null, WorkflowMdbType.Guid);
@@ -53,13 +53,23 @@ public static class WorkflowMdbSchema
             C("created_at","CreatedAt",WorkflowMdbType.Utc), C("updated_at","UpdatedAt",WorkflowMdbType.Utc),
             C("created_by","CreatedById",WorkflowMdbType.Guid,false), C("deleted_at","DeletedAt",WorkflowMdbType.Utc,false), C("deleted_by","DeletedBy",WorkflowMdbType.Guid,false)]),
         new("order_shop_handoffs", [Id(), C("order_version", "OrderVersion", WorkflowMdbType.Int64),
-            C("actor_id", "ActorId", WorkflowMdbType.Guid), C("transferred_at", "At", WorkflowMdbType.Utc)]),
+            C("actor_id", "ActorId", WorkflowMdbType.Guid), C("transferred_at", "At", WorkflowMdbType.Utc),
+            C("content_hash", "ContentHash", WorkflowMdbType.Text, false, 64)]),
         new("order_items", [Id(), Owner("order_id"), C("item_number","Number",WorkflowMdbType.Int32),
             C("reviewed_variant","ReviewedThroughVariant",WorkflowMdbType.Int32), C("is_included","IsIncluded",WorkflowMdbType.Boolean)]),
         new("cutting_projects", [Id(), Owner("order_id"), C("item_id","ItemId",WorkflowMdbType.Guid), C("variant_number","Variant",WorkflowMdbType.Int32),
             C("machine_id","MachineId",WorkflowMdbType.Guid), C("thickness_mm","ThicknessMm",WorkflowMdbType.Decimal), C("project_name","Name",WorkflowMdbType.Text),
             C("native_path","NativePath",WorkflowMdbType.Memo,false), C("import_profile","ImportProfile",WorkflowMdbType.Text,false,64),
             C("created_at","CreatedAt",WorkflowMdbType.Utc), C("deleted_at","DeletedAt",WorkflowMdbType.Utc,false), C("deleted_by","DeletedBy",WorkflowMdbType.Guid,false)]),
+        new("project_shop_handoffs", [Id(), C("order_version", "OrderVersion", WorkflowMdbType.Int64),
+            C("actor_id", "ActorId", WorkflowMdbType.Guid), C("transferred_at", "At", WorkflowMdbType.Utc),
+            C("content_hash", "ContentHash", WorkflowMdbType.Text, true, 64)]),
+        new("project_shop_handoff_inputs", [Owner("id"), C("manager_id", "ManagerId", WorkflowMdbType.Guid), C("customer_id", "CustomerId", WorkflowMdbType.Guid),
+            C("blcb", "Blcb", WorkflowMdbType.Text, false), C("machine_id", "MachineId", WorkflowMdbType.Guid), C("thickness_mm", "ThicknessMm", WorkflowMdbType.Decimal),
+            C("project_name", "ProjectName", WorkflowMdbType.Text), C("import_profile", "ImportProfile", WorkflowMdbType.Text, false, 64),
+            C("calculation_machine_id", "CalculationMachineId", WorkflowMdbType.Guid), C("calculation_thickness_mm", "CalculationThicknessMm", WorkflowMdbType.Decimal),
+            C("material", "Material", WorkflowMdbType.Text), C("blank_size", "BlankSize", WorkflowMdbType.Memo), C("blank_quantity", "BlankQuantity", WorkflowMdbType.Decimal),
+            C("has_bending", "HasBending", WorkflowMdbType.Boolean), C("has_chamfer", "HasChamfer", WorkflowMdbType.Boolean), C("report_hash", "ReportHash", WorkflowMdbType.Text, false, 64)]),
         new("order_item_selections", [Id(), Owner("order_id"), C("project_id","CurrentProjectId",WorkflowMdbType.Guid)]),
         new("specifications", SpecificationColumns()),
         new("accepted_reports", ReportColumns()),
@@ -67,6 +77,18 @@ public static class WorkflowMdbSchema
             C("project_name","Name",WorkflowMdbType.Text), C("native_path","NativePath",WorkflowMdbType.Memo), C("import_profile","ImportProfile",WorkflowMdbType.Text,false,64),
             C("actor_id","ActorId",WorkflowMdbType.Guid), C("started_at","StartedAt",WorkflowMdbType.Utc)])
     ];
+    public static IEnumerable<string> UpgradeSql(int from)
+    {
+        if (from is < 1 or > Version) throw new Jornal.Workflow.Core.WorkflowValidationException("Версия MDB не поддерживается. Файл не изменён.");
+        if (from == Version) yield break;
+        if (from == 1)
+            foreach (var sql in CreateSql().Where(sql => sql.Contains("[order_shop_handoffs]", StringComparison.Ordinal))) yield return sql;
+        else if (from == 2) yield return "ALTER TABLE [order_shop_handoffs] ADD COLUMN [content_hash] TEXT(64)";
+        if (from < 4)
+            foreach (var sql in CreateSql().Where(sql => sql.Contains("[project_shop_handoffs]", StringComparison.Ordinal) && !sql.Contains("[project_shop_handoff_inputs]", StringComparison.Ordinal))) yield return sql;
+        foreach (var sql in CreateSql().Where(sql => sql.Contains("[project_shop_handoff_inputs]", StringComparison.Ordinal))) yield return sql;
+    }
+
     private static WorkflowMdbColumn[] SpecificationColumns()
     {
         WorkflowMdbColumn P(string name, string path, WorkflowMdbType type, bool required = true, int size = 255) => C(name, "Current.Parameters." + path, type, required, size);
@@ -121,6 +143,8 @@ public static class WorkflowMdbSchema
         result.Add(new("fk_spec_project", "specifications", ["order_id", "id"], "cutting_projects", ["order_id", "id"]));
         F("specifications", "author_id", "employees"); F("specifications", "machine_id", "machines"); F("accepted_reports", "specification_id", "specifications");
         F("project_renames", "project_id", "cutting_projects"); F("project_renames", "machine_id", "machines"); F("project_renames", "actor_id", "employees");
+        F("project_shop_handoffs", "id", "cutting_projects"); F("project_shop_handoffs", "actor_id", "employees");
+        F("project_shop_handoff_inputs", "id", "project_shop_handoffs");
         F("order_shop_handoffs", "id", "orders"); F("order_shop_handoffs", "actor_id", "employees");
         return result.ToArray();
     }

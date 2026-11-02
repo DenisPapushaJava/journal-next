@@ -81,7 +81,7 @@ public partial class WorkflowViewModel
             _cards.Clear(); SelectedOrder = null; _connection = new(candidate, saved.EmployeeId); _workspace = workspace;
             _localPreferences = saved; _hasLoadedOrders = true; RecordListedSnapshot(workspace);
             _refreshing = true;
-            try { Search = ""; FilterDate = null; } finally { _refreshing = false; }
+            try { Search = ""; FilterDate = null; ResetQuickOrderFilterValues(); } finally { _refreshing = false; }
             RefreshEmployees(saved.EmployeeId); Technologist = CurrentEmployee; NotifyEntrySuggestions();
             RefreshOrders(); NotifyPriceCatalog(); NotifyDatabase();
             if (letters is not null) RestoreRestartDraft(letters);
@@ -94,10 +94,10 @@ public partial class WorkflowViewModel
     {
         if (_store is not IWorkflowQueryStore store) return;
         DateTimeOffset? from = FilterDate is { } day ? new DateTimeOffset(DateTime.SpecifyKind(day, DateTimeKind.Local)) : null;
-        DateTimeOffset? until = FilterDate is { } date ? new DateTimeOffset(DateTime.SpecifyKind(date.AddDays(1), DateTimeKind.Local)) : null;
-        var retain = _cards.Where(p => p.Value.HasEdits || p.Value.Result.Length > 0).Select(p => p.Key)
+        DateTimeOffset? until = PeriodUntil is { } date ? new DateTimeOffset(DateTime.SpecifyKind(date, DateTimeKind.Local)) : null;
+        var retain = _cards.Where(p => p.Value.HasEdits || p.Value.Result.Length > 0 || p.Value.TaskEdit is not null).Select(p => p.Key)
             .Concat(_openOrderId is { } id ? new[] { id } : []).Distinct().ToArray();
-        store.Query = new(from, until, Search, RetainIds: retain);
+        store.Query = new(from, until, Search, RetainIds: retain, Filter: CurrentOrderFilter);
     }
     private void CancelDatabaseSearch()
     {
@@ -109,6 +109,7 @@ public partial class WorkflowViewModel
     private void ScheduleDatabaseSearch()
     {
         if (_store is not IWorkflowQueryStore) return;
+        _orderQueryFailed = false;
         CancelDatabaseSearch(); ConfigureDatabaseQuery(); NotifyDatabase(); _databaseSearch = new(); _searchPending = true;
         _ = SearchDatabaseAsync(_databaseSearch.Token, _searchGeneration, false);
     }
@@ -131,9 +132,10 @@ public partial class WorkflowViewModel
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            if (generation == _searchGeneration) Error = ex is WorkflowValidationException or WorkflowConflictException ? ex.Message : "Не удалось прочитать заявки. Проверьте доступ к MDB и обновите журнал.";
+            if (generation == _searchGeneration)
+            { _orderQueryFailed = true; Error = ex is WorkflowValidationException or WorkflowConflictException ? ex.Message : "Не удалось прочитать заявки. Проверьте доступ к MDB и обновите журнал."; }
         }
-        finally { if (generation == _searchGeneration) _searchPending = false; }
+        finally { if (generation == _searchGeneration) { _searchPending = false; NotifyOrderList(); } }
     }
     [RelayCommand]
     private async Task LoadMoreOrdersAsync()
@@ -152,6 +154,7 @@ public partial class WorkflowViewModel
             var source = _store;
             var book = more ? await store.ReadMoreAsync(token) : await store.ReadAsync(token);
             if (generation != _searchGeneration || !ReferenceEquals(source, _store)) return;
+            _orderQueryFailed = false;
             CaptureCard(); var state = _openOrderId is { } id ? _cards.GetValueOrDefault(id) : null;
             _loadedOrderSnapshot = CurrentOrder; _workspace = book; _hasLoadedOrders = true; if (!more) RecordListedSnapshot(book);
             RefreshEmployees(CurrentEmployee?.Id); RefreshOrders(preserveRows: true); NotifyPriceCatalog();

@@ -33,7 +33,7 @@ public sealed class WorkflowShopFolderSettingsWindowTests
             root.BringIntoView(); Pump();
             Assert.True(preview.IsReadOnly); Assert.Equal(settings.ShopFolderPreview, preview.Text);
             Assert.Contains(project.Name, preview.Text); Assert.Contains("БЛЦБ-005072", preview.Text);
-            Assert.Equal(project.Name, Path.GetFileName(preview.Text));
+            Assert.Equal(project.Name + " БЛЦБ-005072", Path.GetFileName(preview.Text));
             Assert.False(settings.CanRestart); Assert.True(save.IsEffectivelyEnabled);
             preview.BringIntoView(); Pump();
             InWindow(root, window); InWindow(preview, window); InWindow(save, window);
@@ -45,7 +45,7 @@ public sealed class WorkflowShopFolderSettingsWindowTests
             Assert.True(settings.CanRestart); Assert.Empty(log.Errors);
             Frame(window, $"shop-path-saved-{width}-{dark}");
         }
-        finally { window.Close(); }
+        finally { WorkflowTestWindows.Close(window); }
     }
     private static void Pump() => Dispatcher.UIThread.RunJobs();
     private static void InWindow(Control control, Window window)

@@ -44,7 +44,7 @@ public sealed partial class EntrySuggestionComboBox : ComboBox
         };
         DropDownOpened += (_, _) =>
         {
-            if (!_filtering) RefreshItems(filter: false);
+            if (!_filtering || ItemCount == 0) RefreshItems(filter: false);
             Preview(_previewIndex);
         };
         DropDownClosed += (_, _) =>

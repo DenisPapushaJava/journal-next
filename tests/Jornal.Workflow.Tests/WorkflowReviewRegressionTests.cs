@@ -111,7 +111,8 @@ public sealed class WorkflowReviewRegressionTests
         var model = new WorkflowViewModel(new WorkflowMdbStore(path, memory, memory.Id), new(new WorkflowAppUpdater()), preferences: prefs);
         try
         {
-            await model.ReloadCommand.ExecuteAsync(null); model.Search = "Альфа"; await model.SearchDatabaseNowAsync();
+            await model.ReloadCommand.ExecuteAsync(null); model.AllDatesCommand.Execute(null);
+            model.Search = "Альфа"; await model.SearchDatabaseNowAsync();
             Assert.True(model.HasMoreOrders); Assert.Equal(100, model.Orders.Count);
             model.Search = "Бета"; Assert.False(model.HasMoreOrders);
             await model.LoadMoreOrdersCommand.ExecuteAsync(null);

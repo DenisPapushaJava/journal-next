@@ -41,7 +41,7 @@ public sealed class WorkflowAccessClient(string? executable = null, IWorkflowAcc
         token.ThrowIfCancellationRequested();
         var bytes = JsonSerializer.SerializeToUtf8Bytes(request);
         if (bytes.Length > 32 * 1024 * 1024) throw new WorkflowValidationException("Пакет MDB слишком велик. Сохраняйте проекты меньшими группами.");
-        var write = request.Operation is WorkflowAccessOperation.Create or WorkflowAccessOperation.Apply or WorkflowAccessOperation.Purge or WorkflowAccessOperation.RecordShopHandoff;
+        var write = request.Operation is WorkflowAccessOperation.Create or WorkflowAccessOperation.Apply or WorkflowAccessOperation.Purge or WorkflowAccessOperation.RecordShopHandoff or WorkflowAccessOperation.ClearShopHandoff or WorkflowAccessOperation.RecordProjectHandoffs;
         var dispatched = false;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(45));
         using var process = new Process

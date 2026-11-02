@@ -89,7 +89,7 @@ public sealed class WorkflowNativeMdbTests
             book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.UpdateOrder(w, order.Id, order.Version,
                 order.ManagerId, order.TechnologistId, "009337", actor, at), TestContext.Current.CancellationToken);
             order = book.Orders.Single();
-            await MakeVersionOneFixture(path);
+            await MakeEarlierSchemaFixture(path);
             var versionOneBytes = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
             store = new WorkflowMdbStore(path, client, created.DatabaseId);
             using (var writer = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete))
@@ -112,6 +112,47 @@ public sealed class WorkflowNativeMdbTests
             Assert.True(store.TryAcceptBackgroundRead(background));
             Assert.True(background.Workspace.Orders.Single().HasCurrentShopHandoff);
             Assert.Single(Directory.GetFiles(directory, "*.schema-v1-*.bak"));
+            await MakeEarlierSchemaFixture(path, 2);
+            var versionTwoBytes = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+            await store.InspectAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(versionTwoBytes, await File.ReadAllBytesAsync(Assert.Single(Directory.GetFiles(directory, "*.schema-v2-*.bak")), TestContext.Current.CancellationToken));
+            var v2 = (await store.ReadOrderAsync(order.Id, TestContext.Current.CancellationToken)).Orders.Single();
+            Assert.NotNull(v2.ShopHandoff); Assert.Null(v2.ShopHandoff.ContentHash); Assert.True(v2.HasCurrentShopHandoff);
+            Assert.All(v2.Projects, p => Assert.Null(p.ShopHandoff));
+            await MakeEarlierSchemaFixture(path, 3);
+            var versionThreeBytes = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+            await store.InspectAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(versionThreeBytes, await File.ReadAllBytesAsync(Assert.Single(Directory.GetFiles(directory, "*.schema-v3-*.bak")), TestContext.Current.CancellationToken));
+            var v3 = (await store.ReadOrderAsync(order.Id, TestContext.Current.CancellationToken)).Orders.Single();
+            Assert.Equal(v2.ShopHandoff, v3.ShopHandoff); Assert.All(v3.Projects, p => Assert.Null(p.ShopHandoff));
+            var refreshed = (await store.RecordShopHandoffAsync(v3.Id, v3.Version, actor, at, TestContext.Current.CancellationToken)).Orders.Single();
+            Assert.All(refreshed.Projects, p => Assert.NotNull(p.ShopHandoff!.ProjectInputs));
+            await MakeEarlierSchemaFixture(path, 4);
+            var versionFourBytes = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+            await store.InspectAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(versionFourBytes, await File.ReadAllBytesAsync(Assert.Single(Directory.GetFiles(directory, "*.schema-v4-*.bak")), TestContext.Current.CancellationToken));
+            var v4 = (await store.ReadOrderAsync(order.Id, TestContext.Current.CancellationToken)).Orders.Single();
+            Assert.Equal(refreshed.ShopHandoff, v4.ShopHandoff);
+            Assert.All(v4.Projects, p => { Assert.NotNull(p.ShopHandoff); Assert.Null(p.ShopHandoff.ProjectInputs); });
+            refreshed = (await store.RecordShopHandoffAsync(v4.Id, v4.Version, actor, at, TestContext.Current.CancellationToken)).Orders.Single();
+            Assert.All(refreshed.Projects, p => Assert.NotNull(p.ShopHandoff!.ProjectInputs));
+            Assert.All(refreshed.Projects.Where(p => refreshed.Items.Any(i => i.IsIncluded && i.CurrentProjectId == p.Id)), p => Assert.Equal(WorkflowShopHandoff.ProjectHash(refreshed, p.Id), p.ShopHandoff!.ContentHash));
+            Assert.Equal(WorkflowShopHandoff.Hash(refreshed), refreshed.ShopHandoff!.ContentHash);
+            // A prepared calculation patch may cross a metadata-only transfer commit.
+            var latest = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOrders, path, created.DatabaseId, OrderIds: [refreshed.Id]), TestContext.Current.CancellationToken);
+            var raced = await client.SendAsync(new(1, WorkflowAccessOperation.Apply, path, created.DatabaseId,
+                Patch: new(null, latest.CatalogVersion, null, [new(refreshed.Id, refreshed.Version, v3 with { Version = v3.Version + 1, Blcb = "009338" })])), TestContext.Current.CancellationToken);
+            var savedAfterTransfer = raced.Orders!.Single();
+            Assert.Equal(refreshed.ShopHandoff, savedAfterTransfer.ShopHandoff);
+            Assert.Equal(refreshed.Projects.Single().ShopHandoff, savedAfterTransfer.Projects.Single().ShopHandoff);
+            refreshed = savedAfterTransfer;
+            var unmarked = (await store.ClearShopHandoffAsync(refreshed.Id, refreshed.Version, WorkflowHandoffClearExpected.From(refreshed), actor, TestContext.Current.CancellationToken)).Orders.Single();
+            Assert.Null(unmarked.ShopHandoff); Assert.Equal(refreshed.Version, unmarked.Version);
+            Assert.Equal(System.Text.Json.JsonSerializer.Serialize(refreshed.Specifications), System.Text.Json.JsonSerializer.Serialize(unmarked.Specifications));
+            var afterClear = await client.SendAsync(new(1, WorkflowAccessOperation.Apply, path, created.DatabaseId,
+                Patch: new(null, raced.CatalogVersion, null, [new(unmarked.Id, unmarked.Version, refreshed with { Version = unmarked.Version + 1 })])), TestContext.Current.CancellationToken);
+            unmarked = afterClear.Orders!.Single(); Assert.Null(unmarked.ShopHandoff); Assert.All(unmarked.Projects, p => Assert.Null(p.ShopHandoff));
+            await store.RecordShopHandoffAsync(unmarked.Id, unmarked.Version, actor, at.AddMinutes(1), TestContext.Current.CancellationToken);
             book = await new WorkflowMdbStore(path, client, created.DatabaseId).ReadAsync(TestContext.Current.CancellationToken);
             Assert.True(book.Orders.Single().HasCurrentShopHandoff); order = book.Orders.Single();
             var secondName = WorkflowProjectNames.Name(machine, 8, at.AddSeconds(1)); var secondFolder = Path.Combine(directory, secondName);
@@ -127,6 +168,30 @@ public sealed class WorkflowNativeMdbTests
             order = book.Orders.Single(); Assert.Equal(second.Id, order.Items.Single().CurrentProjectId);
             Assert.Equal(second.Id, Assert.Single(order.ActiveSpecifications).Id);
             store.Query = new(Search: "Заказчик Ст3"); book = await store.ReadAsync(TestContext.Current.CancellationToken); Assert.Single(book.Orders);
+            // Exercise actual Jet EXISTS/correlations, not the managed MemoryMdb filter.
+            async Task CheckFilter(WorkflowOrderFilter filter, int expected)
+            {
+                var response = await client.SendAsync(new(1, WorkflowAccessOperation.Read, path, created.DatabaseId,
+                    Query: new(Limit: 1, Filter: filter)), TestContext.Current.CancellationToken);
+                Assert.Equal(expected, response.TotalCount); Assert.Equal(expected, response.PageIds!.Length);
+            }
+            await CheckFilter(new(actor, WorkflowWorkFilter.InWork, true, true), 1);
+            await CheckFilter(new(Guid.NewGuid()), 0);
+            await CheckFilter(new(Work: WorkflowWorkFilter.NotSent), 0);
+            var outsideDay = order.CreatedAt.AddDays(1);
+            var outside = await client.SendAsync(new(1, WorkflowAccessOperation.Read, path, created.DatabaseId,
+                Query: new(outsideDay, outsideDay.AddDays(1), order.ReferenceNumber, Filter: new(WithBending: true))), TestContext.Current.CancellationToken);
+            Assert.Equal(0, outside.TotalCount); Assert.Empty(outside.PageIds!);
+            book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowProjects.SetIncluded(w, order.Id, order.Version,
+                second.ItemId, false, actor, at), TestContext.Current.CancellationToken); order = book.Orders.Single();
+            await CheckFilter(new(WithBending: true), 0); await CheckFilter(new(WithChamfer: true), 0);
+            book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowProjects.SetIncluded(w, order.Id, order.Version,
+                second.ItemId, true, actor, at), TestContext.Current.CancellationToken); order = book.Orders.Single();
+            book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.SaveSpecification(w, order.Id, order.Version,
+                second.Id, parameters with { HasBending = false, HasChamfer = false }, "native-2", new(2026, 10, 25), actor, at, null, machine.ImportProfile, rate), TestContext.Current.CancellationToken);
+            order = book.Orders.Single();
+            await CheckFilter(new(WithBending: true), 0); await CheckFilter(new(WithChamfer: true), 0); // The old variant still has both operations.
+            await CheckFilter(new(Work: WorkflowWorkFilter.InWork), 1); // Changed handoff remains in work.
             book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.MoveOrderToTrash(w, order.Id, order.Version, actor, at), TestContext.Current.CancellationToken);
             order = book.Orders.Single(); Assert.True(order.IsDeleted);
             book = await store.ReadTrashAsync(TestContext.Current.CancellationToken); Assert.Single(book.Orders, o => o.IsDeleted);
@@ -138,18 +203,19 @@ public sealed class WorkflowNativeMdbTests
         finally { Directory.Delete(directory, true); }
     }
 
-    private static async Task MakeVersionOneFixture(string path)
+    private static async Task MakeEarlierSchemaFixture(string path, int schema = 1)
     {
         var powershell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SysWOW64", "WindowsPowerShell", "v1.0", "powershell.exe");
         var start = new System.Diagnostics.ProcessStartInfo(powershell) { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true };
-        start.Environment["WORKFLOW_V1_FIXTURE"] = path;
+        start.Environment["WORKFLOW_SCHEMA_FIXTURE"] = path;
         start.ArgumentList.Add("-NoProfile"); start.ArgumentList.Add("-NonInteractive"); start.ArgumentList.Add("-Command");
-        start.ArgumentList.Add("$ErrorActionPreference='Stop'; $c=New-Object -ComObject ADODB.Connection; try { $c.Open('Provider=Microsoft.Jet.OLEDB.4.0;Data Source=' + $env:WORKFLOW_V1_FIXTURE); $null=$c.Execute('DROP TABLE [order_shop_handoffs]'); $null=$c.Execute('UPDATE [app_metadata] SET [schema_version]=1 WHERE [singleton]=1'); } finally { if ($c.State -ne 0) {$c.Close()}; [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($c) }");
+        var sql = schema switch { 1 => "DROP TABLE [order_shop_handoffs]", 2 => "ALTER TABLE [order_shop_handoffs] DROP COLUMN [content_hash]", _ => null };
+        start.ArgumentList.Add("$ErrorActionPreference='Stop'; $c=New-Object -ComObject ADODB.Connection; try { $c.Open('Provider=Microsoft.Jet.OLEDB.4.0;Data Source=' + $env:WORKFLOW_SCHEMA_FIXTURE); $null=$c.Execute('DROP TABLE [project_shop_handoff_inputs]'); " + (schema < 4 ? "$null=$c.Execute('DROP TABLE [project_shop_handoffs]'); " : "") + (sql is null ? "" : "$null=$c.Execute('" + sql + "'); ") + "$null=$c.Execute('UPDATE [app_metadata] SET [schema_version]=" + schema + " WHERE [singleton]=1'); } finally { if ($c.State -ne 0) {$c.Close()}; [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($c) }");
         using var process = System.Diagnostics.Process.Start(start)!;
         var error = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
         var output = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
         await process.WaitForExitAsync(TestContext.Current.CancellationToken);
-        Assert.True(process.ExitCode == 0, "Create isolated MDB v1 fixture: " + await error + await output);
+        Assert.True(process.ExitCode == 0, "Create isolated earlier-schema MDB fixture: " + await error + await output);
     }
 
     private static LegacyPriceCatalog LegacyImportFixture()

@@ -37,8 +37,45 @@ public sealed partial class WorkflowMdbStore(string path, IWorkflowAccessTranspo
         {
             var result = await _transport.SendAsync(new(1, WorkflowAccessOperation.RecordShopHandoff, FilePath, DatabaseId,
                 ShopHandoff: new(orderId, expectedOrderVersion, actor, at), KnownCatalogVersion: _catalogVersion), token).ConfigureAwait(false);
-            if (result.Orders?.SingleOrDefault(o => o.Id == orderId)?.ShopHandoff is not { } stamp ||
+            var order = result.Orders?.SingleOrDefault(o => o.Id == orderId);
+            if (order?.ShopHandoff is not { } stamp || stamp.ContentHash != WorkflowShopHandoff.Hash(order) ||
                 stamp.OrderVersion != expectedOrderVersion || stamp.ActorId != actor || stamp.At != DateTimeOffset.FromUnixTimeSeconds(at.ToUnixTimeSeconds()))
+                throw new WorkflowOutcomeUnknownException();
+            if (order.ActiveProjects.Where(p => order.Items.Any(i => i.IsIncluded && i.CurrentProjectId == p.Id)).Any(p => p.ShopHandoff is not { } mark ||
+                mark.ActorId != actor || mark.OrderVersion != expectedOrderVersion || mark.At != stamp.At || mark.ContentHash != WorkflowShopHandoff.ProjectHash(order, p.Id) ||
+                mark.ProjectInputs != WorkflowProjectHandoffInputs.Capture(order, p.Id))) throw new WorkflowOutcomeUnknownException();
+            return await MergeCommittedAsync(result, [orderId]).ConfigureAwait(false);
+        }
+        catch (WorkflowOutcomeUnknownException) { RequiresRefresh = true; throw; }
+    }, token);
+    public Task<WorkflowWorkspace> RecordProjectHandoffsAsync(Guid orderId, long expectedOrderVersion, Guid[] projectIds, Guid actor, DateTimeOffset at, CancellationToken token = default)
+    {
+        var ids = projectIds.ToArray();
+        return Locked(async () =>
+        {
+            if (RequiresRefresh) throw new WorkflowValidationException("Исход предыдущей записи не подтверждён. Сначала обновите журнал (F5).");
+            try
+            {
+                var result = await _transport.SendAsync(new(1, WorkflowAccessOperation.RecordProjectHandoffs, FilePath, DatabaseId,
+                    ProjectHandoffs: new(orderId, expectedOrderVersion, ids, actor, at), KnownCatalogVersion: _catalogVersion), token).ConfigureAwait(false);
+                var order = result.Orders?.SingleOrDefault(o => o.Id == orderId);
+                if (order is null || order.Version != expectedOrderVersion || ids.Any(id => order.Projects.SingleOrDefault(p => p.Id == id)?.ShopHandoff is not { } mark ||
+                    mark.ActorId != actor || mark.OrderVersion != expectedOrderVersion || mark.At != DateTimeOffset.FromUnixTimeSeconds(at.ToUnixTimeSeconds()) || mark.ContentHash != WorkflowShopHandoff.ProjectHash(order, id) ||
+                    mark.ProjectInputs != WorkflowProjectHandoffInputs.Capture(order, id)))
+                    throw new WorkflowOutcomeUnknownException();
+                return await MergeCommittedAsync(result, [orderId]).ConfigureAwait(false);
+            }
+            catch (WorkflowOutcomeUnknownException) { RequiresRefresh = true; throw; }
+        }, token);
+    }
+    public Task<WorkflowWorkspace> ClearShopHandoffAsync(Guid orderId, long expectedOrderVersion, WorkflowHandoffClearExpected expected, Guid actor, CancellationToken token = default) => Locked(async () =>
+    {
+        if (RequiresRefresh) throw new WorkflowValidationException("Исход предыдущей записи не подтверждён. Сначала обновите журнал (F5).");
+        try
+        {
+            var result = await _transport.SendAsync(new(1, WorkflowAccessOperation.ClearShopHandoff, FilePath, DatabaseId,
+                ClearShopHandoff: new(orderId, expectedOrderVersion, actor, expected), KnownCatalogVersion: _catalogVersion), token).ConfigureAwait(false);
+            if (result.Orders?.SingleOrDefault(o => o.Id == orderId) is not { } order || order.Version != expectedOrderVersion || order.ShopHandoff is not null || order.Projects.Any(p => p.ShopHandoff is not null))
                 throw new WorkflowOutcomeUnknownException();
             return await MergeCommittedAsync(result, [orderId]).ConfigureAwait(false);
         }

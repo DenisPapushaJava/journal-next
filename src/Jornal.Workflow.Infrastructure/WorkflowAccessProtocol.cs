@@ -2,7 +2,9 @@ using Jornal.Workflow.Core;
 
 namespace Jornal.Workflow.Infrastructure;
 
-public enum WorkflowAccessOperation { Create, Inspect, Read, ReadOrders, ReadTrash, Apply, Purge, ReadRevision, RecordShopHandoff }
+public enum WorkflowAccessOperation { Create, Inspect, Read, ReadOrders, ReadTrash, Apply, Purge, ReadRevision, RecordShopHandoff, ClearShopHandoff, RecordProjectHandoffs }
+public sealed record WorkflowShopHandoffClearRequest(Guid OrderId, long ExpectedOrderVersion, Guid ActorId, WorkflowHandoffClearExpected Expected);
+public sealed record WorkflowProjectHandoffRequest(Guid OrderId, long ExpectedOrderVersion, Guid[] ProjectIds, Guid ActorId, DateTimeOffset At);
 public sealed record WorkflowShopHandoffRequest(Guid OrderId, long ExpectedOrderVersion, Guid ActorId, DateTimeOffset At);
 public sealed record WorkflowCatalog(Employee[] Employees, Customer[] Customers, WorkflowMachine[] Machines,
     CuttingRate[] Rates, WorkflowPriceSource? PriceSource, string? ProjectRoot)
@@ -16,7 +18,7 @@ public sealed record WorkflowAccessPatch(long? ExpectedVersion, long ExpectedCat
     WorkflowCatalog? Catalog, WorkflowOrderReplacement[] Orders);
 public sealed record WorkflowAccessRequest(int Protocol, WorkflowAccessOperation Operation, string Path,
     Guid? DatabaseId = null, WorkflowReadQuery? Query = null, Guid[]? OrderIds = null, WorkflowAccessPatch? Patch = null, long? KnownCatalogVersion = null,
-    WorkflowTrashTarget[]? TrashTargets = null, Guid? ActorId = null, WorkflowShopHandoffRequest? ShopHandoff = null);
+    WorkflowTrashTarget[]? TrashTargets = null, Guid? ActorId = null, WorkflowShopHandoffRequest? ShopHandoff = null, WorkflowShopHandoffClearRequest? ClearShopHandoff = null, WorkflowProjectHandoffRequest? ProjectHandoffs = null);
 public sealed record WorkflowAccessResponse(int Protocol, Guid DatabaseId = default, long CatalogVersion = 0, long Revision = 0,
     WorkflowCatalog? Catalog = null, WorkflowOrder[]? Orders = null, int TotalCount = 0, int TrashCount = 0, bool HasMore = false,
     string? Error = null, bool Conflict = false, bool OutcomeUnknown = false, Guid[]? PageIds = null);

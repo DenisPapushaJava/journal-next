@@ -24,7 +24,7 @@ public sealed class WorkflowProjectsWindowTests
         await creatorProfile.SaveCommand.ExecuteAsync(null); Assert.Null(creatorProfile.Error);
         var a = await f.AddAsync(); await f.AddAsync("Плазма");
         await ProjectFixture.WriteAsync(a); await f.AcceptAsync();
-        var draft = f.Model.SelectedDraft!; draft.Length = "15"; draft.Coefficient = "1,2";
+        var draft = Assert.Single(f.Model.Drafts); f.Model.SelectedDraft = draft; draft.Length = "15"; draft.Coefficient = "1,2";
         await f.Model.SaveSpecificationCommand.ExecuteAsync(null); Assert.Null(f.Model.Error);
         var originalId = f.Model.SelectedOrder!.Order.Id;
         foreach (var name in new[] { "ООО «Север»", "ООО «Альфа»" })
@@ -137,7 +137,7 @@ public sealed class WorkflowProjectsWindowTests
             Dispatcher.UIThread.RunJobs();
             Assert.True(log.Errors.Count == 0, string.Join("\n", log.Errors.Distinct().Take(12)));
         }
-        finally { reviewWindow.Close(); window.Close(); }
+        finally { reviewWindow.Close(); WorkflowTestWindows.Close(window); }
     }
     private static void InWindow(Control control, Window window)
     {

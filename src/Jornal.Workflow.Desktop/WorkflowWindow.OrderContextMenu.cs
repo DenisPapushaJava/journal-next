@@ -33,7 +33,7 @@ public partial class WorkflowWindow
     {
         if (e.PropertyName is nameof(WorkflowViewModel.SelectedOrder) or nameof(WorkflowViewModel.Search) or
             nameof(WorkflowViewModel.FilterDate) or nameof(WorkflowViewModel.WorkspacePath) or nameof(WorkflowViewModel.DatabaseId) or
-            nameof(WorkflowViewModel.IsCreating) or nameof(WorkflowViewModel.IsCurrentOrderActive) or nameof(WorkflowViewModel.HeaderSummary) ||
+            nameof(WorkflowViewModel.IsCreating) or nameof(WorkflowViewModel.HasRecordedShopHandoff) or nameof(WorkflowViewModel.IsCurrentOrderActive) or nameof(WorkflowViewModel.HeaderSummary) ||
             e.PropertyName == nameof(WorkflowViewModel.CanUse) && Model?.CanUse != true)
             _orderContextMenu.Close();
         else if (_orderContextMenu.Menu.IsOpen && Model is { } model)
@@ -44,7 +44,7 @@ public partial class WorkflowWindow
                 item.IsEnabled = enabled; ToolTip.SetTip(item, hint);
             }
             if (e.PropertyName == nameof(WorkflowViewModel.CanOpenResult)) Update("WorkflowOrderMenuResult", model.CanOpenResult, model.OpenResultHint);
-            if (e.PropertyName == nameof(WorkflowViewModel.CanSendToWork)) Update("WorkflowOrderMenuSend", model.CanSendToWork, model.SendToWorkHint);
+            if (e.PropertyName == nameof(WorkflowViewModel.CanRequestSendToWork)) Update("WorkflowOrderMenuSend", model.CanRequestSendToWork, model.SendToWorkHint);
             if (e.PropertyName == nameof(WorkflowViewModel.CanMoveOrderToTrash)) Update("WorkflowOrderMenuTrash", model.CanMoveOrderToTrash, model.MoveOrderToTrashHint);
         }
     }
@@ -54,11 +54,11 @@ public partial class WorkflowWindow
         if (target.IsHeader || target.Item is not WorkflowOrderRow row || Model is not { } model ||
             !ReferenceEquals(model.SelectedOrder, row) || !model.IsCardVisible || !model.IsCurrentOrderActive || row.IsMissing) return;
         var menuVersion = _orderContextMenu.Version; var orderVersion = row.Order.Version;
-        var path = model.WorkspacePath; var database = model.DatabaseId; var search = model.Search; var date = model.FilterDate;
+        var path = model.WorkspacePath; var database = model.DatabaseId; var search = model.Search; var date = model.FilterDate; var month = model.IsMonthPeriod;
         bool Current() => _orderContextMenu.Version == menuVersion && menu.IsOpen && IsVisible &&
             ReferenceEquals(Model, model) && CanOpenOrderContextMenu() && model.IsCardVisible && model.IsCurrentOrderActive &&
             ReferenceEquals(model.SelectedOrder, row) && model.Orders.Contains(row) && !row.IsMissing && !row.Order.IsDeleted &&
-            row.Order.Version == orderVersion && model.WorkspacePath == path && model.DatabaseId == database && model.Search == search && model.FilterDate == date;
+            row.Order.Version == orderVersion && model.WorkspacePath == path && model.DatabaseId == database && model.Search == search && model.FilterDate == date && model.IsMonthPeriod == month;
         void Add(string name, string caption, bool enabled, EventHandler<RoutedEventArgs> action, bool danger = false, string? hint = null)
         {
             var item = JournalMenu.Item(name, caption, enabled, action, Current, _orderContextMenu.Close, hint: hint, danger: danger);
@@ -83,7 +83,9 @@ public partial class WorkflowWindow
                 WorkflowBlcbInput.Focus(); WorkflowBlcbInput.SelectAll();
             }, DispatcherPriority.Loaded);
         });
-        Add("WorkflowOrderMenuSend", "Отправить в работу…", model.CanSendToWork, OnPrepareShopTransfer, hint: model.SendToWorkHint);
+        Add("WorkflowOrderMenuSend", "Отправить в работу…", model.CanRequestSendToWork, OnPrepareShopTransfer, hint: model.SendToWorkHint);
+        if (model.HasRecordedShopHandoff)
+            Add("WorkflowOrderMenuClearHandoff", "Снять «В работе»", model.CanClearShopHandoff, OnClearShopHandoff, hint: model.ClearShopHandoffHint);
         menu.Items.Add(new Separator());
         Add("WorkflowOrderMenuTrash", "В корзину…", model.CanMoveOrderToTrash, async (_, _) => await ShowOrderTrashConfirmationAsync(returnToJournal: true), danger: true, hint: model.MoveOrderToTrashHint);
     }

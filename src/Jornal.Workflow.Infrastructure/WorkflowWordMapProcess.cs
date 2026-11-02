@@ -8,10 +8,24 @@ namespace Jornal.Workflow.Infrastructure;
 public sealed class WorkflowWordMapProcess(string executable, string? assembly = null) : IWorkflowWordMapEditor
 {
     public const string Argument = "--workflow-word-map";
-    internal sealed record Request(string ProjectFileName, string Caption);
-    internal sealed record Response(bool Matched, bool Changed, int Pages, int ChangedCards, string? Error = null, bool Unavailable = false);
+    internal sealed record Request(string ProjectFileName, string Caption, bool InspectOnly = false, WordMapMatch? Match = null);
+    internal sealed record Response(bool Matched, bool Changed, int Pages, int ChangedCards, string? Error = null, bool Unavailable = false, WordMapReference[]? References = null);
 
     public async Task<WordMapEdit?> PrepareAsync(byte[] source, string projectFileName, string caption, CancellationToken token)
+        => await PrepareCoreAsync(source, new(projectFileName, caption), token);
+    public Task<WordMapEdit?> PrepareMatchedAsync(byte[] source, string projectFileName, string caption, WordMapMatch match, CancellationToken token) =>
+        PrepareCoreAsync(source, new(projectFileName, caption, Match: match), token);
+    private async Task<WordMapEdit?> PrepareCoreAsync(byte[] source, Request request, CancellationToken token)
+    {
+        var result = await ExecuteAsync(source, request, token);
+        return result.Edit;
+    }
+    public async Task<WordMapReference[]?> InspectAsync(byte[] source, CancellationToken token)
+    {
+        var result = await ExecuteAsync(source, new("inspect", "inspect", InspectOnly: true), token);
+        return result.References;
+    }
+    private async Task<(WordMapEdit? Edit, WordMapReference[]? References)> ExecuteAsync(byte[] source, Request request, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         if (!OperatingSystem.IsWindows()) throw new WordMapUnavailableException("Подписание DOC через Microsoft Word доступно на Windows.");
@@ -29,11 +43,13 @@ public sealed class WorkflowWordMapProcess(string executable, string? assembly =
         try
         {
             await File.WriteAllBytesAsync(Path.Combine(folder, "input.doc"), source, token);
-            await File.WriteAllTextAsync(Path.Combine(folder, "request.json"), JsonSerializer.Serialize(new Request(projectFileName, caption)), token);
+            var requestBytes = JsonSerializer.SerializeToUtf8Bytes(request);
+            if (requestBytes.Length > 1024 * 1024) throw new WorkflowValidationException("Слишком большой набор имён DSP для проверки DOC. Проверьте папку проекта.");
+            await File.WriteAllBytesAsync(Path.Combine(folder, "request.json"), requestBytes, token);
             worker.Start(); started = true;
             await worker.WaitForExitAsync(deadline.Token).ConfigureAwait(false);
             var path = Path.Combine(folder, "response.json");
-            if (worker.ExitCode != 0 || !File.Exists(path) || new FileInfo(path).Length > 16384)
+            if (worker.ExitCode != 0 || !File.Exists(path) || new FileInfo(path).Length > 1024 * 1024)
                 throw new WorkflowValidationException("Не удалось подписать DOC через Word. Исходник не изменён.");
             var response = JsonSerializer.Deserialize<Response>(await File.ReadAllTextAsync(path, token));
             if (response is null) throw new InvalidDataException("Invalid Word response.");
@@ -42,15 +58,21 @@ public sealed class WorkflowWordMapProcess(string executable, string? assembly =
                 if (response.Unavailable) throw new WordMapUnavailableException(error);
                 throw new WorkflowValidationException(error);
             }
-            if (!response.Matched) return null;
+            if (request.InspectOnly)
+            {
+                if (response.Changed || response.References is null || response.References.Length > 2000 || response.References.Any(r => r is null || r.Order is null || r.Program is null))
+                    throw new InvalidDataException("Invalid Word inspection.");
+                return (null, response.References);
+            }
+            if (!response.Matched) return (null, null);
             if (response.Pages is < 1 or > 100 || response.ChangedCards < 0 || response.Changed != (response.ChangedCards > 0))
                 throw new InvalidDataException("Invalid Word result.");
-            if (!response.Changed) return new(null, response.Pages, 0);
+            if (!response.Changed) return (new(null, response.Pages, 0), null);
             var output = Path.Combine(folder, "output.doc");
             if (new FileInfo(output).Length is <= 0 or > 50 * 1024 * 1024) throw new InvalidDataException("Invalid DOC output.");
             var bytes = await File.ReadAllBytesAsync(output, token);
             if (bytes.Length < 8 || !bytes.AsSpan(0, 8).SequenceEqual(source.AsSpan(0, 8))) throw new InvalidDataException("Output is not binary DOC.");
-            return new(bytes, response.Pages, response.ChangedCards);
+            return (new(bytes, response.Pages, response.ChangedCards), null);
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
         { throw new WordMapUnavailableException("Word не ответил вовремя. DOC-карта не изменена."); }
@@ -83,7 +105,7 @@ public sealed class WorkflowWordMapProcess(string executable, string? assembly =
         {
             if (!OperatingSystem.IsWindows()) return 1;
             var path = Path.Combine(folder, "request.json");
-            if (new FileInfo(path).Length > 16384) return 1;
+            if (new FileInfo(path).Length > 1024 * 1024) return 1;
             var request = JsonSerializer.Deserialize<Request>(File.ReadAllText(path));
             if (request is null || string.IsNullOrWhiteSpace(request.ProjectFileName) || string.IsNullOrWhiteSpace(request.Caption)) return 1;
             var response = WorkflowWordMap.Edit(folder, request);

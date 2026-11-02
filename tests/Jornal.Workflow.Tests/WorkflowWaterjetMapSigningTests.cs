@@ -12,7 +12,7 @@ namespace Jornal.Workflow.Tests;
 internal static class WaterjetMapFixture
 {
     internal static string Create(MapSigningFixture f, string name = "Карта_pp.pdf", string? native = null,
-        string caption = "", bool annotation = false, bool continuation = false, bool form = true, int maps = 1)
+        string caption = "", bool annotation = false, bool continuation = false, bool form = true, int maps = 1, string cnc = "Лист1.NC")
     {
         var path = Path.Combine(f.Root, name); using var pdf = new PdfDocument();
         for (var n = 0; n < maps; n++)
@@ -26,7 +26,7 @@ internal static class WaterjetMapFixture
                 using (var image = XGraphics.FromForm(drawing)) { image.DrawRectangle(XPens.Blue, 1, 1, 190, 95); image.DrawEllipse(XPens.Black, 20, 20, 60, 60); }
                 g.DrawImage(drawing, 150, 130);
             }
-            Text("Files", 72, 300); Text("CNC file", 74, 320); Text("Лист1.NC", 153, 320);
+            Text("Files", 72, 300); Text("CNC file", 74, 320); Text(cnc, 153, 320);
             Text("Drawing", 74, 338); Text(native ?? Path.GetFileName(f.Project.NativePath)!, 153, 338);
             for (var row = 0; row <= 4; row++) g.DrawRectangle(XBrushes.Black, 72, 360 + row * 12, 455, .4);
             foreach (var x in new[] { 72d, 150d, 527d }) g.DrawRectangle(XBrushes.Black, x, 360, .4, 48);
