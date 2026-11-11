@@ -11,6 +11,8 @@ public sealed record ReportFileSnapshot(string SourcePath, string Sha256, byte[]
 public static partial class WorkflowReportFiles
 {
     private const int MaximumBytes = 32 * 1024 * 1024;
+    private static readonly SpecificationProfileCatalog Profiles = new(SpecificationProfileCatalog.Default.Profiles.Select(profile =>
+        profile is HansPdfSpecificationParser ? new HansPdfSpecificationParser(allowTruncatedProjectName: true) : profile));
     public static bool IsReport(string path) => Path.GetExtension(path).ToLowerInvariant() is ".htm" or ".html" or ".pdf";
 
     // BLOK specifications are HTML; adjacent PDF cutting maps are a different document.
@@ -51,7 +53,7 @@ public static partial class WorkflowReportFiles
         });
         var normalized = document with { Pages = document.Pages.Select(page => page with
         { Words = page.Words.Select(word => word with { Text = Shorten(word, page.Number) }).ToArray() }).ToArray() };
-        var report = SpecificationProfileCatalog.Default.Parse(normalized, token);
+        var report = Profiles.Parse(normalized, token);
         if (report.Profile == WaterjetPdfSpecificationParser.Profile && report.Header is { } header)
         {
             var identifiers = replacements.Where(change => change.Short == header.Value.OriginalIdentifier &&
@@ -78,8 +80,26 @@ public static partial class WorkflowReportFiles
                 (report.Parsed.Profile != "block-html/v1" || machine is not null &&
                     string.Equals(report.Parsed.CuttingType?.Value, WorkflowProjectNames.Tag(machine), StringComparison.OrdinalIgnoreCase));
         var name = Path.GetFileName(project.NativePath);
-        return Regex.IsMatch(header.Value.OrderName, @"(?<![\p{L}\p{N}])" + Regex.Escape(name) + @"(?=$|[\s""'])",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (Regex.IsMatch(header.Value.OrderName, @"(?<![\p{L}\p{N}])" + Regex.Escape(name) + @"(?=$|[\s""'])",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) return true;
+        return report.Parsed.Profile == HansPdfSpecificationParser.Profile && MatchesTruncatedHansName(report.Parsed, header.Value, project, name);
+    }
+
+    private static bool MatchesTruncatedHansName(SpecificationParseResult report, SpecificationHeader header, CuttingProject project, string name)
+    {
+        var identifier = header.OriginalIdentifier;
+        var expectedTail = identifier + "--HANSLASER.Dsp";
+        if (!report.IsRecognized || identifier.Length != 17 ||
+            !name.EndsWith(" " + expectedTail, StringComparison.OrdinalIgnoreCase)) return false;
+
+        var reportedName = Regex.Replace(header.OrderName.Trim(), @"\s+", " ");
+        if (!reportedName.Contains(identifier, StringComparison.Ordinal) ||
+            report.Dimensions is { } dimensions && dimensions.Value.ThicknessMillimeters != project.ThicknessMm ||
+            report.SheetLayouts.Any(sheet => sheet.Value.Dimensions.ThicknessMillimeters != project.ThicknessMm)) return false;
+
+        return name.StartsWith(reportedName, StringComparison.OrdinalIgnoreCase) ||
+            (report.Dimensions is not null || report.SheetLayouts.Count > 0) &&
+            expectedTail.StartsWith(reportedName, StringComparison.OrdinalIgnoreCase);
     }
 
     public static async Task RevalidateAsync(ReportFileSnapshot report, CancellationToken token = default)

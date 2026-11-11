@@ -4,7 +4,7 @@ using Jornal.Parsing.Documents;
 
 namespace Jornal.Parsing.Specifications;
 
-public sealed partial class HansPdfSpecificationParser : ISpecificationProfile
+public sealed partial class HansPdfSpecificationParser(bool allowTruncatedProjectName = false) : ISpecificationProfile
 {
     public const string Profile = "hans-pdf/v1";
     public string Id => Profile;
@@ -235,11 +235,17 @@ public sealed partial class HansPdfSpecificationParser : ISpecificationProfile
         return new(values[0], sources);
     }
 
-    private static bool TryHeader(string text, out SpecificationHeader value)
+    private bool TryHeader(string text, out SpecificationHeader value)
     {
         value = null!; var matches = Identifier().Matches(text);
-        if (matches.Count != 1) return false;
-        var match = matches[0]; var id = new string(match.Groups["id"].Value.Where(character => !char.IsWhiteSpace(character)).ToArray());
+        Match match;
+        if (matches.Count == 1) match = matches[0];
+        else if (matches.Count == 0 && allowTruncatedProjectName &&
+                 TruncatedIdentifier().Match(text) is { Success: true } clipped &&
+                 "--HANSLASER.Dsp".StartsWith(clipped.Groups["suffix"].Value, StringComparison.OrdinalIgnoreCase))
+            match = clipped;
+        else return false;
+        var id = new string(match.Groups["id"].Value.Where(character => !char.IsWhiteSpace(character)).ToArray());
         if (!DateOnly.TryParseExact(id[..10], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) || date.Year < 100) return false;
         var number = date.ToString("MMdd", CultureInfo.InvariantCulture) + "-" + match.Groups["number"].Value;
         if (number.Length > 255) return false;
@@ -266,6 +272,10 @@ public sealed partial class HansPdfSpecificationParser : ISpecificationProfile
     };
     [GeneratedRegex(@"(?<![0-9])(?<id>[0-9]{4}\s*-\s*[0-9]{2}\s*-\s*[0-9]{2}\s*-{1,2}\s*(?<number>[0-9]+))\s*--\s*HANSLASER(?:\.Dsp)?(?=$|[\s.])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex Identifier();
+    // Crystal Reports can cut the end of the Order cell. The full six-digit time must survive.
+    [GeneratedRegex(@"\A\s*(?:[0-9]+(?:[.,][0-9]+)?\s*(?:mm|мм)\s+)?(?<id>[0-9]{4}-[0-9]{2}-[0-9]{2}-(?<number>[0-9]{6}))\s*(?<suffix>\S*)\s*\z",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex TruncatedIdentifier();
     [GeneratedRegex(@"^(\S+)\s*_(-?[0-9]+)$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex MaterialSuffix();
 }
