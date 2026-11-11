@@ -41,6 +41,57 @@ public sealed class WorkflowReportParserTests
     }
 
     private static SpecificationValue<T> Value<T>(T value) => new(value, []);
+
+    [Theory]
+    [InlineData("60 mm", "105223--HANSLASER.Dsp", 60, true)]
+    [InlineData("60 mm", "105223--HANSLASER.Ds", 60, true)]
+    [InlineData("60 mm", "105223--HANSLASER.", 60, true)]
+    [InlineData("60 mm", "105223--HANS", 60, true)]
+    [InlineData("60 mm", "105223", 60, true)]
+    [InlineData("", "105223--HANS", 60, true)]
+    [InlineData("60 mm", "10522", 60, false)]
+    [InlineData("60 mm", "105224--HANSLASER.Ds", 60, false)]
+    [InlineData("60 mm", "105223--HANSLASER.Dsx", 60, false)]
+    [InlineData("60 mm", "105223--HANSLASER.Ds", 55, false)]
+    [InlineData("55 mm", "105223--HANSLASER.Ds", 60, false)]
+    public void HansReportMatchesWrappedAndClippedNameOnlyWithCompleteProjectIdentity(string prefix, string timeAndTail,
+        int sheetThickness, bool expected)
+    {
+        var words = new List<PdfWord>();
+        void Text(string text, double x, double y)
+        {
+            foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var width = word.Length * 4.0;
+                words.Add(new(word, x, y, x + width, y + 8));
+                x += width + 4;
+            }
+        }
+
+        Text("Заказ", 30, 750); Text(prefix, 150, 750);
+        Text("2026-11-11-" + timeAndTail, 150, 736);
+        Text("Длина реза:(мм)", 30, 708); Text("5056.7", 150, 708);
+        Text("Пробивки:", 30, 682); Text("20", 150, 682);
+        Text("Листы", 30, 625);
+        Text("№", 30, 600); Text("Размер X", 80, 600); Text("Размер Y", 160, 600);
+        Text("Материал", 250, 600); Text("Gas", 340, 600); Text("Толщ. (мм)", 400, 600); Text("К-во", 500, 600);
+        Text("1", 30, 575); Text("130", 90, 575); Text("1500", 170, 575);
+        Text("St-45_0", 260, 575); Text("O2", 340, 575);
+        Text(sheetThickness.ToString(System.Globalization.CultureInfo.InvariantCulture), 410, 575); Text("1", 500, 575);
+        Text("Детали", 30, 550);
+
+        var report = WorkflowReportFiles.Parse(new(DocumentKind.Pdf, null, [], [new(1, 595, 841, words)]), TestContext.Current.CancellationToken);
+        const string name = "60 mm 2026-11-11-105223--HANSLASER";
+        var native = Path.Combine(Path.GetTempPath(), name + ".Dsp");
+        var project = new CuttingProject(Guid.NewGuid(), Guid.NewGuid(), 1, Guid.NewGuid(), 60,
+            name, native, HansPdfSpecificationParser.Profile, DateTimeOffset.Now);
+        var snapshot = new ReportFileSnapshot(Path.ChangeExtension(native, ".pdf"), "", [], report);
+
+        Assert.Equal(HansPdfSpecificationParser.Profile, report.Profile);
+        Assert.Equal(expected, WorkflowReportFiles.Matches(snapshot, project, null));
+        if (expected) Assert.Equal("1111-105223", report.Header!.Value.JournalNumber);
+    }
+
     private static SpecificationParseResult Report(string profile, string? materialId) =>
         new(profile, Value(new SpecificationHeader(new(2026, 10, 24), "2026-10-24-123456", "1024-123456", "project")),
             Value(profile == "hans-pdf/v1" ? "HansLaser" : "Лазер"), Value("Сплав"), Value(new SheetDimensions(6, 3000, 1500)),
