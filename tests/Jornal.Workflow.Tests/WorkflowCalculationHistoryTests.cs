@@ -165,7 +165,7 @@ public sealed class WorkflowCalculationHistoryTests
     [Fact]
     public async Task AChangedSpecificationRequiresItsOwnMaterialConfirmationAfterRefresh()
     {
-        using var f = new ProjectFixture(); await f.InitializeAsync(); var p = await f.AddAsync("ГАР"); WorkflowAutomaticCalculationTests.WriteAwjc(p);
+        using var f = new ProjectFixture(); await f.InitializeAsync(); var p = await f.AddAsync("ГАР"); WorkflowAutomaticCalculationTests.WriteAwjc(p, grade: "09Г2С/Ст3");
         var review = Assert.IsType<WorkflowReportReviewViewModel>(await f.Model.CalculateOrderAsync(Token));
         Assert.Single(review.GuidedCandidates).Draft!.Pierces = "15";
         var path = Path.Combine(Path.GetDirectoryName(p.NativePath!)!, "Спецификация.pdf");
@@ -173,7 +173,7 @@ public sealed class WorkflowCalculationHistoryTests
         { pdf.Info.Title = "Исправленная спецификация"; pdf.Save(path); }
         review.MarkOrderChanged(); await review.SaveCommand.ExecuteAsync(null);
         Assert.Null(review.Error); Assert.False(review.WasSaved); var candidate = Assert.Single(review.GuidedCandidates);
-        Assert.True(candidate.Draft!.MaterialNeedsReview); Assert.False(candidate.Draft.MaterialConfirmed); Assert.True(candidate.NeedsPierceCount);
+        Assert.True(candidate.Draft!.MaterialNeedsReview); Assert.False(candidate.Draft.MaterialConfirmed); Assert.Equal("1", candidate.Draft.Pierces);
         Assert.Empty((await f.Store.ReadAsync(Token)).Orders.Single().Specifications);
     }
 

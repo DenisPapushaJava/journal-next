@@ -75,7 +75,7 @@
                 <CheckBox x:Name="ReviewMaterialConfirmed" DataContext="{Binding Draft}" x:DataType="vm:SpecificationDraft" Content="Марка стали верна" IsChecked="{Binding MaterialConfirmed}" />
               </StackPanel>
               <StackPanel Spacing="6" IsVisible="{Binding ShowPierceQuestion}">
-                <TextBlock Text="В отчёте нет количества пробивок. Укажите его для расчёта; 0 — если пробивок нет." TextWrapping="Wrap" />
+                <TextBlock Text="{Binding PierceQuestion}" TextWrapping="Wrap" />
                 <TextBox x:Name="ReviewMissingPierces" DataContext="{Binding Draft}" x:DataType="vm:SpecificationDraft" Text="{Binding Pierces}" Width="120" HorizontalAlignment="Left" AutomationProperties.Name="Количество пробивок" />
               </StackPanel>
               <StackPanel Spacing="6" IsVisible="{Binding ShowCategoryQuestion}">

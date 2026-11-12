@@ -156,4 +156,70 @@ public sealed class WorkflowReportParserTests
         Assert.Equal(number, draft.Number); Assert.Equal("08.10.2026", draft.Date);
         Assert.Contains("2026-10-08-" + time + "--AWJC.dig", string.Join(" ", doc.Pages[0].Words.Select(w => w.Text)));
     }
+
+    [Theory]
+    [InlineData(false, false, 10)]
+    [InlineData(true, false, 31)]
+    [InlineData(true, true, null)]
+    public void AwjcReadsEnglishSummaryAndUsesOnlyCompleteDetailTables(bool continuation, bool brokenContinuation, int? expected)
+    {
+        var words = new List<PdfWord>();
+        void Text(string text, double x, double y)
+        {
+            foreach (var word in text.Split(' '))
+            {
+                var width = word.Length * 4.0;
+                words.Add(new(word, x, y, x + width, y + 8));
+                x += width + 4;
+            }
+        }
+
+        Text("Drawing file", 30, 720); Text("6 mm", 150, 720);
+        Text("2026-11-12-131202--ГАР.di", 150, 707);
+        Text("Material", 30, 686); Text("Mild Steel/Standard 6 mm", 150, 686);
+        Text("Cutting Material", 30, 405);
+        Text("Total time", 30, 375); Text("00:10:00", 150, 375); Text("Enclosing", 345, 375); Text("1500x1300 mm", 455, 375);
+        Text("Cutting length", 30, 350); Text("2963 mm", 150, 350); Text("Thickness", 345, 350); Text("6,0 mm", 455, 350);
+        Text("Layout:1500x1300mm", 30, 325); Text("Sheets: 4", 190, 325);
+        Text("Weight", 345, 325); Text("17,1 kg", 455, 325);
+        void Details(int number, int quantity, string? punches)
+        {
+            Text("No.", 45, 280); Text("Name", 170, 280); Text("Quantity", 290, 280);
+            Text("Pierces", 370, 280); Text("Weight", 455, 280); Text("Quality", 520, 280);
+            Text(FormattableString.Invariant($"{number}"), 49, 250); Text("Part", 170, 250);
+            Text(FormattableString.Invariant($"{quantity}"), 305, 250);
+            if (punches is not null) Text(punches, 380, 250);
+            Text("1", 465, 250); Text("Medium", 520, 250);
+        }
+        var pages = new List<PdfPage>();
+        if (continuation)
+        {
+            pages.Add(new(1, 595, 841, words));
+            words = [];
+            Details(0, 2, "5"); pages.Add(new(2, 595, 841, words));
+            words = [];
+            Details(1, 3, brokenContinuation ? null : "7"); pages.Add(new(3, 595, 841, words));
+        }
+        else
+        {
+            Details(0, 2, "5"); pages.Add(new(1, 595, 841, words));
+        }
+
+        var report = WorkflowReportFiles.Parse(new(DocumentKind.Pdf, null, [], pages), TestContext.Current.CancellationToken);
+        Assert.True(report.IsComplete, string.Join("\n", report.Issues.Select(issue => issue.Message)));
+        Assert.Equal("1112-131202", report.Header!.Value.JournalNumber);
+        Assert.Equal("Mild Steel/Standard", report.Material!.Value);
+        Assert.DoesNotContain(report.Issues, issue => issue.Code == "MaterialNeedsReview");
+        Assert.Equal(4, report.SheetCount!.Value);
+        Assert.Equal(17.1m, report.WeightKilograms!.Value);
+        Assert.Equal(expected, report.PunchCount?.Value);
+        const string nativeName = "6 мм 2026-11-12-131202--AWJC.dig";
+        var native = Path.Combine(Path.GetTempPath(), nativeName);
+        var project = new CuttingProject(Guid.NewGuid(), Guid.NewGuid(), 1, Guid.NewGuid(), 6,
+            Path.GetFileNameWithoutExtension(native), native, WaterjetPdfSpecificationParser.Profile, DateTimeOffset.Now);
+        var snapshot = new ReportFileSnapshot(Path.ChangeExtension(native, ".pdf"), "", [], report);
+        Assert.True(WorkflowReportFiles.Matches(snapshot, project, null));
+        Assert.False(WorkflowReportFiles.Matches(snapshot, project with { ThicknessMm = 5 }, null));
+        Assert.False(WorkflowReportFiles.Matches(snapshot, project with { NativePath = native.Replace("131202", "131203", StringComparison.Ordinal) }, null));
+    }
 }

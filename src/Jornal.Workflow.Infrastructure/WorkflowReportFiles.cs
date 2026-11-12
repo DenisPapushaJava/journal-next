@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Jornal.Parsing.Documents;
 using Jornal.Parsing.Specifications;
@@ -11,16 +12,22 @@ public sealed record ReportFileSnapshot(string SourcePath, string Sha256, byte[]
 public static partial class WorkflowReportFiles
 {
     private const int MaximumBytes = 32 * 1024 * 1024;
-    private static readonly SpecificationProfileCatalog Profiles = new(SpecificationProfileCatalog.Default.Profiles.Select(profile =>
-        profile is HansPdfSpecificationParser ? new HansPdfSpecificationParser(allowTruncatedProjectName: true) : profile));
+    private static readonly SpecificationProfileCatalog Profiles = new(SpecificationProfileCatalog.Default.Profiles.Select(profile => profile switch
+    {
+        HansPdfSpecificationParser => new HansPdfSpecificationParser(allowTruncatedProjectName: true),
+        WaterjetPdfSpecificationParser => new WaterjetPdfSpecificationParser(useExplicitCalculationInputs: true),
+        _ => profile
+    }));
     public static bool IsReport(string path) => Path.GetExtension(path).ToLowerInvariant() is ".htm" or ".html" or ".pdf";
 
     // BLOK specifications are HTML; adjacent PDF cutting maps are a different document.
-    // Keep PDF specifications available for HansLaser and AWJC, independent of file names.
+    // AWJC exports cutting maps with a _pp suffix and specifications separately.
     public static bool IsReport(string path, string? profile) => profile switch
     {
         "block-html/v1" => Path.GetExtension(path).ToLowerInvariant() is ".htm" or ".html",
-        "hans-pdf/v1" or "waterjet-awjc/v1" => Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase),
+        "hans-pdf/v1" => Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase),
+        WaterjetPdfSpecificationParser.Profile => Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase) &&
+            !Path.GetFileNameWithoutExtension(path).EndsWith("_pp", StringComparison.OrdinalIgnoreCase),
         _ => IsReport(path)
     };
 
@@ -41,34 +48,7 @@ public static partial class WorkflowReportFiles
         finally { File.Delete(temporary); }
     }
 
-    public static SpecificationParseResult Parse(SourceDocument document, CancellationToken token = default)
-    {
-        // The legacy AWJC parser accepts 3–4 digits. Adapt only the new Workflow input and restore the complete identifier.
-        var replacements = new List<(int Page, PdfWord Word, string Short, string Full)>();
-        string Shorten(PdfWord word, int page) => AwjcSeconds().Replace(word.Text, match =>
-        {
-            var shortId = match.Groups["date"].Value + "-" + match.Groups["time"].Value[..4];
-            replacements.Add((page, word, shortId, match.Groups["date"].Value + "-" + match.Groups["time"].Value));
-            return shortId;
-        });
-        var normalized = document with { Pages = document.Pages.Select(page => page with
-        { Words = page.Words.Select(word => word with { Text = Shorten(word, page.Number) }).ToArray() }).ToArray() };
-        var report = Profiles.Parse(normalized, token);
-        if (report.Profile == WaterjetPdfSpecificationParser.Profile && report.Header is { } header)
-        {
-            var identifiers = replacements.Where(change => change.Short == header.Value.OriginalIdentifier &&
-                header.Sources.OfType<PdfValueSource>().Any(source => source.Page == change.Page &&
-                    change.Word.Left >= source.Left - 0.1 && change.Word.Right <= source.Right + 0.1 &&
-                    change.Word.Bottom >= source.Bottom - 0.1 && change.Word.Top <= source.Top + 0.1))
-                .Select(change => change.Full).Distinct().ToArray();
-            if (identifiers.Length > 1) throw new WorkflowValidationException("В заголовке AWJC несколько имён проектов.");
-            if (identifiers.SingleOrDefault() is { } full)
-                report = report with { Header = header with { Value = header.Value with
-                { OriginalIdentifier = full, JournalNumber = header.Value.OrderDate.ToString("MMdd") + "-" + full[^6..],
-                    OrderName = header.Value.OrderName.Replace(header.Value.OriginalIdentifier, full, StringComparison.Ordinal) } } };
-        }
-        return report;
-    }
+    public static SpecificationParseResult Parse(SourceDocument document, CancellationToken token = default) => Profiles.Parse(document, token);
 
     public static bool Matches(ReportFileSnapshot report, CuttingProject project, WorkflowSpecification? existing, WorkflowMachine? machine = null)
     {
@@ -82,7 +62,25 @@ public static partial class WorkflowReportFiles
         var name = Path.GetFileName(project.NativePath);
         if (Regex.IsMatch(header.Value.OrderName, @"(?<![\p{L}\p{N}])" + Regex.Escape(name) + @"(?=$|[\s""'])",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) return true;
-        return report.Parsed.Profile == HansPdfSpecificationParser.Profile && MatchesTruncatedHansName(report.Parsed, header.Value, project, name);
+        return report.Parsed.Profile switch
+        {
+            HansPdfSpecificationParser.Profile => MatchesTruncatedHansName(report.Parsed, header.Value, project, name),
+            WaterjetPdfSpecificationParser.Profile => MatchesAwjcName(report.Parsed, header.Value, project, name),
+            _ => false
+        };
+    }
+
+    private static bool MatchesAwjcName(SpecificationParseResult report, SpecificationHeader header, CuttingProject project, string name)
+    {
+        if (!report.IsRecognized || report.Dimensions?.Value.ThicknessMillimeters != project.ThicknessMm) return false;
+        var expected = AwjcName().Match(Regex.Replace(name, @"\s+", ""));
+        var actual = AwjcName().Match(Regex.Replace(header.OrderName, @"\s+", ""));
+        if (!expected.Success || !actual.Success || !name.EndsWith(".dig", StringComparison.OrdinalIgnoreCase) ||
+            expected.Groups["id"].Value != header.OriginalIdentifier || actual.Groups["id"].Value != header.OriginalIdentifier)
+            return false;
+        var thickness = actual.Groups["thickness"];
+        return !thickness.Success || decimal.TryParse(thickness.Value.Replace(',', '.'), NumberStyles.AllowDecimalPoint,
+            CultureInfo.InvariantCulture, out var reportedThickness) && reportedThickness == project.ThicknessMm;
     }
 
     private static bool MatchesTruncatedHansName(SpecificationParseResult report, SpecificationHeader header, CuttingProject project, string name)
@@ -159,6 +157,7 @@ public static partial class WorkflowReportFiles
         return first;
     }
 
-    [GeneratedRegex(@"(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})-(?<time>[0-9]{6})(?=--AWJC)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex AwjcSeconds();
+    [GeneratedRegex(@"\A(?:(?<thickness>[0-9]+(?:[.,][0-9]+)?)(?:mm|мм))?(?<id>[0-9]{4}-[0-9]{2}-[0-9]{2}-{1,2}(?:[0-9]{6}|[0-9]{3,4}))--(?:AWJC|ГАР)(?:\.(?:d(?:i(?:g)?)?)?)?\z",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex AwjcName();
 }

@@ -75,7 +75,7 @@ public partial class WorkflowReportCandidate : ObservableObject
     internal void UseGuidance(bool value) { if (_guided == value) return; _guided = value; OnPropertyChanged(nameof(ShowMaterialCheck)); }
     public bool HasSourceChoice => Choices.Count > 1 || Snapshot is null && Choices.Count > 0;
     internal bool HasManualEdits => _hasManualEdits;
-    internal bool CanAcceptAutomatically => !WasAccepted && (_latestReportWins || IsSelected) && Ready && (_latestReportWins || !_hasManualEdits) &&
+    internal bool CanAcceptAutomatically => !WasAccepted && !UsesEstimatedPierces && (_latestReportWins || IsSelected) && Ready && (_latestReportWins || !_hasManualEdits) &&
         Snapshot?.Parsed.Issues.All(i => i.Severity != SpecificationIssueSeverity.Error) == true;
     internal bool NeedsDecision => !WasAccepted && Status != "Без изменений" && (Choices.Count > 0 || HasDraft);
     public bool NeedsAttention => !WasAccepted && (_sourceProblem is not null || Conflicts.Any(c => c.Selection < 0) ||
@@ -83,6 +83,7 @@ public partial class WorkflowReportCandidate : ObservableObject
     [ObservableProperty] private bool _isSelected;
     public string Status => _sourceProblem is not null ? "Нужна проверка" : Snapshot is null ? _emptyState :
         Snapshot.Sha256 == _existing?.Current.Report?.Sha256 ? Draft?.IsDirty == true ? "Параметры изменены" : "Без изменений" :
+        UsesEstimatedPierces ? "Уточнить пробивки" :
         Ready ? _existing is null ? "Новая · готово" : "Изменена · готово" : "Нужна проверка";
     public string Message => _sourceProblem ?? (Snapshot is null ? _emptyState :
         Conflicts.Any(c => c.Selection < 0) ? "Выберите значения спорных полей." :
@@ -201,12 +202,17 @@ public partial class WorkflowReportCandidate : ObservableObject
         Draft.UsesMaterialCategories = source.UsesMaterialCategories;
         if (source.UsesMaterialCategories && Baseline.MaterialGroup.Length == 0 &&
             previousHash != value.Snapshot.Sha256) Draft.MaterialGroup = "";
+        if (UsesEstimatedPierces && string.IsNullOrWhiteSpace(Draft.Pierces)) Draft.Pierces = "1";
         _pendingFields = [];
         Draft.PropertyChanged += DraftChanged;
         Reprice(); IsSelected = true; if (NeedsReportFields) ShowReportFields = true; Changed();
     }
     public bool ShowCategoryQuestion => Draft?.UsesMaterialCategories == true && string.IsNullOrWhiteSpace(Baseline?.MaterialGroup);
     public bool ShowPierceQuestion => Draft is not null && string.IsNullOrWhiteSpace(Baseline?.Pierces);
+    public bool UsesEstimatedPierces => ShowPierceQuestion && Snapshot?.Parsed.Profile == WaterjetPdfSpecificationParser.Profile;
+    public string PierceQuestion => UsesEstimatedPierces
+        ? "Пробивки не распознаны. Подставлена 1 пробивка. Можно оставить её или ввести точное количество."
+        : "Укажите количество пробивок для расчёта. Если пробивок нет, введите 0.";
     public bool NeedsTariffCategory => Draft is { UsesMaterialCategories: true } d && string.IsNullOrWhiteSpace(d.MaterialGroup);
     public bool NeedsPierceCount => Draft is { } d && string.IsNullOrWhiteSpace(d.Pierces);
     public bool CanConfirmMaterial => UnconfirmedMaterialQuote is not null;
@@ -285,7 +291,7 @@ public partial class WorkflowReportCandidate : ObservableObject
     { value?.SetMaterialSuggestions(_materialSuggestions); OnPropertyChanged(nameof(HasDraft)); }
     private void Changed()
     {
-        OnPropertyChanged(nameof(ShowMaterialCheck)); OnPropertyChanged(nameof(ShowCategoryQuestion)); OnPropertyChanged(nameof(ShowPierceQuestion)); OnPropertyChanged(nameof(NeedsTariffCategory)); OnPropertyChanged(nameof(NeedsPierceCount)); OnPropertyChanged(nameof(CanConfirmMaterial)); OnPropertyChanged(nameof(HasSourceChoice)); OnPropertyChanged(nameof(Status)); OnPropertyChanged(nameof(Message)); OnPropertyChanged(nameof(Total)); OnPropertyChanged(nameof(Ready)); OnPropertyChanged(nameof(CardTitle)); OnPropertyChanged(nameof(ReportSummary)); _changed();
+        OnPropertyChanged(nameof(ShowMaterialCheck)); OnPropertyChanged(nameof(ShowCategoryQuestion)); OnPropertyChanged(nameof(ShowPierceQuestion)); OnPropertyChanged(nameof(PierceQuestion)); OnPropertyChanged(nameof(NeedsTariffCategory)); OnPropertyChanged(nameof(NeedsPierceCount)); OnPropertyChanged(nameof(CanConfirmMaterial)); OnPropertyChanged(nameof(HasSourceChoice)); OnPropertyChanged(nameof(Status)); OnPropertyChanged(nameof(Message)); OnPropertyChanged(nameof(Total)); OnPropertyChanged(nameof(Ready)); OnPropertyChanged(nameof(CardTitle)); OnPropertyChanged(nameof(ReportSummary)); _changed();
     }
     internal static ReportValues Values(SpecificationDraft d) =>
         new(d.Number, d.Date, d.Material, d.MaterialGroup, d.Thickness, d.BlankSize, d.Quantity, d.Length, d.Pierces, d.Weight, d.Duration);
@@ -328,9 +334,13 @@ public partial class WorkflowReportReviewViewModel : ObservableObject
     { foreach (var candidate in Candidates) candidate.UseMaterialSuggestions(value); }
     private bool _orderChanged, _needsRefresh;
     public bool CanEdit => !IsBusy && !WasSaved;
-    private bool CanSave => CanEdit && !_orderChanged && (IsGuided && (_needsRefresh || Selected?.CanConfirmMaterial == true) || Candidates.Any(c => (IsGuided || c.IsSelected) && !c.WasAccepted && c.Ready));
+    private bool IsReadyToSave(WorkflowReportCandidate candidate) => !candidate.WasAccepted && candidate.Ready &&
+        (IsGuided ? !candidate.UsesEstimatedPierces || ReferenceEquals(candidate, Selected) : candidate.IsSelected);
+    private bool CanSave => CanEdit && !_orderChanged && (IsGuided && (_needsRefresh || Selected?.CanConfirmMaterial == true) || Candidates.Any(IsReadyToSave));
     private bool CanRefresh => CanEdit && !_orderChanged && _refresh is not null;
-    public string SaveCaption => IsGuided ? _needsRefresh ? "Продолжить" : Selected?.CanConfirmMaterial == true ? "Подтвердить и продолжить" : "Применить и продолжить" : $"Принять готовые ({Candidates.Count(c => c.IsSelected && c.Ready)})";
+    public string SaveCaption => IsGuided ? _needsRefresh ? "Продолжить" : Selected?.CanConfirmMaterial == true ? "Подтвердить и продолжить" :
+        Selected is { UsesEstimatedPierces: true, Draft.Pierces: "1" } ? "Оставить 1 и продолжить" : "Применить и продолжить" :
+        $"Принять готовые ({Candidates.Count(c => c.IsSelected && c.Ready)})";
     public string Summary => IsGuided && _needsRefresh ? "Данные заявки обновились. Продолжение учтёт актуальные значения и сохранит ваши правки." : IsGuided ? $"Нужно уточнить: {GuidedCandidates.Count()}. Выберите проект слева и выполните действие справа." : WasSaved ? "Готовые отчёты сохранены. Остальные проекты можно обновить позже." :
         $"{Candidates.Count(c => c.Ready)} готовы · {Candidates.Count(c => c.Status == "Без изменений")} без изменений · " +
         $"{Candidates.Count(c => !c.Ready && c.Status != "Без изменений")} ожидают или требуют проверки";
@@ -427,10 +437,10 @@ public partial class WorkflowReportReviewViewModel : ObservableObject
                     var confirmedSource = Selected?.Snapshot?.Sha256;
                     if (!await RefreshCoreAsync(token)) return;
                     // A different specification needs its own material confirmation.
-                    if (Selected is { CanConfirmMaterial: true } next && next.Snapshot?.Sha256 != confirmedSource) return;
+                    if (Selected is { } next && (next.CanConfirmMaterial || next.UsesEstimatedPierces) && next.Snapshot?.Sha256 != confirmedSource) return;
                 }
                 if (IsGuided && Selected is { CanConfirmMaterial: true, Draft: { } materialDraft }) materialDraft.MaterialConfirmed = true;
-                var ready = Candidates.Where(c => (IsGuided || c.IsSelected) && !c.WasAccepted && c.Ready).ToArray();
+                var ready = Candidates.Where(IsReadyToSave).ToArray();
                 if (ready.Length == 0) { WasSaved = IsGuided && !GuidedCandidates.Any(); return; }
                 Error = await _save(ready, token);
                 if (Error is not null)
