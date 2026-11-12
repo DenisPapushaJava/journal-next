@@ -1,3 +1,5 @@
+using Jornal.Parsing.Documents;
+using Jornal.Parsing.Specifications;
 using Jornal.Workflow.Core;
 using Jornal.Workflow.Infrastructure;
 
@@ -130,6 +132,10 @@ public partial class WorkflowViewModel
                                     var file = await WorkflowReportFiles.ReadAsync(path, token);
                                     files.Add(file); totalBytes += file.Bytes.LongLength;
                                 }
+                                catch (DocumentRejectedException ex) when (project.ImportProfile == WaterjetPdfSpecificationParser.Profile &&
+                                    ex.Reason == DocumentRejection.UnrecognizedSpecification &&
+                                    !Path.GetFileNameWithoutExtension(path).EndsWith("_ce", StringComparison.OrdinalIgnoreCase))
+                                { /* A readable drawing without a specification layout is not a candidate. */ }
                                 catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
                                 { state = $"Часть отчётов недоступна или не распознана: «{Path.GetFileName(path)}». Закройте файл или завершите сохранение в CAM и повторите расчёт."; }
                             }

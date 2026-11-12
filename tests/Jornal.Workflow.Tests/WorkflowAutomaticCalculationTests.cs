@@ -31,6 +31,40 @@ public sealed class WorkflowAutomaticCalculationTests
         Assert.True(f.Model.CompleteCalculation(review), f.Model.CalculationNotice); Assert.Equal(before, await File.ReadAllBytesAsync(f.Store.FilePath, Token));
     }
 
+    [Theory]
+    [InlineData(2, 1, 1, "Ст-20", null, 2, true)]
+    [InlineData(0, 1, 1, "Ст-20", null, 0, true)]
+    [InlineData(10, 2, 1, "Ст-20", null, 20, true)]
+    [InlineData(13, 2, 4, "Ст-20", "3", 35, true)]
+    [InlineData(10, 1, 1, "Ст-20", "", null, false)]
+    [InlineData(10, 1, 1, "Сталь 20/09Г2С", null, 10, false)]
+    public async Task AwjcTotalsPunchesAcrossPartsAndDoesNotMultiplyBySheetCount(int punches, int quantity, int sheets,
+        string grade, string? secondPartPunches, int? expectedPunches, bool automatic)
+    {
+        using var f = new ProjectFixture(); await f.InitializeAsync();
+        var project = await f.AddAsync("ГАР");
+        WriteAwjc(project, punches, quantity, sheets, grade, secondPartPunches);
+        await File.WriteAllTextAsync(Path.Combine(Path.GetDirectoryName(project.NativePath!)!, "Карта_pp.PDF"), "Карта для цеха", Token);
+
+        var review = Assert.IsType<WorkflowReportReviewViewModel>(await f.Model.CalculateOrderAsync(Token));
+        if (automatic)
+        {
+            Assert.Empty(review.GuidedCandidates);
+            Assert.True(f.Model.CompleteCalculation(review), f.Model.CalculationNotice);
+            var saved = Assert.Single((await f.Store.ReadAsync(Token)).Orders.Single().Specifications).Current;
+            Assert.Equal(expectedPunches, saved.Parameters.PierceCount);
+            Assert.Equal(grade, saved.Parameters.Material);
+        }
+        else
+        {
+            var candidate = Assert.Single(review.GuidedCandidates);
+            Assert.Equal(expectedPunches, candidate.Snapshot!.Parsed.PunchCount?.Value);
+            Assert.Equal(expectedPunches is not null, candidate.Draft!.MaterialNeedsReview);
+            if (expectedPunches is null) Assert.Equal("1", candidate.Draft.Pierces);
+            Assert.Empty((await f.Store.ReadAsync(Token)).Orders.Single().Specifications);
+        }
+    }
+
     [Fact]
     public async Task NewReportUpdatesAutomaticallyKeepingCoefficientOperationsAndSavedTariff()
     {
@@ -155,8 +189,8 @@ public sealed class WorkflowAutomaticCalculationTests
     }
 
     [AvaloniaTheory]
-    [InlineData(false)] [InlineData(true)]
-    public async Task AwjcExplainsMissingInputsAndReturnsToProjectsWithoutASecondReview(bool dark)
+    [InlineData(false, 1)] [InlineData(true, 15)]
+    public async Task AwjcShowsEstimateAndLetsKeepOrReplacePierces(bool dark, int expectedPierces)
     {
         using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync("ГАР"); WriteAwjc(project);
         var window = new WorkflowWindow(new(Path.Combine(f.DirectoryPath, "preferences.json")))
@@ -167,14 +201,19 @@ public sealed class WorkflowAutomaticCalculationTests
             await Until(() => window.OwnedWindows.OfType<WorkflowReportReviewWindow>().Any());
             var dialog = Assert.Single(window.OwnedWindows.OfType<WorkflowReportReviewWindow>());
             var review = Assert.IsType<WorkflowReportReviewViewModel>(dialog.DataContext); var candidate = Assert.Single(review.VisibleCandidates);
-            Assert.True(candidate.Draft!.MaterialNeedsReview); Assert.False(candidate.HasSourceChoice);
-            Assert.True(dialog.FindControl<Jornal.Desktop.Controls.EntrySuggestionComboBox>("ReviewMaterialInput")!.IsEffectivelyVisible);
+            Assert.False(candidate.Draft!.MaterialNeedsReview); Assert.False(candidate.HasSourceChoice);
+            var estimated = Assert.IsType<CuttingCalculation>(candidate.Draft.Quote).TotalCost;
             Assert.False(dialog.FindControl<Expander>("ReviewReportFields")!.IsExpanded);
-            Assert.True(candidate.NeedsPierceCount);
-            var pierces = dialog.FindControl<TextBox>("ReviewMissingPierces")!; pierces.Focus(); pierces.Text = "1"; Pump();
-            Assert.True(pierces.IsEffectivelyVisible); Assert.True(pierces.IsFocused); pierces.Text = "15"; Pump();
-            Assert.Equal("15", candidate.Draft.Pierces); Assert.True(pierces.IsEffectivelyVisible);
-            Assert.True(review.SaveCommand.CanExecute(null)); Assert.Contains("Подтвердить", review.SaveCaption);
+            var pierces = dialog.FindControl<TextBox>("ReviewMissingPierces")!;
+            Assert.True(pierces.IsEffectivelyVisible);
+            Assert.Equal("1", pierces.Text);
+            Assert.Contains("Оставить 1", review.SaveCaption);
+            if (expectedPierces != 1)
+            {
+                pierces.Text = FormattableString.Invariant($"{expectedPierces}"); Pump();
+                Assert.Contains("Применить", review.SaveCaption);
+                Assert.True(candidate.Draft.Quote!.TotalCost > estimated);
+            }
             Frame(dialog, $"calculation-awjc-{dark}");
             var selection = review.Selected;
             Assert.Same(selection, review.Selected); Assert.True(review.SaveCommand.CanExecute(null));
@@ -182,6 +221,10 @@ public sealed class WorkflowAutomaticCalculationTests
             await Until(() => window.OwnedWindows.Count == 0 && f.Model.ResultText.Length > 0);
             Assert.Equal(0, f.Model.OrderTabIndex);
             Assert.Contains("09Г2С", f.Model.ResultText);
+            var saved = Assert.Single((await f.Store.ReadAsync(Token)).Orders.Single().Specifications).Current;
+            Assert.Equal(expectedPierces, saved.Parameters.PierceCount);
+            Assert.Equal(estimated + expectedPierces - 1, saved.Calculation.TotalCost);
+            Assert.Equal("", saved.Report!.Parsed.Pierces);
             var repeated = Assert.IsType<WorkflowReportReviewViewModel>(await f.Model.CalculateOrderAsync(Token));
             Assert.Empty(repeated.GuidedCandidates); Assert.True(f.Model.CompleteCalculation(repeated), f.Model.CalculationNotice);
         }
@@ -303,7 +346,8 @@ public sealed class WorkflowAutomaticCalculationTests
         finally { foreach (var dialog in window.OwnedWindows.ToArray()) dialog.Close(); WorkflowTestWindows.Close(window); }
     }
 
-    internal static void WriteAwjc(CuttingProject project)
+    internal static void WriteAwjc(CuttingProject project, int? punches = null, int quantity = 1,
+        int sheets = 1, string grade = "09Г2С", string? secondPartPunches = null)
     {
         using var pdf = new PdfSharp.Pdf.PdfDocument(); var page = pdf.AddPage(); page.Width = XUnit.FromPoint(720); page.Height = XUnit.FromPoint(842);
         using (var g = XGraphics.FromPdfPage(page))
@@ -311,13 +355,38 @@ public sealed class WorkflowAutomaticCalculationTests
             var font = WorkflowPdfFont.Create(10);
             void Text(string value, double x, double y) => g.DrawString(value, font, XBrushes.Black, new XPoint(x, y));
             Text("Имя файла", 20, 50); Text(Path.GetFileName(project.NativePath!), 160, 50);
-            Text("Материал", 20, 90); Text("Сталь 6 mm 09Г2С", 160, 90);
+            Text("Материал", 20, 90); Text("Сталь 6 mm " + grade, 160, 90);
             Text("Резка Материал", 20, 150);
             Text("Время резки", 20, 190); Text("00:10:00", 160, 190); Text("Общий раскрой", 310, 190); Text("1", 460, 190);
             Text("Длинна реза", 20, 220); Text("10000 mm", 160, 220); Text("Толщина", 360, 220); Text("6", 460, 220);
             Text("Раскрой: 1500 x 3000 mm", 20, 250);
             Text("Количество", 20, 280); Text("Общий вес", 360, 280); Text("48.2", 460, 280);
-            Text("листов: 1", 20, 295);
+            Text(FormattableString.Invariant($"листов: {sheets}"), 20, 295);
+        }
+        if (punches is { } count)
+        {
+            var details = pdf.AddPage(); details.Width = XUnit.FromPoint(720); details.Height = XUnit.FromPoint(842);
+            using var graphics = XGraphics.FromPdfPage(details);
+            var font = WorkflowPdfFont.Create(10);
+            void Text(string value, double x, double y) => graphics.DrawString(value, font, XBrushes.Black, new XPoint(x, y));
+            Text("№", 80, 140); Text("Наименован", 230, 140); Text("Кол-во", 310, 140); Text("Кол-во", 370, 140);
+            Text("Вес", 430, 140); Text("Качество", 480, 140); Text("ие", 255, 152); Text("пробивок", 366, 152); Text("резки", 490, 152);
+            void Part(int index, double y)
+            {
+                Text(FormattableString.Invariant($"{index}"), 83, y); Text("д.1", 255, y);
+                Text(FormattableString.Invariant($"{quantity}"), 325, y);
+                Text(FormattableString.Invariant($"{count}"), 385, y);
+                Text("22,4", 430, y); Text("Medium", 480, y);
+            }
+            Part(0, 185);
+            if (secondPartPunches is not null)
+            {
+                Text("1", 83, 235);
+                Text("д.2", 255, 235);
+                Text("3", 325, 235);
+                if (secondPartPunches.Length > 0) Text(secondPartPunches, 385, 235);
+            }
+            Text("ПРИМЕЧАНИЕ:", 70, 300);
         }
         pdf.Save(Path.Combine(Path.GetDirectoryName(project.NativePath!)!, "Спецификация.pdf"));
     }

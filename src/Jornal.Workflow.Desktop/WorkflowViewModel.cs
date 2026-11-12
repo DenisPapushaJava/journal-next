@@ -324,7 +324,8 @@ public partial class WorkflowViewModel : ObservableObject
     {
         if (report.SheetLayouts.Select(l => l.Value.Dimensions).Distinct().Count() > 1)
             throw new WorkflowValidationException("В спецификации разные размеры заготовок. Этот случай будет добавлен следующим этапом.");
-        var review = report.Profile == WaterjetPdfSpecificationParser.Profile || report.Issues.Any(i => i.Code == "MaterialNeedsReview");
+        var review = report.Issues.Any(i => i.Code == "MaterialNeedsReview") ||
+            report.Profile == WaterjetPdfSpecificationParser.Profile && !report.IsComplete;
         var dimensions = report.Dimensions?.Value ?? report.SheetLayouts.FirstOrDefault()?.Value.Dimensions;
         string Number(decimal? n) => n is { } v ? SpecificationDraft.N(v) : "";
         var machineName = report.Profile == WaterjetPdfSpecificationParser.Profile ? "ГАР" : report.CuttingType?.Value ?? "";

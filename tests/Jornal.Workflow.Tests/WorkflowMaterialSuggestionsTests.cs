@@ -37,9 +37,9 @@ public sealed class WorkflowMaterialSuggestionsTests
     public async Task MaterialListsWorkInProjectAndBothReviewInputsAndDoNotConfirmAwjcThroughFocusOrSelectingTheSameValue(bool dark)
     {
         using var log = new WorkflowWindowTests.BindingLog(); using var f = new ProjectFixture(); await f.InitializeAsync();
-        var editor = f.Model.CreateGeneralSettings().CreateEntrySuggestionsEditor(); editor.MaterialsText = "09Г2С\nСт3\nAISI304";
+        var editor = f.Model.CreateGeneralSettings().CreateEntrySuggestionsEditor(); editor.MaterialsText = "09Г2С/Ст3\nСт3\nAISI304";
         await editor.SaveCommand.ExecuteAsync(null); Assert.Null(editor.Error);
-        var project = await f.AddAsync("ГАР"); WorkflowAutomaticCalculationTests.WriteAwjc(project);
+        var project = await f.AddAsync("ГАР"); WorkflowAutomaticCalculationTests.WriteAwjc(project, grade: "09Г2С/Ст3");
         var window = new WorkflowWindow(new(Path.Combine(f.DirectoryPath, "preferences.json")))
         { DataContext = f.Model, RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light, Width = 1180, Height = 768 };
         WorkflowReportReviewWindow? dialog = null;
@@ -50,15 +50,15 @@ public sealed class WorkflowMaterialSuggestionsTests
             var candidate = Assert.Single(review.VisibleCandidates); Assert.True(candidate.Draft!.MaterialNeedsReview); Assert.False(candidate.Draft.MaterialConfirmed);
             dialog = new() { DataContext = review, RequestedThemeVariant = window.ActualThemeVariant }; dialog.Show(window); Pump();
             var material = dialog.FindControl<EntrySuggestionComboBox>("ReviewMaterialInput")!;
-            Assert.Equal(f.Model.MaterialSuggestions, material.Suggestions); Assert.Equal("09Г2С", material.Value);
+            Assert.Equal(f.Model.MaterialSuggestions, material.Suggestions); Assert.Equal("09Г2С/Ст3", material.Value);
             candidate.Draft.Pierces = "15"; Assert.True(review.SaveCommand.CanExecute(null));
             material.GetVisualDescendants().OfType<TextBox>().Single().Focus(); Press(dialog, Key.F4); Assert.True(material.IsDropDownOpen); Press(dialog, Key.Enter);
-            Assert.False(material.IsDropDownOpen); Assert.Equal("09Г2С", candidate.Draft.Material);
+            Assert.False(material.IsDropDownOpen); Assert.Equal("09Г2С/Ст3", candidate.Draft.Material);
             Assert.True(candidate.Draft.MaterialNeedsReview); Assert.False(candidate.Draft.MaterialConfirmed); Assert.False(review.WasSaved);
-            var lists = f.Model.CreateGeneralSettings().CreateEntrySuggestionsEditor(); lists.MaterialsText = "09Г2С\nАлюминий";
+            var lists = f.Model.CreateGeneralSettings().CreateEntrySuggestionsEditor(); lists.MaterialsText = "09Г2С/Ст3\nАлюминий";
             await lists.SaveCommand.ExecuteAsync(null); Assert.Null(lists.Error); Pump();
-            Assert.Equal(new[] { "09Г2С", "Алюминий" }, material.Suggestions);
-            Assert.Equal("09Г2С", material.Value); Assert.True(candidate.Draft.MaterialNeedsReview); Assert.False(candidate.Draft.MaterialConfirmed);
+            Assert.Equal(new[] { "09Г2С/Ст3", "Алюминий" }, material.Suggestions);
+            Assert.Equal("09Г2С/Ст3", material.Value); Assert.True(candidate.Draft.MaterialNeedsReview); Assert.False(candidate.Draft.MaterialConfirmed);
             candidate.ShowReportFields = true; Pump();
             var expanded = dialog.FindControl<EntrySuggestionComboBox>("ReviewReportMaterialInput")!;
             Assert.Equal(material.Suggestions, expanded.Suggestions); Assert.Equal(material.Value, expanded.Value);
@@ -67,12 +67,12 @@ public sealed class WorkflowMaterialSuggestionsTests
             candidate.Draft.Pierces = "15"; candidate.Draft.MaterialConfirmed = true;
             await review.SaveCommand.ExecuteAsync(null); Assert.Null(review.Error); Assert.True(review.WasSaved); Pump();
             var main = window.FindControl<EntrySuggestionComboBox>("WorkflowCalculationMaterial")!;
-            Assert.Equal(f.Model.MaterialSuggestions, main.Suggestions); Assert.Equal("09Г2С", main.Value);
+            Assert.Equal(f.Model.MaterialSuggestions, main.Suggestions); Assert.Equal("09Г2С/Ст3", main.Value);
             var beforeInput = await File.ReadAllBytesAsync(f.Store.FilePath, Token);
             var text = main.GetVisualDescendants().OfType<TextBox>().Single(); text.Focus(); text.SelectAll(); window.KeyTextInput("Титан"); Pump();
             Assert.Equal("Титан", f.Model.SelectedDraft!.Material); Assert.DoesNotContain("Титан", f.Model.MaterialSuggestions);
             Assert.Equal(beforeInput, await File.ReadAllBytesAsync(f.Store.FilePath, Token));
-            Press(window, Key.F4); Assert.True(main.IsDropDownOpen); Assert.Equal(new[] { "09Г2С", "Алюминий" }, main.Items.Cast<string>());
+            Press(window, Key.F4); Assert.True(main.IsDropDownOpen); Assert.Equal(new[] { "09Г2С/Ст3", "Алюминий" }, main.Items.Cast<string>());
             await Task.Delay(250, Token); Pump(); Frame(window, $"material-project-{dark}"); Press(window, Key.Escape);
             Assert.DoesNotContain(log.Errors, e => e.Contains("Suggestions;", StringComparison.Ordinal));
         }
