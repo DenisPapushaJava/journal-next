@@ -92,6 +92,25 @@ public sealed class WorkflowReportParserTests
         if (expected) Assert.Equal("1111-105223", report.Header!.Value.JournalNumber);
     }
 
+    [Theory]
+    [InlineData("16 mm\n2026-07-24-1436--HANSLASER.Dsp", "2026-07-24-1436", 16, true)]
+    [InlineData("16 mm\n2026-07-24-1436--HANSLASER.Dsp", "2026-07-24-1436", 15, false)]
+    [InlineData("16 mm\n2026-07-24-1437--HANSLASER.Dsp", "2026-07-24-1437", 16, false)]
+    [InlineData("16 mm\n2026-07-24-1436--HANSLASER.Ds", "2026-07-24-1436", 16, false)]
+    public void HansReportWithFourDigitTimeMatchesTheFullNameAcrossALineBreak(string orderName, string identifier, int thickness, bool expected)
+    {
+        var parsed = Report(HansPdfSpecificationParser.Profile, "0") with
+        {
+            Header = Value(new SpecificationHeader(new(2026, 7, 24), identifier, "0724-1436", orderName)),
+            Dimensions = Value(new SheetDimensions(thickness, 850, 1500))
+        };
+        const string name = "16 mm 2026-07-24-1436--HANSLASER";
+        var project = new CuttingProject(Guid.NewGuid(), Guid.NewGuid(), 1, Guid.NewGuid(), 16,
+            name, Path.Combine(Path.GetTempPath(), name + ".Dsp"), HansPdfSpecificationParser.Profile, DateTimeOffset.Now);
+        var report = new ReportFileSnapshot(Path.ChangeExtension(project.NativePath!, ".pdf"), "", [], parsed);
+        Assert.Equal(expected, WorkflowReportFiles.Matches(report, project, null));
+    }
+
     private static SpecificationParseResult Report(string profile, string? materialId) =>
         new(profile, Value(new SpecificationHeader(new(2026, 10, 24), "2026-10-24-123456", "1024-123456", "project")),
             Value(profile == "hans-pdf/v1" ? "HansLaser" : "Лазер"), Value("Сплав"), Value(new SheetDimensions(6, 3000, 1500)),

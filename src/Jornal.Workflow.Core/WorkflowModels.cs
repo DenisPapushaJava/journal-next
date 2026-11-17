@@ -127,7 +127,11 @@ public sealed record WorkflowWorkspace(int SchemaVersion, long Version, Employee
         if (Employees.Select(e => e.Id).Distinct().Count() != Employees.Length ||
             Customers.Select(c => c.Id).Distinct().Count() != Customers.Length || Orders.Select(o => o.Id).Distinct().Count() != Orders.Length)
             throw new WorkflowValidationException("В локальных данных обнаружены повторные идентификаторы.");
-        foreach (var machine in Machines) WorkflowProjectNames.Extension(machine);
+        foreach (var machine in Machines)
+        {
+            WorkflowProjectNames.Extension(machine);
+            machine.ValidateShopFolderName();
+        }
         foreach (var order in Orders)
         {
             order.ShopHandoff?.Validate(order.Version, Employees);

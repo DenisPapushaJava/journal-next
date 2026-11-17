@@ -10,6 +10,7 @@ public partial class WorkflowWindow
     {
         if (_calculatingReports || OwnedWindows.Count > 0 || Model is not { CanCalculateOrder: true } model) return;
         var rebuildText = ReferenceEquals(sender, GenerateWorkflowResult);
+        Task? managerMaps = null;
         _calculatingReports = true;
         try
         {
@@ -34,8 +35,11 @@ public partial class WorkflowWindow
                     return;
                 }
                 // Manual text is replaced only through the same explicit confirmation as the result toolbar.
-                if (!rebuildText && model.KeepCurrentManualResult()) return;
-                await GenerateResultAsync(model, openResult: rebuildText); return;
+                if (rebuildText || !model.KeepCurrentManualResult())
+                    await GenerateResultAsync(model, openResult: rebuildText);
+                if (IsVisible && ReferenceEquals(Model, model) && !_lifetime.IsCancellationRequested)
+                    managerMaps = model.MergeManagerMapsAfterCalculationAsync(review, _lifetime.Token);
+                break;
             }
         }
         catch (OperationCanceledException) { }
@@ -45,6 +49,7 @@ public partial class WorkflowWindow
             Jornal.Infrastructure.Diagnostics.AppDiagnostics.Capture(Jornal.Infrastructure.Diagnostics.DiagnosticOperation.Unexpected, ex);
         }
         finally { _calculatingReports = false; }
+        if (managerMaps is not null) await managerMaps;
     }
 
     private async void OnResolveCalculation(object? sender, RoutedEventArgs e)

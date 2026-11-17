@@ -5,7 +5,10 @@ namespace Jornal.Workflow.Infrastructure;
 
 public sealed record WordMapEdit(byte[]? Bytes, int Pages, int ChangedCards);
 public sealed record WordMapReference(string Order, string Program);
-public sealed record WordMapMatch(string[] CurrentProjects, string[] OtherProjects, bool AllowUnknownOrder = false);
+public sealed record WordMapMatch(string[] CurrentProjects, string[] OtherProjects, bool AllowUnknownOrder = false)
+{
+    public bool RequireGnfPairs { get; init; }
+}
 
 public interface IWorkflowWordMapEditor
 {
@@ -13,6 +16,8 @@ public interface IWorkflowWordMapEditor
     Task<WordMapReference[]?> InspectAsync(byte[] source, CancellationToken token) => Task.FromResult<WordMapReference[]?>(null);
     Task<WordMapEdit?> PrepareMatchedAsync(byte[] source, string projectFileName, string caption, WordMapMatch match, CancellationToken token) =>
         PrepareAsync(source, projectFileName, caption, token);
+    Task BuildBundleAsync(string folder, string[] sourceNames, ShopMapBundle format, CancellationToken token, WordMapMatch? managerProject = null) =>
+        throw new WordMapUnavailableException("Объединение карт HansLaser доступно через Microsoft Word на Windows.");
 }
 
 public sealed class WordMapUnavailableException(string message) : Exception(message);
@@ -36,6 +41,26 @@ internal static class WorkflowWordMapRules
     }
     private sealed record Card(int CommentIndex, WordMapReference Reference);
     internal static WordMapReference[] References(IReadOnlyList<WordMapCell[]> tables) => Cards(tables).Select(c => c.Reference).ToArray();
+    internal static bool IsGnfPair(IReadOnlyList<WordMapCell[]> gnf, IReadOnlyList<WordMapCell[]> ordinary, WordMapMatch match)
+    {
+        if (Comments(ordinary, "", match) is null) return false;
+        var references = References(ordinary);
+        var projects = match.CurrentProjects.Select(ProjectKey).ToHashSet();
+        if (!references.Any(reference => projects.Contains(ProjectKey(reference.Order)))) return false;
+        var ordinaryKeys = references.Select(reference => ProgramKey(reference.Program)).Distinct().ToArray();
+        if (ordinaryKeys.Length != 1 || ordinaryKeys[0].Length == 0) return false;
+
+        var gnfKeys = new HashSet<string>();
+        foreach (var table in gnf)
+            for (var i = 0; i < table.Length; i++)
+            {
+                if (!Normalize(table[i].Text).TrimEnd(':', ' ').Equals("Файл", StringComparison.OrdinalIgnoreCase)) continue;
+                if (i + 1 >= table.Length || table[i].Row != table[i + 1].Row) return false;
+                gnfKeys.Add(ProgramKey(table[i + 1].Text));
+            }
+        return gnfKeys.SetEquals(ordinaryKeys);
+    }
+
     private static Card[] Cards(IReadOnlyList<WordMapCell[]> tables)
     {
         var cards = new List<Card>();

@@ -48,6 +48,8 @@ public partial class WorkflowViewModel
         if (ShopRoot is not { } root) { Error = "Укажите папку заданий в цех: Настройки → Хранилище."; return null; }
         Error = null;
         var source = _store; var snapshot = _workspace; var epoch = _cuttingTaskEpoch; var text = TaskPreview.Text;
+        var mapPreferences = HansMapPreferences;
+        var mapBundle = !mapPreferences.Combine ? ShopMapBundle.Separate : mapPreferences.AsPdf ? ShopMapBundle.Pdf : ShopMapBundle.Doc;
         var actor = ActorId();
         var sourceId = source.DatabaseId?.ToString("D") ?? Path.GetFullPath(source.FilePath);
         var paths = WorkflowShopFolderPaths.Plan(root, order, snapshot.Employees, snapshot.Customers, snapshot.Machines);
@@ -56,7 +58,7 @@ public partial class WorkflowViewModel
             token.ThrowIfCancellationRequested();
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (_cuttingTaskDetached || epoch != _cuttingTaskEpoch || !ReferenceEquals(source, _store) || ShopRoot != root ||
+                if (_cuttingTaskDetached || epoch != _cuttingTaskEpoch || !ReferenceEquals(source, _store) || ShopRoot != root || HansMapPreferences != mapPreferences ||
                     CurrentOrder?.Id != order.Id || CurrentOrder.Version != order.Version || PrepareCuttingTask() is not { IsReady: true } current || current.Text != text)
                     throw new WorkflowValidationException("Заявка или настройки изменились. Закройте предпросмотр и подготовьте задание заново.");
             });
@@ -101,6 +103,6 @@ public partial class WorkflowViewModel
             await clipboard(text);
             RememberCuttingTaskCopy(source, order, epoch, value, text);
         }
-        return new(root, sourceId, order, snapshot, Validate, CopyText, Transferred, Record, _wordMapEditor, RecordProjects);
+        return new(root, sourceId, order, snapshot, Validate, CopyText, Transferred, Record, _wordMapEditor, RecordProjects, mapBundle);
     }
 }

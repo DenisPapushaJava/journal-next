@@ -138,6 +138,21 @@ public sealed class WorkflowWordMapTests
         Assert.Equal("original", await File.ReadAllTextAsync(path, Token));
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public void SavesAndReopensTheAssembledPdfWithoutAccessingTheSavedBuilder(int pages)
+    {
+        var folder = Directory.CreateTempSubdirectory("workflow-pdf-bundle-test-");
+        try
+        {
+            using var pdf = new PdfSharp.Pdf.PdfDocument();
+            for (var i = 0; i < pages; i++) pdf.AddPage();
+            Assert.Equal(pages, WorkflowMapBundlePdf.Save(pdf, Path.Combine(folder.FullName, "Карты раскроев.pdf")));
+        }
+        finally { folder.Delete(recursive: true); }
+    }
+
     [Fact]
     public async Task NativeWordProbeWorksOnlyOnCopiesAndIsIdempotent()
     {
@@ -155,5 +170,21 @@ public sealed class WorkflowWordMapTests
         var again = await editor.PrepareAsync(result.Bytes, project, caption, Token);
         Assert.NotNull(again); Assert.Null(again.Bytes);
         Assert.Equal(hash, SHA256.HashData(await File.ReadAllBytesAsync(source, Token)));
+
+        var folder = Directory.CreateTempSubdirectory("workflow-word-bundle-test-");
+        try
+        {
+            await File.WriteAllBytesAsync(Path.Combine(folder.FullName, "input-0.doc"), result.Bytes, Token);
+            await File.WriteAllBytesAsync(Path.Combine(folder.FullName, "input-1.doc"), result.Bytes, Token);
+            await editor.BuildBundleAsync(folder.FullName, ["Лист 1.doc", "Лист 2.doc"], ShopMapBundle.Doc, Token,
+                managerProject: new([project], []));
+            var merged = await File.ReadAllBytesAsync(Path.Combine(folder.FullName, WorkflowShopTransfer.BundleFileName(ShopMapBundle.Doc)), Token);
+            Assert.Equal(result.Bytes[..8], merged[..8]);
+            await editor.BuildBundleAsync(folder.FullName, ["Лист 1.doc", "Лист 2.doc"], ShopMapBundle.Pdf, Token);
+            using var pdf = PdfSharp.Pdf.IO.PdfReader.Open(Path.Combine(folder.FullName, WorkflowShopTransfer.BundleFileName(ShopMapBundle.Pdf)));
+            Assert.Equal(result.Pages * 2, pdf.PageCount);
+            Assert.Equal(result.Bytes, await File.ReadAllBytesAsync(Path.Combine(folder.FullName, "input-0.doc"), Token));
+        }
+        finally { folder.Delete(recursive: true); }
     }
 }

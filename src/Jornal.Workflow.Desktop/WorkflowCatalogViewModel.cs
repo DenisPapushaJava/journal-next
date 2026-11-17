@@ -49,14 +49,18 @@ public partial class WorkflowMachineEditor : ObservableObject
     [ObservableProperty] private string _name;
     [ObservableProperty] private WorkflowImportOption _import;
     [ObservableProperty] private string _projectExtension;
+    [ObservableProperty] private string _shopFolderName;
+    private string? NormalizedShopFolderName => string.IsNullOrWhiteSpace(ShopFolderName) ? null : ShopFolderName.Trim();
     public bool HasChanges => IsNew || Name != _original.Name || Import?.Profile != _original.ImportProfile ||
         ProjectExtension != WorkflowProjectNames.Extension(_original) ||
+        NormalizedShopFolderName != _original.ShopFolderName ||
         !_originalRates.SequenceEqual(Rates.Select(r => r.Id)) || Rates.Any(r => r.HasChanges);
     public WorkflowMachineEditor(WorkflowMachine machine, IEnumerable<CuttingRate> rates, Action changed, bool isNew = false)
     {
         _original = machine; _name = machine.Name; IsNew = isNew; _changed = changed;
         _import = WorkflowImportOption.All.Single(p => p.Profile == machine.ImportProfile);
         _projectExtension = WorkflowProjectNames.Extension(machine);
+        _shopFolderName = machine.ShopFolderName ?? "";
         foreach (var rate in rates.OrderBy(r => r.MaterialGroup).ThenBy(r => r.ThicknessMm)) Rates.Add(new(rate, changed, machine.ImportProfile == "hans-pdf/v1"));
         _originalRates = Rates.Select(r => r.Id).ToArray();
         Rates.CollectionChanged += (_, _) => _changed();
@@ -70,7 +74,9 @@ public partial class WorkflowMachineEditor : ObservableObject
             ProjectExtension = WorkflowProjectNames.Extension(_original with { ImportProfile = newValue.Profile, ProjectExtension = null });
     }
     public WorkflowMachine ToMachine() => _original with { Name = Name?.Trim() ?? "", ImportProfile = Import?.Profile,
-        ProjectExtension = ProjectExtension?.Trim() };
+        ProjectExtension = Import?.Profile == _original.ImportProfile && ProjectExtension == WorkflowProjectNames.Extension(_original)
+            ? _original.ProjectExtension : ProjectExtension?.Trim(),
+        ShopFolderName = NormalizedShopFolderName };
 }
 
 public partial class WorkflowCatalogViewModel : ObservableObject

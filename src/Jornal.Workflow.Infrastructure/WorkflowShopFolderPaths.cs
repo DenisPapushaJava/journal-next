@@ -31,7 +31,7 @@ public static class WorkflowShopFolderPaths
         {
             var prefix = System.IO.Path.GetPathRoot(root)!;
             foreach (var part in root[prefix.Length..].Split([System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
-                if (!ValidComponent(part)) throw new WorkflowValidationException("Начальный путь содержит недопустимое имя папки Windows. Проверьте путь; имя проекта не меняется.");
+                if (!WorkflowWindowsFolderName.IsValid(part)) throw new WorkflowValidationException("Начальный путь содержит недопустимое имя папки Windows. Проверьте путь; имя проекта не меняется.");
         }
         return root;
     }
@@ -59,8 +59,10 @@ public static class WorkflowShopFolderPaths
             var folderName = project.Name + projectSuffix;
             if (folderName.Length > 255)
                 throw new WorkflowValidationException("Имя папки задания вместе с БЛЦБ превышает 255 символов. Сократите имя проекта или БЛЦБ; автоматического сокращения нет.");
-            var machine = Component(machines.SingleOrDefault(m => m.Id == project.MachineId)?.Name, "станка");
-            var path = System.IO.Path.Combine(root, machine, manager, orderName, folderName);
+            var machine = machines.SingleOrDefault(m => m.Id == project.MachineId);
+            machine?.ValidateShopFolderName();
+            var machineFolder = machine?.ShopFolderName ?? Component(machine?.Name, "станка");
+            var path = System.IO.Path.Combine(root, machineFolder, manager, orderName, folderName);
             if (path.Length > 32760) throw new WorkflowValidationException("Путь задания слишком длинный. Выберите более короткую начальную папку; имя проекта сохраняется целиком.");
             rows.Add(new(project.Id, project.Name, path));
         }
@@ -70,29 +72,18 @@ public static class WorkflowShopFolderPaths
         return rows.ToArray();
     }
 
-    private const string Forbidden = "<>:\"/\\|?*";
     private static string Component(string? value, string field)
     {
-        var result = new string((value ?? "").Select(c => char.IsControl(c) || Forbidden.Contains(c) ? '_' : c).ToArray()).Trim().TrimEnd(' ', '.');
+        var result = new string((value ?? "").Select(c => WorkflowWindowsFolderName.IsInvalidCharacter(c) ? '_' : c).ToArray()).Trim().TrimEnd(' ', '.');
         if (result.Length == 0 || result is "." or "..")
             throw new WorkflowValidationException($"Проверьте имя {field} для папки задания.");
-        if (Reserved(result)) result = "_" + result;
+        if (WorkflowWindowsFolderName.IsReserved(result)) result = "_" + result;
         if (result.Length > 255) throw new WorkflowValidationException($"Имя {field} слишком длинное для папки. Сокращения автоматически не выполняются.");
         return result;
     }
     private static void RequireProjectName(string name)
     {
-        if (!ValidComponent(name))
+        if (!WorkflowWindowsFolderName.IsValid(name))
             throw new WorkflowValidationException("Имя проекта недопустимо для папки Windows. Оно не будет автоматически изменено или сокращено.");
-    }
-    private static bool ValidComponent(string name) => !string.IsNullOrWhiteSpace(name) && name.Length <= 255 &&
-        !name.Any(c => char.IsControl(c) || Forbidden.Contains(c)) && name is not "." and not ".." &&
-        !name.EndsWith(' ') && !name.EndsWith('.') && !Reserved(name);
-    private static bool Reserved(string name)
-    {
-        var stem = name.Split('.')[0].TrimEnd(' ').ToUpperInvariant();
-        return stem is "CON" or "PRN" or "AUX" or "NUL" || stem.Length == 4 &&
-            (stem.StartsWith("COM", StringComparison.Ordinal) || stem.StartsWith("LPT", StringComparison.Ordinal)) &&
-            (stem[3] is >= '1' and <= '9' or '¹' or '²' or '³');
     }
 }

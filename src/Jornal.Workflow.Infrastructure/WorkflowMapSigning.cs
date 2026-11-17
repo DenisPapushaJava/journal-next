@@ -103,8 +103,9 @@ public static class WorkflowMapSigning
                         AddResult(Result(uncertain.SourcePath, MapSigningStatus.Skipped, uncertain.Reason + " Уточните файлы через «Отправить в работу…»."));
                 var extension = hans ? ".doc" : ".pdf";
                 var files = selected is not null ? selected[project.Id].Files.Where(f => f.Kind == ShopFileKind.Map).Select(f => f.SourcePath).ToArray() :
-                    hansPlan?.WordMatch is not null ? hansPlan.Files.Where(f => f.Kind == ShopFileKind.Map && !f.Ignored && (f.Suggested || f.ConfirmedProjectLink)).Select(f => f.SourcePath).ToArray() :
-                    Directory.EnumerateFiles(folder).Where(p => Path.GetExtension(p).Equals(extension, StringComparison.OrdinalIgnoreCase) && !Path.GetFileName(p).StartsWith("~$", StringComparison.Ordinal))
+                    hansPlan is not null ? hansPlan.Files.Where(f => f.Kind == ShopFileKind.Map && !f.Ignored &&
+                        (hansPlan.WordMatch is null || f.Suggested || f.ConfirmedProjectLink)).Select(f => f.SourcePath).ToArray() :
+                    ShopFileSystem.CandidateFiles(folder, [extension]).Where(p => !Path.GetFileName(p).StartsWith("~$", StringComparison.Ordinal))
                         .Order(StringComparer.Ordinal).Take(2001).ToArray();
                 if (files.Length > 2000) throw new WorkflowValidationException("В папке слишком много карт. Проверьте путь проекта.");
                 var found = false;
@@ -143,6 +144,8 @@ public static class WorkflowMapSigning
                                 await word.PrepareMatchedAsync(bytes, Path.GetFileName(project.NativePath), text, match with { AllowUnknownOrder = confirmed }, token);
                             if (doc is null)
                             {
+                                if (WorkflowHansShopMaps.IsGnfExport(path))
+                                    throw new WorkflowValidationException("Выгрузите обычную карту DOC для этого листа. В файле Gnf.DOC не найдена подписываемая карта проекта.");
                                 if (selected is not null) throw new WorkflowValidationException("Выбранный DOC не является картой текущего проекта.");
                                 continue;
                             }

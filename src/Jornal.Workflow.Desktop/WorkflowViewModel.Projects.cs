@@ -11,7 +11,7 @@ internal enum ShopFolderAvailability { Checking, Available, NotFound, Unavailabl
 
 public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, string machine, bool isCurrent,
     SpecificationState? saved, bool included = true, bool legacyCalculation = false, bool hasAlternatives = false,
-    bool hasLocalChanges = false) : ObservableObject
+    bool hasLocalChanges = false, bool hasManagerMapAction = false) : ObservableObject
 {
     public CuttingProject Project { get; private set; } = project;
     private WorkflowShopHandoff? _shopHandoff;
@@ -93,6 +93,17 @@ public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, s
         OnPropertyChanged(nameof(CanSignMaps)); OnPropertyChanged(nameof(MapSigningHint));
     }
     public bool CanSignMaps => _mapSigningBlock is null && HasProjectActions && !IsDeleted && Project.Rename is null && Project.NativePath is not null && Project.ImportProfile is "block-html/v1" or "hans-pdf/v1" or "waterjet-awjc/v1";
+    public bool HasManagerMapAction => hasManagerMapAction;
+    private bool _canMergeManagerMaps;
+    private string _managerMapActionCaption = "Объединить карты раскроя";
+    public bool CanMergeManagerMaps => _canMergeManagerMaps;
+    public string ManagerMapActionCaption => _managerMapActionCaption;
+    internal void SetManagerMapAction(int cards, bool pdf)
+    {
+        var export = cards == 1 && pdf;
+        SetProperty(ref _managerMapActionCaption, export ? "Преобразовать карту в PDF" : "Объединить карты раскроя", nameof(ManagerMapActionCaption));
+        SetProperty(ref _canMergeManagerMaps, cards > 1 || export, nameof(CanMergeManagerMaps));
+    }
     public string MapSigningHint => _mapSigningBlock ?? (CanSignMaps ? Project.ImportProfile == "hans-pdf/v1" ?
         "Подписать DOC-карты проекта через установленный Microsoft Word в фоне" : Project.ImportProfile == "waterjet-awjc/v1" ?
         "Подписать PDF-карты AWJC в графе «НОМЕР ЗАКАЗА»" : "Подписать все PDF-карты проекта в графе «Комментарий»" :
@@ -292,11 +303,13 @@ public partial class WorkflowViewModel
                 foreach (var project in order.Projects.Where(p => p.IsDeleted == ShowTrashedProjects).OrderBy(p => order.Items.Single(i => i.Id == p.ItemId).Number).ThenBy(p => p.Variant))
                 {
                     var item = order.Items.Single(i => i.Id == project.ItemId);
-                    Projects.Add(new(project, item.Number, _workspace.Machines.SingleOrDefault(m => m.Id == project.MachineId)?.Name ??
+                    var machine = _workspace.Machines.SingleOrDefault(m => m.Id == project.MachineId);
+                    Projects.Add(new(project, item.Number, machine?.Name ??
                         order.Specifications.SingleOrDefault(s => s.Id == project.Id)?.Current.Parameters.Machine ?? "Станок удалён",
                         !project.IsDeleted && item.CurrentProjectId == project.Id, order.Specifications.SingleOrDefault(s => s.Id == project.Id)?.Current, item.IsIncluded,
                         hasAlternatives: order.ActiveProjects.Count(p => p.ItemId == project.ItemId) > 1,
-                        hasLocalChanges: Drafts.SingleOrDefault(d => d.Id == project.Id)?.IsDirty == true));
+                        hasLocalChanges: Drafts.SingleOrDefault(d => d.Id == project.Id)?.IsDirty == true,
+                        hasManagerMapAction: machine is not null && WorkflowManagerMapBundle.Supports(project, machine)));
                 }
                 if (!ShowTrashedProjects)
                     foreach (var draft in Drafts.Where(d => !order.Projects.Any(p => p.Id == d.Id)))

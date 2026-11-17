@@ -118,6 +118,21 @@
                 </Grid>
                 <TextBlock Text="Для нового текста письма. Сохраняется на этом компьютере." Classes="muted" TextWrapping="Wrap" />
                 <TextBlock Text="{Binding ResultPriceError}" IsVisible="{Binding HasResultPriceError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
+                <TextBlock Text="Объединенные карты HansLaser." />
+                <StackPanel Orientation="Horizontal" Spacing="16">
+                  <RadioButton x:Name="ManagerMapsDoc" Content="Word (.DOC)" GroupName="ManagerMapsFormat" IsChecked="{Binding ManagerMapsDoc}" />
+                  <RadioButton x:Name="ManagerMapsPdf" Content="PDF" GroupName="ManagerMapsFormat" IsChecked="{Binding ManagerMapsPdf}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+            <Border Classes="workflow-settings-group">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Передача в цех" FontWeight="SemiBold" FontSize="15" />
+                <CheckBox x:Name="CombineHansMaps" Content="Объединять карты раскроя HansLaser" IsChecked="{Binding CombineHansMaps}" />
+                <StackPanel Orientation="Horizontal" Spacing="16" Margin="24,0,0,0" IsEnabled="{Binding CombineHansMaps}">
+                  <RadioButton x:Name="HansMapsDoc" Content="Word (.DOC)" GroupName="HansMapsFormat" IsChecked="{Binding HansMapsDoc}" />
+                  <RadioButton x:Name="HansMapsPdf" Content="PDF" GroupName="HansMapsFormat" IsChecked="{Binding HansMapsPdf}" />
+                </StackPanel>
               </StackPanel>
             </Border>
           </StackPanel>
@@ -157,7 +172,7 @@
                 </Grid>
                 <TextBlock Text="Путь на этом компьютере. Файлы копируются после проверки через «Отправить в работу…» в карточке заявки."
                            Classes="muted" TextWrapping="Wrap" />
-                <TextBlock Text="Станок → менеджер → БЛЦБ и заказчик → полное имя проекта + БЛЦБ" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                <TextBlock Text="Папка станка → менеджер → БЛЦБ и заказчик → полное имя проекта + БЛЦБ" Classes="muted" FontSize="12" TextWrapping="Wrap" />
                 <TextBlock Text="Пример по сохранённой заявке" FontWeight="SemiBold" FontSize="12" />
                 <TextBox x:Name="WorkflowShopFolderPreview" Text="{Binding ShopFolderPreview, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
                          MinHeight="56" MaxHeight="100" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -189,7 +204,7 @@
         <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
         <Grid ColumnDefinitions="*,12,Auto,8,Auto">
           <TextBlock Text="{Binding Status}" IsVisible="{Binding HasStatus}" TextWrapping="Wrap" VerticalAlignment="Center" />
-          <ui:JournalButton x:Name="SaveWorkflowSettings" Grid.Column="2" Label="{Binding SaveLabel}" IsVisible="{Binding IsSaveVisible}" Classes="primary" Command="{Binding SaveCommand}" />
+          <ui:JournalButton x:Name="SaveWorkflowSettings" Grid.Column="2" Label="Сохранить" IsVisible="{Binding IsSaveVisible}" Classes="primary" Command="{Binding SaveCommand}" />
           <ui:JournalButton x:Name="CloseWorkflowSettings" Grid.Column="4" Label="{Binding CloseLabel}" Click="OnClose" IsEnabled="{Binding CanClose}" />
         </Grid>
       </StackPanel>

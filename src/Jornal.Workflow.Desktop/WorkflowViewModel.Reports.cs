@@ -120,17 +120,18 @@ public partial class WorkflowViewModel
                         var files = new List<ReportFileSnapshot>(); var state = "Отчётов пока нет";
                         try
                         {
-                            var paths = Directory.EnumerateFiles(folder).Where(path => WorkflowReportFiles.IsReport(path, project.ImportProfile)).Take(101).ToArray();
-                            if (paths.Length > 100) state = "В папке больше 100 отчётов. Уточните папку проекта.";
-                            else foreach (var path in paths)
+                            var candidates = WorkflowReportFiles.ListReports(folder, project.ImportProfile).Take(101).ToArray();
+                            if (candidates.Length > 100) state = "В папке больше 100 отчётов. Уточните папку проекта.";
+                            else foreach (var candidate in candidates)
                             {
+                                var path = candidate.Path;
                                 token.ThrowIfCancellationRequested();
                                 try
                                 {
                                     if (totalBytes + new FileInfo(path).Length > 128 * 1024 * 1024)
                                     { state = "Подбор больше 128 МБ. Обновляйте проекты меньшими наборами."; break; }
-                                    var file = await WorkflowReportFiles.ReadAsync(path, token);
-                                    files.Add(file); totalBytes += file.Bytes.LongLength;
+                                    if (await WorkflowReportFiles.ReadAsync(candidate, token) is { } file)
+                                    { files.Add(file); totalBytes += file.Bytes.LongLength; }
                                 }
                                 catch (DocumentRejectedException ex) when (project.ImportProfile == WaterjetPdfSpecificationParser.Profile &&
                                     ex.Reason == DocumentRejection.UnrecognizedSpecification &&

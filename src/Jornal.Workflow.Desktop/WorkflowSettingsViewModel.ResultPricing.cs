@@ -8,6 +8,34 @@ public partial class WorkflowSettingsViewModel
 {
     private WorkflowResultPricing _resultPricing = new();
     private bool _loadingResultPricing;
+    private bool _managerMapsAsPdf;
+    private bool _originalManagerMapsAsPdf;
+    private bool HasManagerMapFormatChanges => _managerMapsAsPdf != _originalManagerMapsAsPdf;
+    public bool ManagerMapsDoc
+    {
+        get => !_managerMapsAsPdf;
+        set { if (value) SetManagerMapFormat(false); }
+    }
+    public bool ManagerMapsPdf
+    {
+        get => _managerMapsAsPdf;
+        set { if (value) SetManagerMapFormat(true); }
+    }
+    private void SetManagerMapFormat(bool asPdf)
+    {
+        if (_managerMapsAsPdf == asPdf) return;
+        _managerMapsAsPdf = asPdf;
+        OnPropertyChanged(nameof(ManagerMapsDoc)); OnPropertyChanged(nameof(ManagerMapsPdf)); InputChanged();
+    }
+    private async Task SaveManagerMapFormatAsync(CancellationToken token)
+    {
+        Error = await Journal.SaveManagerMapFormatAsync(_managerMapsAsPdf, token);
+        if (Error is not null) return;
+        _originalManagerMapsAsPdf = _managerMapsAsPdf;
+        Changed();
+        const string message = "Формат карт для менеджера сохранён.";
+        Status = Status is null ? message : Status + " " + message;
+    }
     [ObservableProperty] private bool _useResultMinimum;
     [ObservableProperty] private string _resultMinimumText = "500";
     [ObservableProperty] private string? _resultPriceError;

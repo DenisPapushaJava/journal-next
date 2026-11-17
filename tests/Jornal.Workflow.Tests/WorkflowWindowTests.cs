@@ -146,7 +146,11 @@ public sealed class WorkflowWindowTests
             editor.SelectedMachine = editor.Machines.Single(m => m.Id == id);
             window.Show(); Dispatcher.UIThread.RunJobs();
             editor.SelectedMachine.Name = "Гидроабразив № 1";
+            var shopFolder = window.FindControl<TextBox>("WorkflowMachineShopFolder")!;
+            shopFolder.Text = "ГАР";
+            Assert.Equal("ГАР", editor.SelectedMachine.ShopFolderName);
             await editor.SaveCommand.ExecuteAsync(null); Assert.Null(editor.Error); Assert.False(editor.HasChanges);
+            Assert.Equal("ГАР", editor.SelectedMachine!.ShopFolderName);
             Assert.Same(before, model.SelectedDraft); Assert.Equal("Гидроабразив № 1", before.Machine); Assert.Equal(id, before.MachineId);
             Assert.False(model.HasPendingEdits); Assert.Equal("ГАР", saved.Parameters.Machine); Assert.Equal(6050, before.Quote!.TotalCost);
             Assert.NotNull(model.SelectedDraft?.Saved);

@@ -435,12 +435,14 @@
                               ToolTip.Tip="Действия с проектом" AutomationProperties.Name="Действия с проектом" IsVisible="{Binding HasProjectActions}">
                         <TextBlock Text="⋮" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
                         <Button.Flyout>
-                          <MenuFlyout>
+                          <MenuFlyout Opened="OnProjectActionsOpened">
                             <MenuItem Header="{Binding EditCaption}" IsEnabled="{Binding CanEdit}" IsVisible="{Binding IsActive}" Click="OnEditProject" />
                             <MenuItem Header="Создать другой вариант…" IsVisible="{Binding IsActive}" IsEnabled="{Binding CanTrash}" Click="OnRedoProject" />
                             <MenuItem Header="Использовать в итоге" IsVisible="{Binding CanChooseForTotal}" Click="OnSelectProjectForTotal" />
                             <MenuItem Header="История расчёта…" IsEnabled="{Binding CanViewHistory}" Click="OnCalculationHistory" />
                             <MenuItem Header="Подписать карты раскроя" IsVisible="{Binding IsActive}" IsEnabled="{Binding CanSignMaps}" ToolTip.Tip="{Binding MapSigningHint}" ToolTip.ShowOnDisabled="True" Click="OnSignProjectMaps" />
+                            <MenuItem Header="{Binding ManagerMapActionCaption}" IsVisible="{Binding HasManagerMapAction}" IsEnabled="{Binding CanMergeManagerMaps}"
+                                      ToolTip.Tip="Подготовить файл для менеджера рядом с проектом" Click="OnMergeManagerMaps" />
                             <MenuItem Header="Убрать в корзину…" IsVisible="{Binding IsActive}" IsEnabled="{Binding CanTrash}" Click="OnTrashProject" />
                             <MenuItem Header="Восстановить проект" IsVisible="{Binding IsDeleted}" Click="OnRestoreProject" />
                           </MenuFlyout>
@@ -464,8 +466,8 @@
                       <TextBlock Text="Расчёт" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
                       <TextBlock Grid.Column="2" DataContext="{Binding SelectedDraft}" x:DataType="vm:SpecificationDraft" Text="{Binding ProjectSummary}"
                                  FontSize="12" Classes="muted" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ProjectSummary}" VerticalAlignment="Center" />
-                      <ui:JournalButton x:Name="OpenAcceptedWorkflowReport" Grid.Column="4" Label="Открыть спецификацию" Click="OnOpenAcceptedReport"
-                                        IsEnabled="{Binding HasAcceptedReport}" VerticalAlignment="Center" />
+                      <ui:JournalButton x:Name="OpenWorkflowSpecification" Grid.Column="4" Label="Открыть спецификацию" Click="OnOpenSpecification"
+                                        IsEnabled="{Binding CanOpenSpecificationSource}" VerticalAlignment="Center" />
                     </Grid>
                     <ScrollViewer x:Name="WorkflowCalculationFields" Grid.Row="2" VerticalScrollBarVisibility="Auto">
                       <StackPanel Spacing="6" DataContext="{Binding SelectedDraft}" x:DataType="vm:SpecificationDraft">
@@ -648,7 +650,13 @@
       </Grid>
     </Grid>
     <Grid x:Name="WorkflowStatusBar" Grid.Row="4" Margin="20,0" MinHeight="24" RowDefinitions="24,Auto" ColumnDefinitions="*,12,*">
-      <TextBlock IsVisible="{Binding !ShowShopTransferNotice}" Text="{Binding PriceSourceDescription}" Classes="muted" VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip.Tip="Тарифы загружаются вручную через Станки и цены → Импорт цен из прежней БД. Заявки нового журнала хранятся отдельно." />
+      <Grid IsVisible="{Binding !ShowShopTransferNotice}" ColumnDefinitions="*,Auto">
+        <TextBlock IsVisible="{Binding !HasManagerMapsNotice}" Text="{Binding PriceSourceDescription}" Classes="muted" VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip.Tip="Тарифы загружаются вручную через Станки и цены → Импорт цен из прежней БД. Заявки нового журнала хранятся отдельно." />
+        <TextBlock IsVisible="{Binding HasManagerMapsNotice}" Text="{Binding ManagerMapsNotice}" Classes="muted" VerticalAlignment="Center" FontSize="12"
+                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ManagerMapsNotice}" AutomationProperties.LiveSetting="Polite" />
+        <Button x:Name="CancelWorkflowManagerMaps" Grid.Column="1" Content="Отменить" Classes="progress-link" Margin="8,0,0,0"
+                IsVisible="{Binding IsPreparingManagerMaps}" AutomationProperties.Name="Отменить сборку карт для менеджера" Click="OnCancelManagerMaps" />
+      </Grid>
       <Grid Grid.Column="2" IsVisible="{Binding !ShowShopTransferNotice}" ColumnDefinitions="56,8,Auto,6,*,8,Auto">
         <ProgressBar x:Name="WorkflowBusyProgress" IsIndeterminate="True" IsVisible="{Binding IsBusy}" Height="3" VerticalAlignment="Center" />
         <TextBlock Grid.Column="2" Text="{Binding MapSigningStatusIcon}" Classes="map-status" Classes.problem="{Binding HasMapSigningProblems}"

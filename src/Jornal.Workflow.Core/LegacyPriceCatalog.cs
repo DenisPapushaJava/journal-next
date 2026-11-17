@@ -6,6 +6,12 @@ public sealed record WorkflowMachine(string Name, string? ImportProfile)
     public string? LegacyKey { get; init; }
     public string? LegacyName { get; init; }
     public string? ProjectExtension { get; init; }
+    public string? ShopFolderName { get; init; }
+    public void ValidateShopFolderName()
+    {
+        if (ShopFolderName is { } name && !WorkflowWindowsFolderName.IsValid(name))
+            throw new WorkflowValidationException($"«{Name}»: укажите одно допустимое имя папки Windows, без полного пути, или оставьте поле пустым.");
+    }
     public static bool SupportsProfile(string? profile) => profile is null or "block-html/v1" or "hans-pdf/v1" or "waterjet-awjc/v1";
     public static WorkflowMachine[] Defaults() => new[]
     {

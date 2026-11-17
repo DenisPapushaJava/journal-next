@@ -79,6 +79,7 @@ public partial class WorkflowViewModel
             _reportReview = null; _reportImportOrderId = null;
             ResetCuttingTask(); _bendingFolderFailures = null;
             _cards.Clear(); SelectedOrder = null; _connection = new(candidate, saved.EmployeeId); _workspace = workspace;
+            CancelManagerMapJobs();
             _localPreferences = saved; _hasLoadedOrders = true; RecordListedSnapshot(workspace);
             _refreshing = true;
             try { Search = ""; FilterDate = null; ResetQuickOrderFilterValues(); } finally { _refreshing = false; }

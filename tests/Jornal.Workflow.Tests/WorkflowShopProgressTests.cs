@@ -269,14 +269,17 @@ public sealed class WorkflowShopProgressTests
         public bool Fail { get; init; }
         public int Calls { get; private set; }
         public string? LastCaption { get; private set; }
+        private readonly ShopWordEditor _word = new();
         public async Task<WordMapEdit?> PrepareAsync(byte[] source, string projectFileName, string caption, CancellationToken token)
         {
             Calls++; LastCaption = caption;
             Entered.TrySetResult(); await Release.Task; // Ignore cancellation until released: the UI must wait, never kill user processes.
             token.ThrowIfCancellationRequested();
             if (Fail) throw new WordMapUnavailableException("Microsoft Word недоступен. Карта не изменена.");
-            return await new ShopWordEditor().PrepareAsync(source, projectFileName, caption, token);
+            return await _word.PrepareAsync(source, projectFileName, caption, token);
         }
+        public Task BuildBundleAsync(string folder, string[] sourceNames, ShopMapBundle format, CancellationToken token, WordMapMatch? managerProject = null) =>
+            _word.BuildBundleAsync(folder, sourceNames, format, token, managerProject);
     }
     private sealed class ImmediateEditor(Func<WordMapEdit?> prepare) : IWorkflowWordMapEditor
     {

@@ -40,6 +40,62 @@ internal sealed class ShopFixture : IDisposable
 public sealed class WorkflowShopTransferTests
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task PairedHansGnfDoesNotParticipateInSigningOrAutomaticCopy()
+    {
+        using var fixture = new ShopFixture("HansLaser");
+        var alternate = Path.Combine(fixture.Source, "карта.Gnf.DOC");
+        await File.WriteAllTextAsync(alternate, "alternate layout", Token);
+        var plan = Assert.Single(await fixture.Discover());
+        Assert.False(plan.NeedsReview);
+        var standard = Assert.Single(plan.Files, f => f.Kind == ShopFileKind.Map);
+        Assert.Equal("Карта.DOC", standard.Name);
+
+        var word = new ShopWordEditor();
+        var signing = Assert.Single(await WorkflowMapSigning.SignAsync(fixture.Order, fixture.Book, fixture.Project.Id,
+            _ => Task.CompletedTask, Token, word));
+        Assert.Equal(MapSigningStatus.Signed, signing.Status);
+        Assert.Equal(1, word.Calls);
+
+        plan = Assert.Single(await fixture.Discover());
+        await File.WriteAllTextAsync(alternate, "updated alternate layout", Token);
+        Assert.True(Assert.Single(await fixture.Copy(new(plan, plan.Files, false, null))).Success);
+        Assert.True(File.Exists(Path.Combine(plan.Destination, standard.Name)));
+        Assert.False(File.Exists(Path.Combine(plan.Destination, Path.GetFileName(alternate))));
+        Assert.Equal("updated alternate layout", await File.ReadAllTextAsync(alternate, Token));
+    }
+
+    [Fact]
+    public async Task UnpairedHansGnfStaysInThePicker()
+    {
+        using var fixture = new ShopFixture("HansLaser");
+        var alternate = Path.Combine(fixture.Source, "Другой лист.Gnf.DOC");
+        await File.WriteAllTextAsync(alternate, "different sheet", Token);
+        var plan = Assert.Single(await fixture.Discover());
+        Assert.Contains(plan.Files, f => f.Name == Path.GetFileName(alternate));
+        Assert.Equal(2, plan.Files.Count(f => f.Kind == ShopFileKind.Map));
+    }
+
+    [Theory]
+    [InlineData(ShopMapBundle.Doc, new string[] { "10mm-(St-3_0)-4.DOC", "10mm-(St-3_0)-1.DOC", "10mm-(St-3_0)-3.DOC", "10mm-(St-3_0)-2.DOC" }, "10mm-(St-3_0)-1-4.doc")]
+    [InlineData(ShopMapBundle.Pdf, new string[] { "10mm-(St-3_0)-10.DOC", "10mm-(St-3_0)-1.DOC", "10mm-(St-3_0)-3.DOC" }, "10mm-(St-3_0)-1,3,10.pdf")]
+    [InlineData(ShopMapBundle.Pdf, new string[] { "25mm-List-01.DOC", "25mm-LIST-02.DOC" }, "25mm-List-01-02.pdf")]
+    [InlineData(ShopMapBundle.Pdf, new string[] { "Карта раскроя.DOC" }, "Карта раскроя.pdf")]
+    [InlineData(ShopMapBundle.Doc, new string[] { "10mm-1.DOC", "20mm-2.DOC" }, "Карты раскроев.doc")]
+    [InlineData(ShopMapBundle.Pdf, new string[] { "10mm-1.DOC", "10mm-01.DOC" }, "Карты раскроев.pdf")]
+    [InlineData(ShopMapBundle.Pdf, new string[] { "Лист 1.DOC", "Лист 2.DOC" }, "Карты раскроев.pdf")]
+    public void MapBundleNameRepresentsTheSourceSheets(ShopMapBundle format, string[] sourceNames, string expected) =>
+        Assert.Equal(expected, WorkflowShopTransfer.BundleFileName(format, sourceNames));
+
+    [Fact]
+    public void TooLongMapBundleNameUsesTheFallback()
+    {
+        var prefix = new string('a', 249);
+        Assert.Equal("Карты раскроев.pdf", WorkflowShopTransfer.BundleFileName(ShopMapBundle.Pdf,
+            [prefix + "-1.DOC", prefix + "-3.DOC"]));
+    }
+
     [Fact]
     public async Task CopiesOnlyChosenFilesAndWholeCanonicalBendingWithoutChangingSources()
     {

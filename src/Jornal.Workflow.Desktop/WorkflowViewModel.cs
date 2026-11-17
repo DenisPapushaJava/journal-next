@@ -104,7 +104,9 @@ public partial class WorkflowViewModel : ObservableObject
     public bool IsJournal => _openOrderId is null;
     public bool IsOrderOpen => _openOrderId is not null;
     public bool HasSelectedDraft => SelectedDraft is not null;
-    public bool HasAcceptedReport => SelectedDraft?.Saved?.Report is not null;
+    internal string? SpecificationSourcePath => SelectedDraft?.Saved?.SourcePath is { } path &&
+        Path.IsPathFullyQualified(path) && WorkflowReportFiles.IsReport(path) ? path : null;
+    public bool CanOpenSpecificationSource => SpecificationSourcePath is not null;
     public bool CanUse => !IsBusy && !_readingDatabase && !_savingProjectInclusion && !Updates.IsApplying;
     public bool CanBrowseWorkspace => (!IsBusy || _savingProjectInclusion) && !Updates.IsApplying;
     public bool HasPendingEdits => HasCurrentCardEdits || HasPendingReportEdits || _workspace.Orders.Any(o => o.HasProjectRename) ||
@@ -450,7 +452,7 @@ public partial class WorkflowViewModel : ObservableObject
             try { SelectedProject = row; } finally { _refreshingProjects = false; }
         }
         NotifyProjectCalculation();
-        OnPropertyChanged(nameof(HasAcceptedReport)); OnPropertyChanged(nameof(HasPendingEdits)); OnPropertyChanged(nameof(HasSelectedDraft)); NotifyActionAvailability();
+        OnPropertyChanged(nameof(CanOpenSpecificationSource)); OnPropertyChanged(nameof(HasPendingEdits)); OnPropertyChanged(nameof(HasSelectedDraft)); NotifyActionAvailability();
     }
     private void DraftChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -480,6 +482,7 @@ public partial class WorkflowViewModel : ObservableObject
         Orders.FirstOrDefault(r => r.Order.ManagerId == id)?.Manager ?? Orders.FirstOrDefault(r => r.Order.TechnologistId == id)?.Technologist ?? "Сотрудник недоступен";
     private void NotifyOrder()
     {
+        NotifyManagerMapsNotice();
         NotifyProjectHandoffs();
         NotifyNavigation();
         NotifyResultState();
@@ -511,7 +514,7 @@ public partial class WorkflowViewModel : ObservableObject
         }
         finally { IsBusy = false; NotifyDatabase(); }
     }
-    public void Detach() { _cuttingTaskDetached = true; StopShopFolderChecks(); ResetShopTransfer(); _copiedCuttingTask = null; _cuttingTaskPreview = null; _bendingFolderFailures = null; CancelDatabaseSearch(); _reportReview = null; if (SelectedDraft is { } draft) draft.PropertyChanged -= DraftChanged; NotifyMapSigning(); }
+    public void Detach() { _cuttingTaskDetached = true; CancelManagerMapJobs(); StopShopFolderChecks(); ResetShopTransfer(); _copiedCuttingTask = null; _cuttingTaskPreview = null; _bendingFolderFailures = null; CancelDatabaseSearch(); _reportReview = null; if (SelectedDraft is { } draft) draft.PropertyChanged -= DraftChanged; NotifyMapSigning(); }
     public WorkflowRestartDraft CreateRestartDraft()
     {
         CaptureCard();

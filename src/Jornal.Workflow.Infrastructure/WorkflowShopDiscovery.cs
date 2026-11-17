@@ -39,7 +39,7 @@ public static class WorkflowShopDiscovery
 
     internal static async Task<ShopProjectFiles> DiscoverProjectAsync(CuttingProject project, WorkflowMachine machine,
         string destination, bool hasBending, CancellationToken token, IWorkflowWordMapEditor? word = null,
-        Dictionary<string, WordMapReference[]?>? hansCache = null, IProgress<WorkflowShopProgress>? progress = null)
+        Dictionary<string, WordMapReference[]?>? hansCache = null, IProgress<WorkflowShopProgress>? progress = null, bool mapsOnly = false)
     {
         var rule = MachineRule(machine);
         if (project.NativePath is null || !Path.IsPathFullyQualified(project.NativePath))
@@ -53,10 +53,11 @@ public static class WorkflowShopDiscovery
                 throw new WorkflowValidationException("Рабочая папка и папка задания не должны находиться друг внутри друга.");
             var programExtension = rule switch { Rule.Laser => ".cnc", Rule.Hans => ".gnc", _ => ".nc" };
             var mapExtension = rule == Rule.Hans ? ".doc" : ".pdf";
-            var extensions = new[] { programExtension, mapExtension };
+            var extensions = mapsOnly ? new[] { mapExtension } : new[] { programExtension, mapExtension };
             var files = new List<ShopFile>();
-            var candidates = Directory.EnumerateFiles(folder).Where(f => ShopFileSystem.IsCandidate(f, extensions)).Take(2001).ToArray();
+            var candidates = ShopFileSystem.CandidateFiles(folder, extensions).Take(2001).ToArray();
             if (candidates.Length > 2000) throw new WorkflowValidationException("Слишком много кандидатов в одной рабочей папке. Проверьте путь проекта.");
+            if (rule == Rule.Hans) candidates = WorkflowHansShopMaps.WithoutPairedGnf(candidates);
             foreach (var file in candidates.Order(StringComparer.Ordinal))
             {
                 token.ThrowIfCancellationRequested();
