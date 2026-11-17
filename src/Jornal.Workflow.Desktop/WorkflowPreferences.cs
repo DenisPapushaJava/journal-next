@@ -13,6 +13,9 @@ public sealed record WorkflowPreferences(bool DarkTheme = false)
     public WorkflowResultPricing? ResultPricing { get; init; }
     public ResultTextStyle? ResultFormatting { get; init; }
     public string? ShopRoot { get; init; }
+    public bool CombineHansMaps { get; init; } = true;
+    public bool HansMapsAsPdf { get; init; }
+    public bool ManagerMapsAsPdf { get; init; }
     public uint ShopHandoffColorArgb { get; init; } = 0xFF80FFFF;
     public string? DatabasePath { get; init; }
     public Guid? DatabaseId { get; init; }

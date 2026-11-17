@@ -55,7 +55,9 @@ public sealed class WorkflowShopAutomationWindowTests
             await WorkflowTestWindows.AcknowledgeShopProgressAsync(window);
             Assert.True(model.AllPrepared); Assert.True(model.TextCopied); Assert.Null(model.Error); Assert.Empty(window.OwnedWindows); Assert.Equal(1, window.CopyCount);
             Assert.Contains("9337", window.Copied); var row = Assert.Single(model.Projects);
-            Assert.True(File.Exists(Path.Combine(row.Destination, "Дополнительная.Gnf.DOC"))); Assert.Equal(project.Name + " БЛЦБ-009337", Path.GetFileName(row.Destination));
+            Assert.True(File.Exists(Path.Combine(row.Destination, "Карты раскроев.doc")));
+            Assert.False(File.Exists(Path.Combine(row.Destination, "Дополнительная.Gnf.DOC")));
+            Assert.Equal(project.Name + " БЛЦБ-009337", Path.GetFileName(row.Destination));
             var file = Path.Combine(row.Destination, "Произвольное имя.GNC"); var before = File.GetLastWriteTimeUtc(file);
             var shopButton = window.FindControl<DataGrid>("WorkflowProjectsGrid")!.GetVisualDescendants().OfType<Button>()
                 .Single(b => AutomationProperties.GetName(b) == "Открыть папку задания в цехе");
@@ -78,6 +80,90 @@ public sealed class WorkflowShopAutomationWindowTests
             Assert.Empty(log.Errors);
         }
         finally { foreach (var child in window.OwnedWindows.ToArray()) child.Close(); WorkflowTestWindows.Close(window); }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(true, true, 1, "Карта с незаполненными полями.pdf", false)]
+    [InlineData(true, true, 2, "Карты раскроев.pdf", false)]
+    [InlineData(true, false, 2, "10mm-(St-3_0)-1-2.doc", true)]
+    [InlineData(true, false, 1, null, false)]
+    [InlineData(false, true, 2, null, false)]
+    public async Task HansTransferUsesTheSavedFormatAndWritesTheSameBundleToBothFolders(
+        bool combine, bool pdf, int mapCount, string? bundleName, bool numberedMaps)
+    {
+        var word = new ShopWordEditor();
+        using var f = new ProjectFixture(wordMapEditor: word);
+        var project = await ReadyHans(f);
+        var source = Path.GetDirectoryName(project.NativePath!)!;
+        var extra = Path.Combine(source, "Дополнительная.Gnf.DOC");
+        if (mapCount == 1) File.Delete(extra);
+        if (numberedMaps)
+        {
+            File.Move(Path.Combine(source, "Карта с незаполненными полями.DOC"), Path.Combine(source, "10mm-(St-3_0)-1.DOC"));
+            var numberedExtra = Path.Combine(source, "10mm-(St-3_0)-2.DOC");
+            File.Move(extra, numberedExtra);
+            extra = numberedExtra;
+        }
+        using var settings = f.Model.CreateGeneralSettings();
+        settings.CombineHansMaps = combine;
+        settings.HansMapsPdf = pdf;
+        await settings.SaveCommand.ExecuteAsync(null);
+        Assert.Null(settings.Error);
+
+        var count = 0;
+        Task Copy(string _) { count++; return Task.CompletedTask; }
+        var first = Assert.IsType<WorkflowShopTransferViewModel>(await f.Model.PrepareShopTransferAsync(Copy));
+        Assert.True(first.AllPrepared, first.Error);
+        var destination = Assert.Single(first.Projects).Destination;
+        var outputFolder = Path.Combine(source, "Карты раскроев");
+        if (bundleName is null)
+        {
+            Assert.Equal(mapCount, Directory.GetFiles(destination, "*.DOC").Length);
+            Assert.False(Directory.Exists(outputFolder));
+        }
+        else
+        {
+            var local = Path.Combine(outputFolder, bundleName);
+            var published = Path.Combine(destination, bundleName);
+            var bytes = await File.ReadAllBytesAsync(local, Token);
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(published, Token));
+            Assert.Contains("--TEST-SIGNATURE--", System.Text.Encoding.UTF8.GetString(bytes));
+            Assert.False(File.Exists(Path.Combine(destination, Path.GetFileName(extra))));
+            File.Delete(local);
+            var repeat = Assert.IsType<WorkflowShopTransferViewModel>(await f.Model.PrepareShopTransferAsync(Copy));
+            Assert.True(repeat.AllPrepared, repeat.Error);
+            Assert.Equal(2, count);
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(local, Token));
+            if (mapCount == 2 && pdf)
+            {
+                settings.HansMapsDoc = true;
+                await settings.SaveCommand.ExecuteAsync(null);
+                Assert.Null(settings.Error);
+                var replacement = Assert.IsType<WorkflowShopTransferViewModel>(await f.Model.PrepareShopTransferAsync(Copy));
+                Assert.True(replacement.ShowReplacement);
+                Assert.False(replacement.CanCopy);
+                Assert.Equal(2, count);
+                Assert.Equal(bytes, await File.ReadAllBytesAsync(published, Token));
+            }
+        }
+        Assert.Equal(bundleName is null ? 0 : 1, word.BundleCalls);
+        Assert.True(File.Exists(Path.Combine(destination, "Произвольное имя.GNC")));
+        Assert.Equal(mapCount, Directory.GetFiles(source, "*.DOC").Length);
+    }
+
+    [AvaloniaFact]
+    public async Task HansBundleFailureDoesNotPublishFilesOrConfirmHandoff()
+    {
+        var word = new ShopWordEditor { FailBundle = true };
+        using var f = new ProjectFixture(wordMapEditor: word);
+        var project = await ReadyHans(f);
+        var transfer = Assert.IsType<WorkflowShopTransferViewModel>(
+            await f.Model.PrepareShopTransferAsync(_ => throw new InvalidOperationException("Must not copy")));
+        Assert.False(transfer.AllPrepared);
+        Assert.Contains("Word не смог объединить", transfer.Error);
+        Assert.False(Directory.Exists(Assert.Single(transfer.Projects).Destination));
+        Assert.False(Directory.Exists(Path.Combine(Path.GetDirectoryName(project.NativePath!)!, "Карты раскроев")));
+        Assert.Null(Assert.Single((await f.Store.ReadAsync(Token)).Orders).ShopHandoff);
     }
 
     [AvaloniaFact]

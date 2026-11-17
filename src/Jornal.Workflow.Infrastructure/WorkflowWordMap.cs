@@ -7,7 +7,7 @@ using Jornal.Workflow.Core;
 namespace Jornal.Workflow.Infrastructure;
 
 [SupportedOSPlatform("windows")]
-internal static class WorkflowWordMap
+internal static partial class WorkflowWordMap
 {
     private sealed class ComScope : IDisposable
     {
@@ -57,6 +57,8 @@ internal static class WorkflowWordMap
             word.Visible = false; word.DisplayAlerts = 0; word.ScreenUpdating = false;
             word.AutomationSecurity = 3; // msoAutomationSecurityForceDisable; DisplayAlerts does not disable macros.
             options = scope.Keep(word.Options); updateLinks = options.UpdateLinksAtOpen; options.UpdateLinksAtOpen = false;
+            if (request.Bundle != ShopMapBundle.Separate)
+                return BuildBundle(folder, request, (object)documents);
             document = Open(documents, Path.Combine(folder, "input.doc"), scope);
             if (request.InspectOnly)
                 return new(false, false, 0, 0, References: WorkflowWordMapRules.References(ReadCells(document, scope).Tables));

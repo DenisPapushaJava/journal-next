@@ -7,6 +7,31 @@ internal sealed record HansShopSelection(ShopFile[] Files, WordMapMatch? Match, 
 
 internal static class WorkflowHansShopMaps
 {
+    private const string GnfExtension = ".gnf.doc";
+    internal static bool IsGnfExport(string path) => path.EndsWith(GnfExtension, StringComparison.OrdinalIgnoreCase);
+
+    internal static string[] WithoutPairedGnf(string[] candidates)
+    {
+        var pairs = FindGnfPairs(candidates);
+        return pairs.Count == 0 ? candidates : candidates.Where(path => !pairs.ContainsKey(path)).ToArray();
+    }
+
+    internal static Dictionary<string, string> FindGnfPairs(string[] candidates)
+    {
+        var pairs = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (!candidates.Any(IsGnfExport)) return pairs;
+        var byPath = candidates.ToLookup(path => path, ShopFileSystem.PathComparer);
+        foreach (var group in byPath.Where(group => IsGnfExport(group.Key)))
+        {
+            if (group.Count() != 1) continue;
+            var path = group.Single();
+            var pair = byPath[path[..^GnfExtension.Length] + ".doc"];
+            if (pair.Count() == 1 && MayHaveContent(pair.Single(), assumeContentOnError: false))
+                pairs.Add(path, pair.Single());
+        }
+        return pairs;
+    }
+
     internal static async Task<HansShopSelection> SelectAsync(CuttingProject project, ShopFile[] files, string[] nativeNames,
         IWorkflowWordMapEditor? word, Dictionary<string, WordMapReference[]?> cache, CancellationToken token, Action<string>? inspecting = null)
     {
@@ -132,9 +157,9 @@ internal static class WorkflowHansShopMaps
         }
         return new(files.Select(f => result[f.Name]).ToArray(), match, aliases.Count > 1 ? proof.ToArray() : null);
     }
-    private static bool MayHaveContent(string path)
+    private static bool MayHaveContent(string path, bool assumeContentOnError = true)
     {
         try { return new FileInfo(path).Length > 0; }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return true; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return assumeContentOnError; }
     }
 }

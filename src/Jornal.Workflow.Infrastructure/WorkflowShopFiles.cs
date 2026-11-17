@@ -22,7 +22,11 @@ public sealed record ShopProjectFiles(CuttingProject Project, string Destination
     public ShopTreeFile[]? NativeProof { get; init; }
     public bool NeedsReview => ReviewReason is not null || Files.Any(f => !f.IsReadable || !f.Suggested && !f.Ignored);
 }
-public sealed record ShopTransferSelection(ShopProjectFiles Project, ShopFile[] Files, bool Reviewed, string? DestinationRevision);
+public enum ShopMapBundle { Separate, Doc, Pdf }
+public sealed record ShopTransferSelection(ShopProjectFiles Project, ShopFile[] Files, bool Reviewed, string? DestinationRevision)
+{
+    public ShopMapBundle MapBundle { get; init; }
+}
 
 // Explicit user operations only. No background scans, source markers or database writes.
 internal static class ShopFileSystem
@@ -31,8 +35,27 @@ internal static class ShopFileSystem
         .Where(p => extensions.Contains(Path.GetExtension(p), StringComparer.OrdinalIgnoreCase)).Select(Path.GetFileName).Cast<string>().Order(StringComparer.Ordinal).ToArray();
     internal static bool IsCandidate(string path, string[] extensions) => extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase) &&
         !(Path.GetExtension(path).Equals(".doc", StringComparison.OrdinalIgnoreCase) && Path.GetFileName(path).StartsWith("~$", StringComparison.Ordinal));
-    internal static string[] CandidateNames(string folder, string[] extensions) => Directory.EnumerateFiles(folder).Where(p => IsCandidate(p, extensions))
-        .Select(Path.GetFileName).Cast<string>().Order(StringComparer.Ordinal).ToArray();
+    internal static IEnumerable<string> SourceFiles(string folder)
+    {
+        var generated = ManagerMapMarkers(folder);
+        var files = Directory.EnumerateFiles(folder);
+        return generated is null ? files : files.Where(p => !generated.Contains(Path.GetFileName(p)));
+    }
+    internal static HashSet<string>? ManagerMapMarkers(string folder)
+    {
+        var markers = Path.Combine(folder, WorkflowManagerMapBundle.MarkerFolder);
+        if (!Directory.Exists(markers)) return null;
+        RequireOrdinaryPath(markers);
+        return Directory.EnumerateFiles(markers).Select(Path.GetFileName).Cast<string>().ToHashSet(PathComparer);
+    }
+    internal static IEnumerable<string> CandidateFiles(string folder, string[] extensions) =>
+        SourceFiles(folder).Where(p => IsCandidate(p, extensions));
+    internal static string[] CandidateNames(string folder, string[] extensions, bool hans = false)
+    {
+        var candidates = CandidateFiles(folder, extensions).ToArray();
+        if (hans) candidates = WorkflowHansShopMaps.WithoutPairedGnf(candidates);
+        return candidates.Select(Path.GetFileName).Cast<string>().Order(StringComparer.Ordinal).ToArray();
+    }
     internal static readonly StringComparer PathComparer = StringComparer.OrdinalIgnoreCase;
     internal static bool Under(string path, string root) => PathComparer.Equals(Path.GetFullPath(path), Path.GetFullPath(root)) ||
         Path.GetFullPath(path).StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);

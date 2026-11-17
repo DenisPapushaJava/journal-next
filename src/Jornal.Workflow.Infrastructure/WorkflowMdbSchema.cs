@@ -23,7 +23,7 @@ public sealed record WorkflowMdbForeignKey(string Name, string Table, string[] C
 public static class WorkflowMdbSchema
 {
     public const string ProductId = "DenisPapusha.JournalWorkflow";
-    public const int Version = 5;
+    public const int Version = 6;
     private static WorkflowMdbColumn C(string name, string? path, WorkflowMdbType type, bool required = true, int size = 255) => new(name, path, type, required, size);
     private static WorkflowMdbColumn Id() => C("id", "Id", WorkflowMdbType.Guid);
     private static WorkflowMdbColumn Owner(string name) => C(name, null, WorkflowMdbType.Guid);
@@ -42,7 +42,8 @@ public static class WorkflowMdbSchema
         new("customers", [Id(), C("display_name","Name",WorkflowMdbType.Text)]),
         new("machines", [Id(), C("display_name","Name",WorkflowMdbType.Text), C("import_profile","ImportProfile",WorkflowMdbType.Text,false,64),
             C("legacy_key","LegacyKey",WorkflowMdbType.Text,false), C("legacy_name","LegacyName",WorkflowMdbType.Text,false),
-            C("project_extension","ProjectExtension",WorkflowMdbType.Text,false,12)]),
+            C("project_extension","ProjectExtension",WorkflowMdbType.Text,false,12),
+            C("shop_folder_name","ShopFolderName",WorkflowMdbType.Text,false)]),
         new("cutting_rates", [Id(), C("machine_id","MachineId",WorkflowMdbType.Guid), C("machine_name","Machine",WorkflowMdbType.Text),
             C("material_group","MaterialGroup",WorkflowMdbType.Text,size:80), C("thickness_mm","ThicknessMm",WorkflowMdbType.Decimal),
             C("price_per_meter","PricePerMeter",WorkflowMdbType.Decimal), C("price_per_pierce","PricePerPierce",WorkflowMdbType.Decimal,false)]),
@@ -86,7 +87,9 @@ public static class WorkflowMdbSchema
         else if (from == 2) yield return "ALTER TABLE [order_shop_handoffs] ADD COLUMN [content_hash] TEXT(64)";
         if (from < 4)
             foreach (var sql in CreateSql().Where(sql => sql.Contains("[project_shop_handoffs]", StringComparison.Ordinal) && !sql.Contains("[project_shop_handoff_inputs]", StringComparison.Ordinal))) yield return sql;
-        foreach (var sql in CreateSql().Where(sql => sql.Contains("[project_shop_handoff_inputs]", StringComparison.Ordinal))) yield return sql;
+        if (from < 5)
+            foreach (var sql in CreateSql().Where(sql => sql.Contains("[project_shop_handoff_inputs]", StringComparison.Ordinal))) yield return sql;
+        yield return "ALTER TABLE [machines] ADD COLUMN [shop_folder_name] TEXT(255)";
     }
 
     private static WorkflowMdbColumn[] SpecificationColumns()

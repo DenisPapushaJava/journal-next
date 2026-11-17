@@ -56,10 +56,9 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     public bool HasRootChanges => ProjectRoot != _originalRoot;
     public bool HasProfileChanges => ProfileName != _originalProfile.Name || ProfileColorArgb != _originalProfile.ColorArgb ||
         (!_employees.Any(e => e.Id == _originalProfile.EmployeeId) && !string.IsNullOrWhiteSpace(ProfileName));
-    public bool HasChanges => HasRootChanges || HasProfileChanges || HasShopRootChanges;
+    public bool HasChanges => HasRootChanges || HasProfileChanges || HasShopRootChanges || HasHansMapChanges || HasManagerMapFormatChanges;
     public bool CanEdit => !IsBusy && !IsExporting && !Updates.IsApplying;
     public string CloseLabel => HasChanges ? "Отмена" : "Закрыть";
-    public string SaveLabel => IsProfile ? "Сохранить профиль" : "Сохранить";
     public bool IsSaveVisible => IsProfile || IsStorage;
     public bool IsProfile => SelectedSectionIndex == 0;
     public bool IsStorage => SelectedSectionIndex == 1;
@@ -107,7 +106,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
         catch (OperationCanceledException) { Status = "Операция отменена. Обновите журнал перед повтором."; }
         finally { IsBusy = false; }
     }
-    private bool CanSave => CanEdit && (IsProfile ? HasProfileChanges : IsStorage && (HasRootChanges || HasShopRootChanges));
+    private bool CanSave => CanEdit && (IsProfile ? HasProfileChanges || HasHansMapChanges || HasManagerMapFormatChanges : IsStorage && (HasRootChanges || HasShopRootChanges));
 
     public WorkflowSettingsViewModel(string workspacePath, Func<WorkflowWorkspace> snapshot,
         Func<string?, string?, CancellationToken, Task<string?>> saveRoot, Func<WorkflowProfileDraft> profile,
@@ -118,7 +117,9 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
         _snapshot = snapshot; _saveRoot = saveRoot; _profile = profile; _saveProfile = saveProfile;
         _suggestions = suggestions; _saveSuggestions = saveSuggestions;
         Journal = journal; Updates.PropertyChanged += OnUpdatesChanged; Journal.PropertyChanged += OnJournalAvailabilityChanged;
-        _originalProfile = profile(); ReloadRoot(); ReloadProfile(); ReloadShopRoot(); ReloadResultPricing();
+        _originalProfile = profile(); ReloadRoot(); ReloadProfile(); ReloadShopRoot(); ReloadHansMaps(); ReloadResultPricing();
+        _originalManagerMapsAsPdf = _managerMapsAsPdf = Journal.ManagerMapsAsPdf;
+        Changed();
     }
     private void ReloadRoot()
     {
@@ -144,7 +145,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     partial void OnSelectedSectionIndexChanged(int value)
     {
         NormalizeResultPriceInput();
-        foreach (var name in new[] { nameof(SaveLabel), nameof(IsSaveVisible), nameof(IsProfile), nameof(IsStorage), nameof(IsUpdates), nameof(IsDiagnostics), nameof(IsAbout), nameof(SectionTitle) }) OnPropertyChanged(name);
+        foreach (var name in new[] { nameof(IsSaveVisible), nameof(IsProfile), nameof(IsStorage), nameof(IsUpdates), nameof(IsDiagnostics), nameof(IsAbout), nameof(SectionTitle) }) OnPropertyChanged(name);
         SaveCommand.NotifyCanExecuteChanged(); Error = null; Status = null;
     }
     private void InputChanged() { if (!_loading) { Status = null; Error = null; Changed(); } }
@@ -188,14 +189,20 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanSave))]
     private async Task SaveAsync(CancellationToken token)
     {
-        IsBusy = true; Error = null;
+        IsBusy = true; Error = null; Status = null;
         try
         {
             if (IsProfile)
             {
-                var matches = _employees.Where(e => e.Name.Equals(ProfileName?.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray();
-                Error = await _saveProfile(matches.Length == 1 ? matches[0] : null, new(_originalProfile.EmployeeId, ProfileName, ProfileColorArgb), token);
-                if (Error is null) { ReloadProfile(); Status = "Цвет сохранён в БД. Технолог выбран на этом компьютере."; }
+                if (HasProfileChanges)
+                {
+                    var matches = _employees.Where(e => e.Name.Equals(ProfileName?.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray();
+                    Error = await _saveProfile(matches.Length == 1 ? matches[0] : null, new(_originalProfile.EmployeeId, ProfileName, ProfileColorArgb), token);
+                    if (Error is not null) return;
+                    ReloadProfile(); Status = "Цвет сохранён в БД. Технолог выбран на этом компьютере.";
+                }
+                if (HasHansMapChanges) await SaveHansMapsAsync(token);
+                if (Error is null && HasManagerMapFormatChanges) await SaveManagerMapFormatAsync(token);
             }
             else if (IsStorage)
             {

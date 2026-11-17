@@ -238,18 +238,31 @@ public partial class WorkflowWindow : Window
             if (IsVisible && ReferenceEquals(Model?.SelectedProject, project)) WorkflowProjectsGrid.ScrollIntoView(project, null);
         }, DispatcherPriority.Loaded);
     }
-    private async void OnOpenAcceptedReport(object? sender, RoutedEventArgs e)
+    private async void OnOpenSpecification(object? sender, RoutedEventArgs e)
     {
-        if (Model is not { CanUse: true, SelectedDraft.Saved.Report: { } report } model) return;
+        if (Model is not { CanUse: true, SpecificationSourcePath: { } path } model) return;
+        var token = _lifetime.Token;
+        model.Error = null;
         try
         {
-            await Task.Run(() => WorkflowReportFiles.VerifyArchiveAsync(report, _lifetime.Token), _lifetime.Token);
-            if (IsVisible && !await LaunchAcceptedReportAsync(report.ArchivePath))
-                model.Error = "Не удалось открыть принятую спецификацию.";
+            // The file may have been replaced since calculation. Open the current source.
+            var attributes = await Task.Run(() => File.GetAttributes(path), token);
+            if (attributes.HasFlag(FileAttributes.Directory)) throw new FileNotFoundException();
+            if (!token.IsCancellationRequested && IsVisible && model.SpecificationSourcePath == path &&
+                !await LaunchSpecificationAsync(path))
+                model.Error = "Не удалось открыть рабочую спецификацию. Проверьте приложение для PDF или HTML.";
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is not OutOfMemoryException)
-        { if (IsVisible) model.Error = ex is WorkflowValidationException ? ex.Message : "Принятая копия отчёта недоступна."; }
+        {
+            if (!IsVisible || token.IsCancellationRequested || model.SpecificationSourcePath != path) return;
+            model.Error = ex switch
+            {
+                FileNotFoundException or DirectoryNotFoundException => "Рабочая спецификация не найдена. Проверьте файл в папке проекта.",
+                UnauthorizedAccessException or IOException => "Рабочая спецификация недоступна. Проверьте доступ к папке проекта.",
+                _ => "Не удалось открыть рабочую спецификацию. Проверьте приложение для PDF или HTML."
+            };
+        }
     }
-    protected virtual Task<bool> LaunchAcceptedReportAsync(string path) => Launcher.LaunchFileInfoAsync(new FileInfo(path));
+    protected virtual Task<bool> LaunchSpecificationAsync(string path) => Launcher.LaunchFileInfoAsync(new FileInfo(path));
 }

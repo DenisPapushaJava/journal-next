@@ -5,13 +5,22 @@ using Jornal.Workflow.Core;
 
 namespace Jornal.Workflow.Infrastructure;
 
-public sealed record ShopTransferResult(Guid ProjectId, bool Success, bool Unchanged, string Message, string? DestinationRevision);
-public sealed record ShopDestinationInspection(string? Revision, ShopTree? Contents);
+public sealed record ShopTransferResult(Guid ProjectId, bool Success, bool Unchanged, string Message, string? DestinationRevision)
+{
+    public string? BundleKey { get; init; }
+}
+public sealed record ShopDestinationInspection(string? Revision, ShopTree? Contents)
+{
+    public string? BundleKey { get; init; }
+}
 
-public static class WorkflowShopTransfer
+public static partial class WorkflowShopTransfer
 {
     private const string ReceiptName = ".journal-next-task.json";
-    private sealed record Receipt(int Schema, string SourceId, Guid OrderId, Guid ProjectId, ShopTree Contents);
+    private sealed record Receipt(int Schema, string SourceId, Guid OrderId, Guid ProjectId, ShopTree Contents)
+    {
+        public string? BundleKey { get; init; }
+    }
     private sealed record Target(string Revision, Receipt Receipt);
 
     public static async Task<string?> DestinationRevisionAsync(ShopProjectFiles project, string sourceId, Guid orderId, CancellationToken token = default) =>
@@ -21,9 +30,11 @@ public static class WorkflowShopTransfer
         IProgress<WorkflowShopProgress>? details = null)
     {
         var target = await ReadTargetAsync(project, sourceId, orderId, token, details);
-        return new(target?.Revision, target?.Receipt.Contents);
+        return new(target?.Revision, target?.Receipt.Contents) { BundleKey = target?.Receipt.BundleKey };
     }
-    public static bool MatchesDestination(ShopTransferSelection selection, ShopTree contents) => ShopFileSystem.SameTree(DesiredTree(selection), contents);
+    public static bool MatchesDestination(ShopTransferSelection selection, ShopTree contents, string? receiptBundleKey = null) =>
+        BundleKey(selection, out _) is { } key ? key == receiptBundleKey :
+        receiptBundleKey is null && ShopFileSystem.SameTree(DesiredTree(selection), contents);
     public static async Task<bool> HasOwnedDestinationAsync(ShopProjectFiles project, string sourceId, Guid orderId, CancellationToken token = default) =>
         await ReadReceiptAsync(project, sourceId, orderId, token) is not null;
 
@@ -120,7 +131,7 @@ public static class WorkflowShopTransfer
             {
                 var target = await ReadTargetAsync(selection.Project, sourceId, orderId, token, details, stage);
                 if (target?.Revision != selection.DestinationRevision) throw new WorkflowValidationException("Папка задания изменилась после подбора. Обновите подбор.");
-                if (target is not null && !MatchesDestination(selection, target.Receipt.Contents) && !allowReplacement)
+                if (target is not null && !MatchesDestination(selection, target.Receipt.Contents, target.Receipt.BundleKey) && !allowReplacement)
                     throw new WorkflowValidationException("Комплект уже передавался и теперь изменился. Подтвердите замену после проверки файлов.");
                 await VerifySourcesAsync(selection, token, word, details, stage);
             }
@@ -171,10 +182,18 @@ public static class WorkflowShopTransfer
         await using var lease = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var target = await ReadTargetAsync(project, sourceId, orderId, token, details, WorkflowShopStage.Copying);
         if (target?.Revision != selection.DestinationRevision) throw new WorkflowValidationException("Папка задания изменилась после предпросмотра. Обновите подбор.");
-        var tree = DesiredTree(selection);
+        var bundleKey = BundleKey(selection, out var bundleName);
         await VerifySourcesAsync(selection, token, word, details, WorkflowShopStage.Copying);
-        if (target is not null && ShopFileSystem.SameTree(target.Receipt.Contents, tree))
-            return new(project.Project.Id, true, true, "Комплект уже подготовлен, изменений нет", target.Revision);
+        if (target is not null && MatchesDestination(selection, target.Receipt.Contents, target.Receipt.BundleKey))
+        {
+            if (bundleName is not null)
+            {
+                var file = target.Receipt.Contents.Files.SingleOrDefault(f => f.RelativePath == bundleName)
+                    ?? throw new WorkflowValidationException("В ранее переданном комплекте отсутствует объединённая карта. Проверьте папку цеха.");
+                await SaveProjectBundleAsync(project.Project, Path.Combine(destination, file.RelativePath), file, token);
+            }
+            return new(project.Project.Id, true, true, "Комплект уже подготовлен, изменений нет", target.Revision) { BundleKey = bundleKey };
+        }
         if (target is not null && !allowReplacement)
             throw new WorkflowValidationException("Комплект изменился. Разрешите замену ранее подготовленных комплектов и повторите.");
         details?.Report(new(WorkflowShopStage.Copying, project.Project.Name, Activity: "Создаём папки комплекта"));
@@ -184,9 +203,22 @@ public static class WorkflowShopTransfer
         Directory.CreateDirectory(stage);
         try
         {
+            var tree = DesiredTree(selection);
+            ShopTreeFile? bundle = null;
+            var bundledMapCount = 0;
+            if (bundleName is not null)
+            {
+                details?.Report(new(WorkflowShopStage.Copying, project.Project.Name, bundleName, Activity: "Готовим файл карт раскроя HansLaser"));
+                bundle = await BuildMapBundleAsync(selection.Files.Where(f => f.Kind == ShopFileKind.Map), selection.MapBundle,
+                    Path.Combine(stage, bundleName), word, token);
+                var mapNames = selection.Files.Where(f => f.Kind == ShopFileKind.Map).Select(f => f.Name).ToHashSet(ShopFileSystem.PathComparer);
+                bundledMapCount = mapNames.Count;
+                tree = tree with { Files = [.. tree.Files.Where(f => !mapNames.Contains(f.RelativePath)), bundle] };
+            }
             foreach (var directory in tree.Directories) Directory.CreateDirectory(Path.Combine(stage, directory));
             foreach (var file in tree.Files)
             {
+                if (file == bundle) { completed += bundledMapCount; continue; }
                 token.ThrowIfCancellationRequested();
                 var source = file.RelativePath.StartsWith("ГИБКА" + Path.DirectorySeparatorChar, StringComparison.Ordinal) ?
                     Path.Combine(Path.GetDirectoryName(project.Project.NativePath!)!, file.RelativePath) : selection.Files.Single(f => f.Name == file.RelativePath).SourcePath;
@@ -196,7 +228,7 @@ public static class WorkflowShopTransfer
                 completed++;
                 details?.Report(new(WorkflowShopStage.Copying, project.Project.Name, file.RelativePath, completed, total, "Файл скопирован и проверен"));
             }
-            var receipt = JsonSerializer.SerializeToUtf8Bytes(new Receipt(1, sourceId, orderId, project.Project.Id, tree));
+            var receipt = JsonSerializer.SerializeToUtf8Bytes(new Receipt(1, sourceId, orderId, project.Project.Id, tree) { BundleKey = bundleKey });
             if (receipt.Length > 8 * 1024 * 1024) throw new WorkflowValidationException("Состав комплекта слишком большой для служебной записи. Готовая папка не изменена.");
             await File.WriteAllBytesAsync(Path.Combine(stage, ReceiptName), receipt, token);
             WorkflowServiceFiles.TryHide(Path.Combine(stage, ReceiptName));
@@ -208,6 +240,8 @@ public static class WorkflowShopTransfer
             await validateOrder(token);
             if ((await ReadTargetAsync(project, sourceId, orderId, token, details, WorkflowShopStage.Verifying))?.Revision != target?.Revision)
                 throw new WorkflowValidationException("Папка задания изменилась во время подготовки. Обновите подбор.");
+            if (bundle is not null)
+                await SaveProjectBundleAsync(project.Project, Path.Combine(stage, bundle.RelativePath), bundle, token);
             ShopFileSystem.RequireOrdinaryPath(destination); token.ThrowIfCancellationRequested();
             // No cancellation between moves: finish promotion or restore the previous complete folder.
             if (target is not null) Directory.Move(destination, backup);
@@ -232,7 +266,9 @@ public static class WorkflowShopTransfer
                 { warning = "Предыдущая копия сохранена: " + backup; }
                 if (warning is not null) WorkflowServiceFiles.TryHide(backup);
             }
-            return new(project.Project.Id, true, false, warning is null ? "Файлы подготовлены" : "Файлы подготовлены. " + warning, Convert.ToHexString(SHA256.HashData(receipt)));
+            var message = bundle is null ? "Файлы подготовлены" : "Файлы подготовлены · " + bundle.RelativePath;
+            return new(project.Project.Id, true, false, warning is null ? message : message + ". " + warning, Convert.ToHexString(SHA256.HashData(receipt)))
+                { BundleKey = bundleKey };
         }
         finally
         {
@@ -257,8 +293,9 @@ public static class WorkflowShopTransfer
         IProgress<WorkflowShopProgress>? details = null, WorkflowShopStage stage = WorkflowShopStage.Checking)
     {
         var folder = Path.GetDirectoryName(selection.Project.Project.NativePath!)!;
+        var hans = selection.Project.Machine is { } selectedMachine && WorkflowShopDiscovery.MachineRule(selectedMachine) == WorkflowShopDiscovery.Rule.Hans;
         var changed = selection.Project.CandidateExtensions is { } extensions &&
-            !ShopFileSystem.CandidateNames(folder, extensions).SequenceEqual(selection.Project.Files.Select(f => f.Name).Order(StringComparer.Ordinal));
+            !ShopFileSystem.CandidateNames(folder, extensions, hans).SequenceEqual(selection.Project.Files.Select(f => f.Name).Order(StringComparer.Ordinal));
         changed |= selection.Project.NativeNames is { } names &&
             !ShopFileSystem.Names(folder, Path.GetExtension(selection.Project.Project.NativePath!)).SequenceEqual(names);
         if (selection.Project.NativeProof is { } proof)

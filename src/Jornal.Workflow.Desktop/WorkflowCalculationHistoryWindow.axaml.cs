@@ -16,8 +16,8 @@ public partial class WorkflowCalculationHistoryWindow : Window
         try
         {
             if (!WorkflowReportFiles.IsReport(report.ArchivePath)) throw new InvalidDataException();
-            await Task.Run(() => WorkflowReportFiles.VerifyArchiveAsync(report));
-            if (IsVisible && !await LaunchReportAsync(report.ArchivePath)) model.Error = "Не удалось открыть сохранённую спецификацию. Проверьте приложение для HTML/PDF.";
+            var path = await Task.Run(() => WorkflowReportFiles.PrepareArchiveForOpeningAsync(report));
+            if (IsVisible && !await LaunchReportAsync(path)) model.Error = "Не удалось открыть сохранённую спецификацию. Проверьте приложение для HTML/PDF.";
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         { if (IsVisible) model.Error = "Сохранённая спецификация недоступна или повреждена. Текущий расчёт не изменён."; }

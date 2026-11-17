@@ -23,7 +23,7 @@
       </Grid>
       <Grid Grid.Column="2" RowDefinitions="Auto,12,Auto,8,*,12,Auto,8,Auto">
         <Border Classes="panel" Padding="12" DataContext="{Binding SelectedMachine}" x:DataType="vm:WorkflowMachineEditor">
-          <Grid ColumnDefinitions="*,12,*,12,110" RowDefinitions="Auto,4,Auto">
+          <Grid ColumnDefinitions="*,12,*,12,110" RowDefinitions="Auto,4,Auto,10,Auto,4,Auto">
             <TextBlock Text="Название станка" Classes="muted" /><TextBlock Grid.Column="2" Text="Импорт спецификаций" Classes="muted" />
             <TextBox x:Name="WorkflowMachineName" Grid.Row="2" Text="{Binding Name}" MaxLength="255" />
             <ComboBox Grid.Row="2" Grid.Column="2" ItemsSource="{x:Static vm:WorkflowImportOption.All}" SelectedItem="{Binding Import}" HorizontalAlignment="Stretch">
@@ -31,6 +31,11 @@
             </ComboBox>
             <TextBlock Grid.Column="4" Text="Файл проекта" Classes="muted" />
             <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding ProjectExtension}" MaxLength="12" />
+            <TextBlock Grid.Row="4" Text="Папка станка в цехе" Classes="muted" />
+            <TextBox x:Name="WorkflowMachineShopFolder" Grid.Row="6" Text="{Binding ShopFolderName}" MaxLength="255" PlaceholderText="По названию станка"
+                     AutomationProperties.Name="Папка станка в цехе" />
+            <TextBlock Grid.Row="6" Grid.Column="2" Grid.ColumnSpan="3" Text="У нескольких станков может быть общая папка."
+                       Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center" />
           </Grid>
         </Border>
         <Grid Grid.Row="2" ColumnDefinitions="*,8,Auto,8,Auto">

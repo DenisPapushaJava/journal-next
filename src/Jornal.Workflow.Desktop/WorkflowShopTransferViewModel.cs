@@ -26,7 +26,9 @@ public partial class WorkflowShopProjectChoice : ObservableObject
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasDestination))] private string? _destinationRevision;
     public bool HasDestination => DestinationRevision is not null;
     private ShopTree? _destinationContents;
-    public bool RequiresReplacement => _destinationContents is not null && !WorkflowShopTransfer.MatchesDestination(Selection, _destinationContents);
+    private string? _destinationBundleKey;
+    private readonly ShopMapBundle _mapBundle;
+    public bool RequiresReplacement => _destinationContents is not null && !WorkflowShopTransfer.MatchesDestination(Selection, _destinationContents, _destinationBundleKey);
     public string? Problem { get; }
     public bool HasBending => Plan.Bending is not null;
     public string SelectionHelp => Problem is not null ? "" : Plan.ReviewReason ?? (Files.Length == 0 ?
@@ -42,19 +44,25 @@ public partial class WorkflowShopProjectChoice : ObservableObject
     public bool CanCopy => Problem is null && (!RequiresReview || Reviewed) && Files.Any(f => f.IsSelected && f.File.Kind == ShopFileKind.Program) &&
         Files.Any(f => f.IsSelected && f.File.Kind == ShopFileKind.Map) && !Files.Any(f => f.IsSelected && (!f.File.IsReadable || f.File.Length == 0));
     public string Summary => Result ?? Problem ?? (CanCopy ? "Комплект выбран" : "Проверьте УП и карты");
-    public ShopTransferSelection Selection => new(Plan, Files.Where(f => f.IsSelected).Select(f => f.File).ToArray(), Reviewed, DestinationRevision);
-    public WorkflowShopProjectChoice(ShopProjectFiles plan, string? revision, string? problem)
+    public ShopTransferSelection Selection => new(Plan, Files.Where(f => f.IsSelected).Select(f => f.File).ToArray(), Reviewed, DestinationRevision)
+        { MapBundle = _mapBundle };
+    public WorkflowShopProjectChoice(ShopProjectFiles plan, string? revision, string? problem, ShopMapBundle mapBundle = ShopMapBundle.Separate)
     {
         Plan = plan; DestinationRevision = revision; Problem = problem ?? plan.Problem;
+        _mapBundle = plan.Machine?.ImportProfile == "hans-pdf/v1" ? mapBundle : ShopMapBundle.Separate;
         Files = plan.Files.Select(f => new WorkflowShopFileChoice(f)).ToArray();
         foreach (var file in Files) file.PropertyChanged += (_, e) =>
         { if (e.PropertyName == nameof(WorkflowShopFileChoice.IsSelected)) { Reviewed = false; Result = null; Changed(); } };
     }
     public void SetDestination(ShopDestinationInspection inspection)
-    { _destinationContents = inspection.Contents; DestinationRevision = inspection.Revision; Changed(); }
+    { _destinationContents = inspection.Contents; _destinationBundleKey = inspection.BundleKey; DestinationRevision = inspection.Revision; Changed(); }
     public void ApplyResult(ShopTransferResult result)
     {
-        if (result.Success) _destinationContents = WorkflowShopTransfer.DesiredTree(Selection);
+        if (result.Success)
+        {
+            _destinationContents = WorkflowShopTransfer.DesiredTree(Selection);
+            _destinationBundleKey = result.BundleKey;
+        }
         DestinationRevision = result.DestinationRevision; Result = result.Message; Changed();
     }
     internal void ApplySignedFiles(IReadOnlyDictionary<string, ShopFile> files)
@@ -72,7 +80,7 @@ public partial class WorkflowShopProjectChoice : ObservableObject
 public partial class WorkflowShopTransferViewModel(string root, string sourceId, WorkflowOrder order, WorkflowWorkspace workspace,
     Func<CancellationToken, Task> validateOrder, Func<string, Task> clipboard, Action<ShopTransferResult[]>? transferred = null,
     Func<DateTimeOffset, CancellationToken, Task>? recordHandoff = null, IWorkflowWordMapEditor? wordMapEditor = null,
-    Func<Guid[], DateTimeOffset, CancellationToken, Task>? recordProjects = null) : ObservableObject
+    Func<Guid[], DateTimeOffset, CancellationToken, Task>? recordProjects = null, ShopMapBundle mapBundle = ShopMapBundle.Separate) : ObservableObject
 {
     private CancellationTokenSource? _operation;
     private DateTimeOffset? _preparedAt;
@@ -144,7 +152,7 @@ public partial class WorkflowShopTransferViewModel(string root, string sourceId,
                 ShopDestinationInspection inspection = new(null, null); string? problem = null;
                 try { inspection = await Task.Run(() => WorkflowShopTransfer.InspectDestinationAsync(plan, sourceId, order.Id, operation.Token, progress), operation.Token); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or WorkflowValidationException) { problem = Describe(ex); }
-                var row = new WorkflowShopProjectChoice(plan, inspection.Revision, problem); row.SetDestination(inspection); rows.Add(row);
+                var row = new WorkflowShopProjectChoice(plan, inspection.Revision, problem, mapBundle); row.SetDestination(inspection); rows.Add(row);
             }
             foreach (var row in rows) { row.PropertyChanged += (_, _) => { AllPrepared = false; TextCopied = false; Notify(); }; Projects.Add(row); }
             SelectedProject = Projects.FirstOrDefault(p => !p.CanCopy || p.RequiresReplacement) ?? Projects.FirstOrDefault();

@@ -9,6 +9,51 @@ public sealed class WorkflowShopFolderSettingsTests
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
+    [Fact]
+    public async Task DifferentMachinesCanShareTheSameShopFolderAndKeepSeparateProjectNames()
+    {
+        using var f = new ProjectFixture();
+        await f.InitializeAsync();
+        var unimach = await f.AddAsync("Лазер");
+        var hans = await f.AddAsync("HansLaser");
+        f.Model.Blcb = "005072";
+        await f.Model.SaveHeaderCommand.ExecuteAsync(null);
+
+        var catalog = f.Model.CreateCatalogSettings();
+        foreach (var id in new[] { unimach.MachineId, hans.MachineId })
+            catalog.Machines.Single(m => m.Id == id).ShopFolderName = " Unimach&HL ";
+        await catalog.SaveCommand.ExecuteAsync(null);
+        Assert.Null(catalog.Error);
+
+        var book = await f.Store.ReadAsync(Token);
+        var order = Assert.Single(book.Orders);
+        var machineRow = WorkflowMdbMapping.Flatten(book)["machines"][hans.MachineId];
+        Assert.Equal("Unimach&HL", WorkflowMdbMapping.Read<WorkflowMachine>(machineRow).ShopFolderName);
+        var root = Path.Combine(f.DirectoryPath, "shop");
+        var paths = WorkflowShopFolderPaths.Plan(root, order, book.Employees, book.Customers, book.Machines);
+        var manager = book.Employees.Single(e => e.Id == order.ManagerId).Name;
+        var customer = book.Customers.Single(c => c.Id == order.CustomerId).Name;
+        var shared = Path.Combine(root, "Unimach&HL", manager, "БЛЦБ-005072 " + customer);
+        Assert.Equal([Path.Combine(shared, unimach.Name + " БЛЦБ-005072"), Path.Combine(shared, hans.Name + " БЛЦБ-005072")],
+            paths.Select(p => p.Path));
+        Assert.Equal(paths[1], WorkflowShopFolderPaths.ForProject(root, order, hans.Id, book.Employees, book.Customers, book.Machines));
+        Assert.False(Directory.Exists(root));
+
+        var hansEditor = catalog.Machines.Single(m => m.Id == hans.MachineId);
+        hansEditor.ShopFolderName = @"Станки\HansLaser";
+        await catalog.SaveCommand.ExecuteAsync(null);
+        Assert.Contains("одно допустимое имя", catalog.Error);
+        Assert.Equal(book.Version, (await f.Store.ReadAsync(Token)).Version);
+
+        hansEditor.ShopFolderName = "";
+        await catalog.SaveCommand.ExecuteAsync(null);
+        Assert.Null(catalog.Error);
+        book = await f.Store.ReadAsync(Token);
+        Assert.Null(book.Machines.Single(m => m.Id == hans.MachineId).ShopFolderName);
+        paths = WorkflowShopFolderPaths.Plan(root, Assert.Single(book.Orders), book.Employees, book.Customers, book.Machines);
+        Assert.Equal(Path.Combine(root, "HansLaser", manager, "БЛЦБ-005072 " + customer, hans.Name + " БЛЦБ-005072"), paths[1].Path);
+    }
+
     [Theory]
     [InlineData("005072")] [InlineData("БЛЦБ-005072")] [InlineData("блцб-005072")] [InlineData("12345678901234567890")]
     public async Task FullNumberAndEstablishedProjectNameArePreservedWithoutFilesystemAccess(string blcb)

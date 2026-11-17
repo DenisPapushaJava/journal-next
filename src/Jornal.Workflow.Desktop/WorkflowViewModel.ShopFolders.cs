@@ -13,6 +13,7 @@ public partial class WorkflowViewModel
     private readonly SemaphoreSlim _shopFolderReadGate = new(1, 1);
     private bool _shopFolderChecksDetached;
     public string? ShopRoot => _localPreferences.ShopRoot;
+    internal (bool Combine, bool AsPdf) HansMapPreferences => (_localPreferences.CombineHansMaps, _localPreferences.HansMapsAsPdf);
     internal async Task<string?> ShopFolderToOpenAsync(WorkflowProjectRow row, CancellationToken token)
     {
         if (!CanUse || !Projects.Contains(row) || !row.CanOpenShopFolder || row.ShopFolderPath is not { } path || CurrentOrder is not { } order) return null;
@@ -152,6 +153,32 @@ public partial class WorkflowViewModel
         {
             return ex is WorkflowValidationException or InvalidOperationException ? ex.Message :
                 "Не удалось сохранить папку цеха на этом компьютере. Проверьте путь и доступ к локальным настройкам. Ваш ввод сохранён.";
+        }
+    }
+
+    internal async Task<string?> SaveHansMapPreferencesAsync((bool Combine, bool AsPdf) expected,
+        (bool Combine, bool AsPdf) desired, CancellationToken token)
+    {
+        if (Updates.IsApplying) return "Дождитесь завершения обновления.";
+        try
+        {
+            var saved = await Task.Run(() => _preferences.Update(current =>
+            {
+                var original = (current.CombineHansMaps, current.HansMapsAsPdf);
+                if (original == desired) return current;
+                if (original != expected)
+                    throw new InvalidOperationException("Формат карт HansLaser изменён в другом окне. Откройте настройки заново и проверьте выбор.");
+                return current with { CombineHansMaps = desired.Combine, HansMapsAsPdf = desired.AsPdf };
+            }), token);
+            var changed = HansMapPreferences != (saved.CombineHansMaps, saved.HansMapsAsPdf);
+            _localPreferences = _localPreferences with { CombineHansMaps = saved.CombineHansMaps, HansMapsAsPdf = saved.HansMapsAsPdf };
+            if (changed) ResetShopTransfer();
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException or InvalidOperationException)
+        {
+            return ex is InvalidOperationException ? ex.Message :
+                "Не удалось сохранить формат карт HansLaser на этом компьютере. Проверьте доступ к локальным настройкам.";
         }
     }
 }

@@ -86,7 +86,8 @@ public sealed class WorkflowPersistentHandoffTests
         Assert.Contains("ALTER TABLE [order_shop_handoffs] ADD COLUMN [content_hash] TEXT(64)", WorkflowMdbSchema.UpgradeSql(2));
         Assert.Contains(WorkflowMdbSchema.UpgradeSql(3), sql => sql.StartsWith("CREATE TABLE [project_shop_handoffs]", StringComparison.Ordinal));
         Assert.Contains(WorkflowMdbSchema.UpgradeSql(4), sql => sql.StartsWith("CREATE TABLE [project_shop_handoff_inputs]", StringComparison.Ordinal));
-        Assert.Empty(WorkflowMdbSchema.UpgradeSql(5));
+        Assert.Equal("ALTER TABLE [machines] ADD COLUMN [shop_folder_name] TEXT(255)", Assert.Single(WorkflowMdbSchema.UpgradeSql(5)));
+        Assert.Empty(WorkflowMdbSchema.UpgradeSql(6));
         Assert.Throws<WorkflowValidationException>(() => WorkflowMdbSchema.UpgradeSql(0).ToArray());
     }
 

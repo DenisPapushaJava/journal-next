@@ -20,16 +20,40 @@ public sealed class WorkflowShopFolderSettingsWindowTests
         using var log = new WorkflowWindowTests.BindingLog();
         using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync("Плазма");
         f.Model.Blcb = "005072"; await f.Model.SaveHeaderCommand.ExecuteAsync(null);
-        var settings = f.Model.CreateGeneralSettings(); settings.SelectedSectionIndex = 1;
+        using var settings = f.Model.CreateGeneralSettings();
         var window = new WorkflowSettingsWindow { DataContext = settings, Width = width, Height = width == 800 ? 580 : 660 };
         try
         {
             f.Model.IsDarkTheme = dark; window.Show(); Pump();
             Assert.Equal(dark ? ThemeVariant.Dark : ThemeVariant.Light, window.ActualThemeVariant);
+            var navigation = window.FindControl<ListBox>("WorkflowSettingsNavigation")!;
+            navigation.SelectedIndex = 1; Pump();
             var root = window.FindControl<TextBox>("WorkflowShopRoot")!;
             var preview = window.FindControl<TextBox>("WorkflowShopFolderPreview")!;
             var save = window.FindControl<Button>("SaveWorkflowSettings")!;
+            var combine = window.FindControl<CheckBox>("CombineHansMaps")!;
+            var word = window.FindControl<RadioButton>("HansMapsDoc")!;
+            var pdf = window.FindControl<RadioButton>("HansMapsPdf")!;
+            Assert.False(combine.IsEffectivelyVisible);
             root.Text = Path.Combine(f.DirectoryPath, "Принтер на складе"); Pump();
+            navigation.SelectedIndex = 0; Pump();
+            Assert.True(combine.IsEffectivelyVisible); Assert.False(root.IsEffectivelyVisible);
+            pdf.BringIntoView(); Pump();
+            InWindow(combine, window); InWindow(pdf, window);
+            Assert.False(save.IsEffectivelyEnabled);
+            Assert.True(combine.IsChecked); Assert.True(word.IsChecked); Assert.False(pdf.IsChecked);
+            pdf.IsChecked = true; Pump();
+            Assert.False(word.IsChecked); Assert.True(settings.HansMapsPdf);
+            combine.IsChecked = false; Pump();
+            Assert.False(word.IsEffectivelyEnabled); Assert.False(pdf.IsEffectivelyEnabled);
+            Assert.True(pdf.IsChecked);
+            Assert.True(save.IsEffectivelyEnabled);
+            var version = (await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Version;
+            await settings.SaveCommand.ExecuteAsync(null); Pump();
+            Assert.Null(settings.Error); Assert.Null(f.Model.ShopRoot);
+            Assert.True(settings.HasShopRootChanges); Assert.False(save.IsEffectivelyEnabled);
+            Assert.Equal(version, (await f.Store.ReadAsync(TestContext.Current.CancellationToken)).Version);
+            navigation.SelectedIndex = 1; Pump();
             root.BringIntoView(); Pump();
             Assert.True(preview.IsReadOnly); Assert.Equal(settings.ShopFolderPreview, preview.Text);
             Assert.Contains(project.Name, preview.Text); Assert.Contains("БЛЦБ-005072", preview.Text);
@@ -42,6 +66,8 @@ public sealed class WorkflowShopFolderSettingsWindowTests
             Assert.Null(f.Model.ShopRoot); Assert.False(Directory.Exists(settings.ShopRoot));
             await settings.SaveCommand.ExecuteAsync(null); Pump(); Assert.Null(settings.Error); Assert.False(settings.HasChanges);
             Assert.Equal(settings.ShopRoot, f.Model.ShopRoot); Assert.False(Directory.Exists(settings.ShopRoot));
+            using var reopened = f.Model.CreateGeneralSettings();
+            Assert.False(reopened.CombineHansMaps); Assert.True(reopened.HansMapsPdf);
             Assert.True(settings.CanRestart); Assert.Empty(log.Errors);
             Frame(window, $"shop-path-saved-{width}-{dark}");
         }

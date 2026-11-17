@@ -7,6 +7,8 @@ using Avalonia.Logging;
 using Avalonia.Threading;
 using Jornal.Desktop.Controls;
 using Jornal.Workflow.Desktop;
+using Jornal.Workflow.Core;
+using Jornal.Workflow.Infrastructure;
 using Xunit;
 
 namespace Jornal.Workflow.Tests;
@@ -15,7 +17,7 @@ public sealed class WorkflowCurrentStateWindowTests
 {
     [AvaloniaTheory]
     [InlineData(false, 1180)] [InlineData(true, 1180)] [InlineData(false, 1366)] [InlineData(true, 1366)]
-    public async Task ProjectPanelAndAcceptedReportActionUseTheCurrentSpecificationInBothThemes(bool dark, int width)
+    public async Task ProjectPanelOpensTheCurrentSourceInBothThemes(bool dark, int width)
     {
         using var log = new BindingLog(); using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync();
         await ProjectFixture.WriteAsync(project); await f.AcceptAsync();
@@ -27,19 +29,27 @@ public sealed class WorkflowCurrentStateWindowTests
             var tabs = window.FindControl<TabControl>("WorkflowOrderTabs")!;
             Assert.Equal(new[] { "Проекты", "Результат" }, tabs.Items.OfType<TabItem>().Select(t => t.Header));
             f.Model.OrderTabIndex = 0; Pump();
-            var open = window.FindControl<Button>("OpenAcceptedWorkflowReport")!; Assert.True(open.IsEffectivelyEnabled); InWindow(open, window);
+            var open = window.FindControl<Button>("OpenWorkflowSpecification")!; Assert.True(open.IsEffectivelyEnabled); InWindow(open, window);
             Assert.Equal("Сохранить", window.FindControl<JournalButton>("SaveWorkflowSpecification")!.Label);
             var report = f.Model.SelectedDraft!.Saved!.Report!;
-            Click(open); await Until(() => window.OpenedReports.Count == 1); Assert.Equal(report.ArchivePath, window.OpenedReports[0]);
+            var source = ProjectFixture.ReportPath(project);
+            Click(open); await Until(() => window.OpenedReports.Count == 1); Assert.Equal(source, window.OpenedReports[0]);
             f.Model.AddLegacySpecificationDraft(); Pump(); Assert.False(open.IsEffectivelyEnabled);
             f.Model.CancelDraftCommand.Execute(null); Pump(); Assert.True(open.IsEffectivelyEnabled);
             f.Model.ResultText = "Ручное письмо"; f.Model.IsResultExpanded = true; Pump(); Assert.Equal(1, f.Model.OrderTabIndex);
             f.Model.IsResultExpanded = false; Assert.Equal(0, f.Model.OrderTabIndex);
             f.Model.OrderTabIndex = 0; Pump();
             Save("ready");
-            await File.AppendAllTextAsync(report.ArchivePath, "changed", TestContext.Current.CancellationToken);
-            Click(open); await Until(() => f.Model.Error is not null); Assert.Single(window.OpenedReports);
-            Assert.Contains("повреждена", f.Model.Error); Save("corrupt"); Assert.Empty(log.Errors);
+            File.Delete(report.ArchivePath);
+            await ProjectFixture.WriteAsync(project, 20000);
+            Click(open); await Until(() => window.OpenedReports.Count == 2);
+            Assert.Equal(source, window.OpenedReports[1]);
+            Assert.Null(f.Model.Error);
+
+            File.Delete(source);
+            Click(open); await Until(() => f.Model.Error?.Contains("не найдена", StringComparison.Ordinal) == true);
+            Assert.Equal(2, window.OpenedReports.Count);
+            Save("missing"); Assert.Empty(log.Errors);
         }
         finally { WorkflowTestWindows.Close(window); }
 
@@ -50,10 +60,36 @@ public sealed class WorkflowCurrentStateWindowTests
             frame?.Save(Path.Combine(output, $"current-state-{state}-{width}-{(dark ? "dark" : "light")}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
         }
     }
+
+    [Fact]
+    public async Task LongWindowsPdfPathOpensFromVerifiedLocalCopy()
+    {
+        using var f = new ProjectFixture();
+        var token = TestContext.Current.CancellationToken;
+        var folder = Path.Combine(f.DirectoryPath, new string('a', 100), new string('b', 120));
+        Directory.CreateDirectory(folder);
+        var archive = Path.Combine(folder, "Спецификация.pdf");
+        byte[] bytes = "%PDF-1.7\n"u8.ToArray();
+        await File.WriteAllBytesAsync(archive, bytes, token);
+        var report = new AcceptedReport(Guid.NewGuid(), Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)),
+            bytes.Length, Path.GetFileName(archive), archive, new("", "", "", "", "", "", "", "", "", "", ""));
+        Assert.True(archive.Length >= 260);
+
+        var preview = await WorkflowReportFiles.PrepareArchiveForOpeningAsync(report, true, f.DirectoryPath, token);
+        Assert.True(preview.Length < 260);
+        Assert.EndsWith(".pdf", preview);
+        Assert.Equal(bytes, await File.ReadAllBytesAsync(preview, token));
+        Assert.Equal(archive, await WorkflowReportFiles.PrepareArchiveForOpeningAsync(report, false, f.DirectoryPath, token));
+
+        await File.AppendAllTextAsync(archive, "changed", token);
+        await Assert.ThrowsAsync<WorkflowValidationException>(() =>
+            WorkflowReportFiles.PrepareArchiveForOpeningAsync(report, true, f.DirectoryPath, token));
+        Assert.Single(Directory.GetFiles(Path.GetDirectoryName(preview)!));
+    }
     private sealed class ReportWindow(WorkflowPreferencesStore preferences) : WorkflowWindow(preferences)
     {
         public List<string> OpenedReports { get; } = [];
-        protected override Task<bool> LaunchAcceptedReportAsync(string path) { OpenedReports.Add(path); return Task.FromResult(true); }
+        protected override Task<bool> LaunchSpecificationAsync(string path) { OpenedReports.Add(path); return Task.FromResult(true); }
     }
     private static void Click(Control control)
     {

@@ -138,6 +138,18 @@ public sealed class WorkflowNativeMdbTests
             Assert.All(refreshed.Projects, p => Assert.NotNull(p.ShopHandoff!.ProjectInputs));
             Assert.All(refreshed.Projects.Where(p => refreshed.Items.Any(i => i.IsIncluded && i.CurrentProjectId == p.Id)), p => Assert.Equal(WorkflowShopHandoff.ProjectHash(refreshed, p.Id), p.ShopHandoff!.ContentHash));
             Assert.Equal(WorkflowShopHandoff.Hash(refreshed), refreshed.ShopHandoff!.ContentHash);
+            await MakeEarlierSchemaFixture(path, 5);
+            var versionFiveBytes = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+            await store.InspectAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(versionFiveBytes, await File.ReadAllBytesAsync(Assert.Single(Directory.GetFiles(directory, "*.schema-v5-*.bak")), TestContext.Current.CancellationToken));
+            var v5 = await store.ReadOrderAsync(refreshed.Id, TestContext.Current.CancellationToken);
+            Assert.All(v5.Machines, m => Assert.Null(m.ShopFolderName));
+            Assert.Equal(System.Text.Json.JsonSerializer.Serialize(refreshed), System.Text.Json.JsonSerializer.Serialize(v5.Orders.Single()));
+            await store.WriteAsync(v5.Version, w => WorkflowChanges.UpdateCatalog(w,
+                w.Machines.Select(m => m.Id == machine.Id ? m with { ShopFolderName = "Unimach&HL" } : m).ToArray(), w.Rates),
+                TestContext.Current.CancellationToken);
+            book = await new WorkflowMdbStore(path, client, created.DatabaseId).ReadAsync(TestContext.Current.CancellationToken);
+            Assert.Equal("Unimach&HL", book.Machines.Single(m => m.Id == machine.Id).ShopFolderName);
             // A prepared calculation patch may cross a metadata-only transfer commit.
             var latest = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOrders, path, created.DatabaseId, OrderIds: [refreshed.Id]), TestContext.Current.CancellationToken);
             var raced = await client.SendAsync(new(1, WorkflowAccessOperation.Apply, path, created.DatabaseId,
@@ -209,8 +221,15 @@ public sealed class WorkflowNativeMdbTests
         var start = new System.Diagnostics.ProcessStartInfo(powershell) { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true };
         start.Environment["WORKFLOW_SCHEMA_FIXTURE"] = path;
         start.ArgumentList.Add("-NoProfile"); start.ArgumentList.Add("-NonInteractive"); start.ArgumentList.Add("-Command");
-        var sql = schema switch { 1 => "DROP TABLE [order_shop_handoffs]", 2 => "ALTER TABLE [order_shop_handoffs] DROP COLUMN [content_hash]", _ => null };
-        start.ArgumentList.Add("$ErrorActionPreference='Stop'; $c=New-Object -ComObject ADODB.Connection; try { $c.Open('Provider=Microsoft.Jet.OLEDB.4.0;Data Source=' + $env:WORKFLOW_SCHEMA_FIXTURE); $null=$c.Execute('DROP TABLE [project_shop_handoff_inputs]'); " + (schema < 4 ? "$null=$c.Execute('DROP TABLE [project_shop_handoffs]'); " : "") + (sql is null ? "" : "$null=$c.Execute('" + sql + "'); ") + "$null=$c.Execute('UPDATE [app_metadata] SET [schema_version]=" + schema + " WHERE [singleton]=1'); } finally { if ($c.State -ne 0) {$c.Close()}; [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($c) }");
+        var sql = new List<string> { "ALTER TABLE [machines] DROP COLUMN [shop_folder_name]" };
+        if (schema < 5) sql.Add("DROP TABLE [project_shop_handoff_inputs]");
+        if (schema < 4) sql.Add("DROP TABLE [project_shop_handoffs]");
+        if (schema == 1) sql.Add("DROP TABLE [order_shop_handoffs]");
+        if (schema == 2) sql.Add("ALTER TABLE [order_shop_handoffs] DROP COLUMN [content_hash]");
+        sql.Add($"UPDATE [app_metadata] SET [schema_version]={schema} WHERE [singleton]=1");
+        start.ArgumentList.Add("$ErrorActionPreference='Stop'; $c=New-Object -ComObject ADODB.Connection; try { $c.Open('Provider=Microsoft.Jet.OLEDB.4.0;Data Source=' + $env:WORKFLOW_SCHEMA_FIXTURE); " +
+            string.Join(" ", sql.Select(statement => "$null=$c.Execute('" + statement + "');")) +
+            " } finally { if ($c.State -ne 0) {$c.Close()}; [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($c) }");
         using var process = System.Diagnostics.Process.Start(start)!;
         var error = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
         var output = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
