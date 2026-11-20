@@ -15,7 +15,7 @@ public static partial class WorkflowReportFiles
     private const int MaximumBytes = 32 * 1024 * 1024;
     private static readonly SpecificationProfileCatalog Profiles = new(SpecificationProfileCatalog.Default.Profiles.Select(profile => profile switch
     {
-        HansPdfSpecificationParser => new HansPdfSpecificationParser(allowTruncatedProjectName: true),
+        HansPdfSpecificationParser => new HansPdfSpecificationParser(allowTruncatedProjectName: true, enforceLegacySheetSizeLimit: false),
         WaterjetPdfSpecificationParser => new WaterjetPdfSpecificationParser(useExplicitCalculationInputs: true),
         _ => profile
     }));

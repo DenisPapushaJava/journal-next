@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Jornal.Workflow.Core;
 
 namespace Jornal.Workflow.Infrastructure;
@@ -8,10 +9,12 @@ namespace Jornal.Workflow.Infrastructure;
 public sealed record ShopTransferResult(Guid ProjectId, bool Success, bool Unchanged, string Message, string? DestinationRevision)
 {
     public string? BundleKey { get; init; }
+    public int PdfExportVersion { get; init; }
 }
 public sealed record ShopDestinationInspection(string? Revision, ShopTree? Contents)
 {
     public string? BundleKey { get; init; }
+    public int PdfExportVersion { get; init; }
 }
 
 public static partial class WorkflowShopTransfer
@@ -20,6 +23,8 @@ public static partial class WorkflowShopTransfer
     private sealed record Receipt(int Schema, string SourceId, Guid OrderId, Guid ProjectId, ShopTree Contents)
     {
         public string? BundleKey { get; init; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public int PdfExportVersion { get; init; }
     }
     private sealed record Target(string Revision, Receipt Receipt);
 
@@ -30,11 +35,19 @@ public static partial class WorkflowShopTransfer
         IProgress<WorkflowShopProgress>? details = null)
     {
         var target = await ReadTargetAsync(project, sourceId, orderId, token, details);
-        return new(target?.Revision, target?.Receipt.Contents) { BundleKey = target?.Receipt.BundleKey };
+        return new(target?.Revision, target?.Receipt.Contents)
+        {
+            BundleKey = target?.Receipt.BundleKey,
+            PdfExportVersion = target?.Receipt.PdfExportVersion ?? 0
+        };
     }
-    public static bool MatchesDestination(ShopTransferSelection selection, ShopTree contents, string? receiptBundleKey = null) =>
-        BundleKey(selection, out _) is { } key ? key == receiptBundleKey :
-        receiptBundleKey is null && ShopFileSystem.SameTree(DesiredTree(selection), contents);
+    public static bool MatchesDestination(ShopTransferSelection selection, ShopTree contents, string? receiptBundleKey = null, int pdfExportVersion = 0) =>
+        BundleKey(selection, out _) is { } key
+            ? key == receiptBundleKey && (selection.MapBundle != ShopMapBundle.Pdf || pdfExportVersion >= WorkflowMapBundlePdf.ExportVersion)
+            : receiptBundleKey is null && ShopFileSystem.SameTree(DesiredTree(selection), contents);
+
+    private static bool MatchesDestination(ShopTransferSelection selection, Receipt receipt) =>
+        MatchesDestination(selection, receipt.Contents, receipt.BundleKey, receipt.PdfExportVersion);
     public static async Task<bool> HasOwnedDestinationAsync(ShopProjectFiles project, string sourceId, Guid orderId, CancellationToken token = default) =>
         await ReadReceiptAsync(project, sourceId, orderId, token) is not null;
 
@@ -131,7 +144,7 @@ public static partial class WorkflowShopTransfer
             {
                 var target = await ReadTargetAsync(selection.Project, sourceId, orderId, token, details, stage);
                 if (target?.Revision != selection.DestinationRevision) throw new WorkflowValidationException("Папка задания изменилась после подбора. Обновите подбор.");
-                if (target is not null && !MatchesDestination(selection, target.Receipt.Contents, target.Receipt.BundleKey) && !allowReplacement)
+                if (target is not null && !MatchesDestination(selection, target.Receipt) && !allowReplacement)
                     throw new WorkflowValidationException("Комплект уже передавался и теперь изменился. Подтвердите замену после проверки файлов.");
                 await VerifySourcesAsync(selection, token, word, details, stage);
             }
@@ -184,7 +197,7 @@ public static partial class WorkflowShopTransfer
         if (target?.Revision != selection.DestinationRevision) throw new WorkflowValidationException("Папка задания изменилась после предпросмотра. Обновите подбор.");
         var bundleKey = BundleKey(selection, out var bundleName);
         await VerifySourcesAsync(selection, token, word, details, WorkflowShopStage.Copying);
-        if (target is not null && MatchesDestination(selection, target.Receipt.Contents, target.Receipt.BundleKey))
+        if (target is not null && MatchesDestination(selection, target.Receipt))
         {
             if (bundleName is not null)
             {
@@ -192,7 +205,8 @@ public static partial class WorkflowShopTransfer
                     ?? throw new WorkflowValidationException("В ранее переданном комплекте отсутствует объединённая карта. Проверьте папку цеха.");
                 await SaveProjectBundleAsync(project.Project, Path.Combine(destination, file.RelativePath), file, token);
             }
-            return new(project.Project.Id, true, true, "Комплект уже подготовлен, изменений нет", target.Revision) { BundleKey = bundleKey };
+            return new(project.Project.Id, true, true, "Комплект уже подготовлен, изменений нет", target.Revision)
+                { BundleKey = bundleKey, PdfExportVersion = target.Receipt.PdfExportVersion };
         }
         if (target is not null && !allowReplacement)
             throw new WorkflowValidationException("Комплект изменился. Разрешите замену ранее подготовленных комплектов и повторите.");
@@ -228,7 +242,9 @@ public static partial class WorkflowShopTransfer
                 completed++;
                 details?.Report(new(WorkflowShopStage.Copying, project.Project.Name, file.RelativePath, completed, total, "Файл скопирован и проверен"));
             }
-            var receipt = JsonSerializer.SerializeToUtf8Bytes(new Receipt(1, sourceId, orderId, project.Project.Id, tree) { BundleKey = bundleKey });
+            var pdfExportVersion = bundle is not null && selection.MapBundle == ShopMapBundle.Pdf ? WorkflowMapBundlePdf.ExportVersion : 0;
+            var receipt = JsonSerializer.SerializeToUtf8Bytes(new Receipt(1, sourceId, orderId, project.Project.Id, tree)
+                { BundleKey = bundleKey, PdfExportVersion = pdfExportVersion });
             if (receipt.Length > 8 * 1024 * 1024) throw new WorkflowValidationException("Состав комплекта слишком большой для служебной записи. Готовая папка не изменена.");
             await File.WriteAllBytesAsync(Path.Combine(stage, ReceiptName), receipt, token);
             WorkflowServiceFiles.TryHide(Path.Combine(stage, ReceiptName));
@@ -268,7 +284,7 @@ public static partial class WorkflowShopTransfer
             }
             var message = bundle is null ? "Файлы подготовлены" : "Файлы подготовлены · " + bundle.RelativePath;
             return new(project.Project.Id, true, false, warning is null ? message : message + ". " + warning, Convert.ToHexString(SHA256.HashData(receipt)))
-                { BundleKey = bundleKey };
+                { BundleKey = bundleKey, PdfExportVersion = pdfExportVersion };
         }
         finally
         {

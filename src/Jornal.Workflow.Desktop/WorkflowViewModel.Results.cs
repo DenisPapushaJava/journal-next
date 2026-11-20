@@ -55,6 +55,7 @@ public partial class WorkflowViewModel
         CurrentOrder?.PendingProjectCount > 0 ? "Нажмите «Рассчитать»: программа найдёт спецификации включённых проектов." :
         CurrentOrder?.ActiveSpecifications.Any() != true ? "Добавьте или включите проект и сохраните его расчёт." : null);
     public bool CanGenerateResult => ResultGenerationProblem is null;
+    public bool CanUpdateStaleLetter => ResultIsStale && CanGenerateResult;
     public bool CanOpenResult => CanEditResult && (ResultText.Length > 0 || CanGenerateResult);
     public string GenerateResultHint => ResultGenerationProblem ?? "Сформировать результат по сохранённым расчётам";
     public string OpenResultHint => CanEditResult && ResultText.Length > 0 ? "Открыть текущий результат с ручными правками" : GenerateResultHint;
@@ -144,7 +145,7 @@ public partial class WorkflowViewModel
         foreach (var name in new[] { nameof(IsResultTab), nameof(CanEditResult), nameof(CanCopyResult), nameof(CanClearResult),
             nameof(CanOpenResult), nameof(CanGenerateResult), nameof(OpenResultHint), nameof(GenerateResultHint),
             nameof(CopyResultHint), nameof(ClearResultHint),
-            nameof(CanUndoClearResult), nameof(GenerateResultCaption), nameof(ResultStatus), nameof(HasResultStatusError) }) OnPropertyChanged(name);
+            nameof(CanUndoClearResult), nameof(CanUpdateStaleLetter), nameof(GenerateResultCaption), nameof(ResultStatus), nameof(HasResultStatusError) }) OnPropertyChanged(name);
         OpenResultCommand.NotifyCanExecuteChanged(); GenerateResultCommand.NotifyCanExecuteChanged();
     }
     private void ResultTextEdited(string value)
@@ -160,6 +161,30 @@ public partial class WorkflowViewModel
     {
         if (!HasManualResultText || ResultIsStale || !CanGenerateResult) return false;
         SetResultFeedback("Расчёт актуален. Ручной текст сохранён.", transient: true); return true;
+    }
+
+    private void RefreshResultAfterCommentSave(WorkflowOrder before, WorkflowOrder after)
+    {
+        if (_cuttingTaskDetached || CurrentOrder is not { } order || order.Id != after.Id || order.Version != after.Version) return;
+        if (ResultIsStale || HasManualResultText)
+        {
+            MarkResultStale();
+            return;
+        }
+        if (ResultText.Length == 0)
+        {
+            if (_clearedResult is null && _generatedResultText is null && PrepareResultGeneration() is { } draft)
+                ApplyResultGeneration(draft, openResult: false);
+            return;
+        }
+        if (ResultText != _generatedResultText ||
+            WorkflowResultFormatter.RefreshComments(ResultText, before.ActiveSpecifications.Select(s => s.Current),
+                after.ActiveSpecifications.Select(s => s.Current)) is not { } updated)
+        {
+            MarkResultStale();
+            return;
+        }
+        SetGeneratedResult(updated, openResult: false, "Комментарии в письме обновлены");
     }
 
     internal WorkflowResultGeneration? PrepareResultGeneration()
@@ -182,10 +207,16 @@ public partial class WorkflowViewModel
         if (!ReferenceEquals(draft.Source, latest.Source) || draft.OrderId != latest.OrderId || draft.Version != latest.Version ||
             draft.PreviousText != latest.PreviousText || draft.Text != latest.Text)
         { SetResultFeedback("Данные или текст изменились. Сформируйте результат заново.", true); return false; }
-        _generatedResultText = draft.Text; _clearedResult = null; ResultText = draft.Text;
+        SetGeneratedResult(draft.Text, openResult, "Результат сформирован");
+        return true;
+    }
+
+    private void SetGeneratedResult(string text, bool openResult, string message)
+    {
+        _generatedResultText = text; _clearedResult = null; ResultText = text;
         ResultIsStale = false;
         if (openResult) OrderTabIndex = 1;
-        SetResultFeedback("Результат сформирован", transient: true); return true;
+        SetResultFeedback(message, transient: true);
     }
 
     [RelayCommand(CanExecute = nameof(CanOpenResult))]

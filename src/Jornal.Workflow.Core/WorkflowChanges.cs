@@ -94,8 +94,7 @@ public static partial class WorkflowChanges
         if (!workspace.Employees.Any(e => e.Id == actorId && e.CanWork) || string.IsNullOrWhiteSpace(documentNumber) || documentDate == default)
             throw new WorkflowValidationException("Укажите номер, дату спецификации и автора сохранения.");
         var existing = order.Specifications.SingleOrDefault(s => s.Id == specificationId);
-        var project = order.Projects.SingleOrDefault(p => p.Id == specificationId);
-        if (project?.IsDeleted == true) throw new WorkflowValidationException("Проект находится в корзине. Восстановите его перед изменением расчёта.");
+        var project = EditableSpecificationProject(order, specificationId);
         if (project is not null && (project.MachineId != parameters.MachineId || project.ThicknessMm != parameters.ThicknessMm))
             throw new WorkflowValidationException("Станок и толщина не соответствуют проекту. Создайте другой вариант проекта.");
         report ??= existing?.Current.Report;
@@ -115,8 +114,38 @@ public static partial class WorkflowChanges
             existing.Current.Report == report) return workspace;
         var state = new SpecificationState(documentNumber.Trim(), documentDate,
             at, actorId, parameters, calculation, sourcePath, profile) { Report = report };
-        var saved = new WorkflowSpecification(specificationId, state);
-        var specifications = existing is null ? [.. order.Specifications, saved] : order.Specifications.Select(s => s.Id == saved.Id ? saved : s).ToArray();
+        return SaveSpecificationState(workspace, order, new(specificationId, state), existing is null, at);
+    }
+
+    public static WorkflowWorkspace SaveSpecificationComment(WorkflowWorkspace workspace, Guid orderId, long expectedOrderVersion,
+        Guid specificationId, string? comment, Guid actorId, DateTimeOffset at)
+    {
+        var order = RequireActiveOrder(workspace, orderId, expectedOrderVersion);
+        if (!workspace.Employees.Any(e => e.Id == actorId && e.CanWork))
+            throw new WorkflowValidationException("Выберите действующего технолога из списка.");
+        EditableSpecificationProject(order, specificationId);
+        var existing = order.Specifications.SingleOrDefault(s => s.Id == specificationId)
+            ?? throw new WorkflowValidationException("Сохранённый расчёт спецификации не найден.");
+        comment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim();
+        if (existing.Current.Parameters.Comment == comment) return workspace;
+
+        var parameters = existing.Current.Parameters with { Comment = comment };
+        parameters.Validate();
+        var saved = existing with { Current = existing.Current with { Parameters = parameters, SavedAt = at, AuthorId = actorId } };
+        return SaveSpecificationState(workspace, order, saved, isNew: false, at);
+    }
+
+    private static CuttingProject? EditableSpecificationProject(WorkflowOrder order, Guid specificationId)
+    {
+        var project = order.Projects.SingleOrDefault(p => p.Id == specificationId);
+        if (project?.IsDeleted == true) throw new WorkflowValidationException("Проект находится в корзине. Восстановите его перед изменением расчёта.");
+        return project;
+    }
+
+    private static WorkflowWorkspace SaveSpecificationState(WorkflowWorkspace workspace, WorkflowOrder order, WorkflowSpecification saved, bool isNew, DateTimeOffset at)
+    {
+        WorkflowSpecification[] specifications = isNew ? [.. order.Specifications, saved] :
+            order.Specifications.Select(s => s.Id == saved.Id ? saved : s).ToArray();
         var next = order with { Specifications = specifications, Version = order.Version + 1, UpdatedAt = at };
         return workspace with { Orders = workspace.Orders.Select(o => o.Id == next.Id ? next : o).ToArray() };
     }

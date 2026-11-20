@@ -66,9 +66,10 @@
                   <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:WorkflowReportChoice"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
                 </ComboBox>
               </StackPanel>
-              <StackPanel Spacing="6" IsVisible="{Binding MaterialNeedsReview}" DataContext="{Binding Draft}" x:DataType="vm:SpecificationDraft">
-                <TextBlock Text="Уточните марку стали из спецификации AWJC" FontWeight="SemiBold" TextWrapping="Wrap" />
-                <ui:EntrySuggestionComboBox x:Name="ReviewMaterialInput" Value="{Binding Material}" MaxWidth="300" HorizontalAlignment="Left" MinWidth="180"
+              <StackPanel Spacing="6" IsVisible="{Binding ShowMaterialQuestion}">
+                <TextBlock Text="Уточните марку стали" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <ui:EntrySuggestionComboBox x:Name="ReviewMaterialInput" DataContext="{Binding Draft}" x:DataType="vm:SpecificationDraft"
+                    Value="{Binding Material}" MaxWidth="300" HorizontalAlignment="Left" MinWidth="180"
                     Suggestions="{Binding MaterialSuggestions}" AutomationProperties.Name="Марка стали" />
               </StackPanel>
               <StackPanel IsVisible="{Binding ShowMaterialCheck}">

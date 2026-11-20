@@ -50,6 +50,7 @@ public sealed class WorkflowMaterialSuggestionsTests
             var candidate = Assert.Single(review.VisibleCandidates); Assert.True(candidate.Draft!.MaterialNeedsReview); Assert.False(candidate.Draft.MaterialConfirmed);
             dialog = new() { DataContext = review, RequestedThemeVariant = window.ActualThemeVariant }; dialog.Show(window); Pump();
             var material = dialog.FindControl<EntrySuggestionComboBox>("ReviewMaterialInput")!;
+            Assert.True(material.IsEffectivelyVisible);
             Assert.Equal(f.Model.MaterialSuggestions, material.Suggestions); Assert.Equal("09Г2С/Ст3", material.Value);
             candidate.Draft.Pierces = "15"; Assert.True(review.SaveCommand.CanExecute(null));
             material.GetVisualDescendants().OfType<TextBox>().Single().Focus(); Press(dialog, Key.F4); Assert.True(material.IsDropDownOpen); Press(dialog, Key.Enter);

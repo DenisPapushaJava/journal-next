@@ -65,6 +65,13 @@ public partial class WorkflowSettingsWindow : Window
         model.RefreshEntrySuggestionsSummary();
         if (IsVisible) WorkflowEntrySuggestionsButton.Focus();
     }
+    private async void OnCommentTemplates(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { CanEdit: true } model || OwnedWindows.Count > 0) return;
+        var window = new WorkflowCommentTemplatesWindow(model.Journal) { RequestedThemeVariant = ActualThemeVariant };
+        await window.ShowDialog(this);
+        if (IsVisible) WorkflowCommentTemplatesButton.Focus();
+    }
     protected override void OnClosed(EventArgs e)
     {
         ChangeWorkflowProfileColor.Flyout?.Hide();

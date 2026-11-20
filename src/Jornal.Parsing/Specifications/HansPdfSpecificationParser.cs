@@ -4,7 +4,7 @@ using Jornal.Parsing.Documents;
 
 namespace Jornal.Parsing.Specifications;
 
-public sealed partial class HansPdfSpecificationParser(bool allowTruncatedProjectName = false) : ISpecificationProfile
+public sealed partial class HansPdfSpecificationParser(bool allowTruncatedProjectName = false, bool enforceLegacySheetSizeLimit = true) : ISpecificationProfile
 {
     public const string Profile = "hans-pdf/v1";
     public string Id => Profile;
@@ -102,7 +102,7 @@ public sealed partial class HansPdfSpecificationParser(bool allowTruncatedProjec
         if (dimensions.Length == 0) issues.Add(new(SpecificationField.Dimensions, "MissingField", "Не найдены достоверные габариты листов."));
         if (dimensions.Select(size => size.ThicknessMillimeters).Distinct().Count() > 1)
             issues.Add(new(SpecificationField.Dimensions, "ConflictingThickness", "В PDF разные толщины листов. Одна заявка хранит одну толщину."));
-        if (BlockSpecificationNormalizer.SheetSizes(dimensions).Length > 255)
+        if (enforceLegacySheetSizeLimit && BlockSpecificationNormalizer.SheetSizes(dimensions).Length > 255)
             issues.Add(new(SpecificationField.Dimensions, "SheetSizeTooLong", "Перечень размеров превышает 255 символов MDB; значение не сокращено."));
         if (sheets is not null && counts.Count == rowCount && rowCount > 0 && counts.Sum(count => (long)count) != sheets.Value)
             issues.Add(new(SpecificationField.SheetCount, "SheetCountMismatch", "Сумма «К-во» в таблице листов не совпадает с итогом «Листов».",

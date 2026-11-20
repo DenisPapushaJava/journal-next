@@ -1,0 +1,35 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Jornal.Workflow.Desktop" xmlns:ui="using:Jornal.Desktop.Controls"
+        x:Class="Jornal.Workflow.Desktop.WorkflowCommentTemplatePicker"
+        Title="Шаблоны комментариев" Width="560" Height="400" MinWidth="380" MinHeight="260"
+        Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,*,Auto" Margin="24,20">
+    <TextBlock x:Name="CommentTemplatePickerHint" Margin="0,0,0,12" Text="Отметьте нужные фразы. Крестик убирает уже вставленную фразу." Classes="muted" TextWrapping="Wrap" />
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+      <ItemsControl x:Name="CommentTemplateChoices">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:WorkflowCommentTemplateChoice">
+            <Grid ColumnDefinitions="*,32">
+              <CheckBox IsChecked="{Binding Selected, Mode=TwoWay}" IsEnabled="{Binding CanSelect}"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                        AutomationProperties.Name="{Binding Text}" AutomationProperties.HelpText="{Binding Status}"
+                        ToolTip.ShowOnDisabled="True">
+                <ToolTip.Tip>
+                  <TextBlock Text="{Binding Text}" TextWrapping="Wrap" MaxWidth="420" />
+                </ToolTip.Tip>
+                <TextBlock Text="{Binding Text}" TextWrapping="NoWrap" MaxLines="1" TextTrimming="CharacterEllipsis" />
+              </CheckBox>
+              <ui:JournalButton Grid.Column="1" Name="RemoveInsertedCommentTemplate" Label="Убрать из комментария" Icon="x" IconOnly="True"
+                                Width="28" Height="28" MinHeight="28" Padding="0" VerticalAlignment="Center" IsVisible="{Binding CanRemove}"
+                                AutomationProperties.HelpText="{Binding Text}" ToolTip.Tip="Убрать из комментария" Click="OnRemove" />
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+    <StackPanel Grid.Row="2" Margin="0,12,0,0" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <ui:JournalButton x:Name="CloseCommentTemplatePicker" Label="Отмена" Click="OnCancel" />
+      <ui:JournalButton x:Name="ApplyCommentTemplates" Label="Применить" IsEnabled="False" Classes="primary" Click="OnApply" />
+    </StackPanel>
+  </Grid>
+</Window>

@@ -263,29 +263,50 @@ public partial class WorkflowViewModel : ObservableObject
     {
         if (!CanUse || !IsCurrentOrderActive || CurrentOrder is not { IsDeleted: false } order || SelectedDraft is not { } draft || !draft.IsDirty) return;
         if (order.HasProjectRename) { Error = "Сначала завершите изменение параметров проекта."; return; }
+        var source = _store;
+        WorkflowOrder? commentSaved = null;
         await RunAsync(async () =>
         {
-            var parameters = draft.Parameters(); var rate = draft.Rate(); var date = draft.DocumentDate(); var actorId = ActorId(); var documentNumber = draft.Number;
-            var createBendingFolder = parameters.HasBending && draft.Saved?.Parameters.HasBending != true;
+            var parameters = draft.Parameters(); var date = draft.DocumentDate(); var actorId = ActorId();
             var expected = CardVersion;
-            AcceptedReport? report = null;
-            if (draft.IncomingReport is { } incoming)
+            var before = order.Specifications.SingleOrDefault(s => s.Id == draft.Id)?.Current;
+            var commentOnly = before is not null && draft.ChangesOnlyComment(before, parameters, date);
+            if (commentOnly)
             {
-                await WorkflowReportFiles.RevalidateAsync(incoming);
-                report = draft.Saved?.Report?.Sha256 == incoming.Sha256 ? draft.Saved.Report :
-                    await WorkflowReportFiles.ArchiveAsync(incoming, WorkflowReportCandidate.Values(FromReport(incoming.Parsed, incoming.SourcePath, _workspace.Machines)));
+                _workspace = await source.WriteOrderAsync(order.Id, expected, book => WorkflowChanges.SaveSpecificationComment(
+                    book, order.Id, expected, draft.Id, parameters.Comment, actorId, DateTimeOffset.UtcNow));
             }
-            if (order.Projects.Any(p => p.Id == draft.Id && p.NativePath is not null) &&
-                order.Specifications.SingleOrDefault(s => s.Id == draft.Id)?.Current is { } before &&
-                WorkflowCalculationSnapshots.ProjectFolder(order, draft.Id, draft.SourcePath) is not null)
-                await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(order, draft.Id, actorId, before, null, draft.SourcePath, CancellationToken.None));
-            _workspace = await _store.WriteOrderAsync(order.Id, expected, book => WorkflowChanges.SaveSpecification(book, order.Id, expected,
-                draft.Id, parameters, documentNumber, date, actorId, DateTimeOffset.UtcNow, draft.SourcePath, draft.ImportProfile, rate, report));
-            _loadedOrderVersion = CurrentOrder!.Version;
-            var specification = CurrentOrder!.Specifications.Single(s => s.Id == draft.Id); var index = Drafts.IndexOf(draft);
-            Drafts[index] = CreateDraft(specification); SelectedDraft = Drafts[index]; MarkResultStale(); RefreshProjects(draft.Id); RefreshOrders(); NotifyOrder();
-            if (createBendingFolder) await EnsureSavedBendingFoldersAsync(CurrentOrder!, [draft.Id]);
+            else
+            {
+                var rate = draft.Rate(); var documentNumber = draft.Number;
+                AcceptedReport? report = null;
+                if (draft.IncomingReport is { } incoming)
+                {
+                    await WorkflowReportFiles.RevalidateAsync(incoming);
+                    report = draft.Saved?.Report?.Sha256 == incoming.Sha256 ? draft.Saved.Report :
+                        await WorkflowReportFiles.ArchiveAsync(incoming, WorkflowReportCandidate.Values(FromReport(incoming.Parsed, incoming.SourcePath, _workspace.Machines)));
+                }
+                if (before is not null && order.Projects.Any(p => p.Id == draft.Id && p.NativePath is not null) &&
+                    WorkflowCalculationSnapshots.ProjectFolder(order, draft.Id, draft.SourcePath) is not null)
+                    await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(order, draft.Id, actorId, before, null, draft.SourcePath, CancellationToken.None));
+                _workspace = await source.WriteOrderAsync(order.Id, expected, book => WorkflowChanges.SaveSpecification(book, order.Id, expected,
+                    draft.Id, parameters, documentNumber, date, actorId, DateTimeOffset.UtcNow, draft.SourcePath, draft.ImportProfile, rate, report));
+            }
+            var savedOrder = CurrentOrder!;
+            _loadedOrderVersion = savedOrder.Version;
+            var specification = savedOrder.Specifications.Single(s => s.Id == draft.Id); var index = Drafts.IndexOf(draft);
+            Drafts[index] = CreateDraft(specification); SelectedDraft = Drafts[index];
+            if (commentOnly)
+            {
+                if (savedOrder.ActiveSpecifications.Any(s => s.Id == draft.Id)) commentSaved = savedOrder;
+            }
+            else MarkResultStale();
+            RefreshProjects(draft.Id); RefreshOrders(); NotifyOrder();
+            if (!commentOnly && parameters.HasBending && draft.Saved?.Parameters.HasBending != true)
+                await EnsureSavedBendingFoldersAsync(savedOrder, [draft.Id]);
         });
+        if (commentSaved is not null && ReferenceEquals(source, _store))
+            RefreshResultAfterCommentSave(order, commentSaved);
     }
     [RelayCommand(CanExecute = nameof(CanGenerateResult))]
     private void GenerateResult()
@@ -324,11 +345,9 @@ public partial class WorkflowViewModel : ObservableObject
     }
     internal static SpecificationDraft FromReport(SpecificationParseResult report, string path, IReadOnlyList<WorkflowMachine>? machines = null, Guid? id = null)
     {
-        if (report.SheetLayouts.Select(l => l.Value.Dimensions).Distinct().Count() > 1)
-            throw new WorkflowValidationException("В спецификации разные размеры заготовок. Этот случай будет добавлен следующим этапом.");
+        var (thickness, blankSize) = ReportBlankSize(report);
         var review = report.Issues.Any(i => i.Code == "MaterialNeedsReview") ||
             report.Profile == WaterjetPdfSpecificationParser.Profile && !report.IsComplete;
-        var dimensions = report.Dimensions?.Value ?? report.SheetLayouts.FirstOrDefault()?.Value.Dimensions;
         string Number(decimal? n) => n is { } v ? SpecificationDraft.N(v) : "";
         var machineName = report.Profile == WaterjetPdfSpecificationParser.Profile ? "ГАР" : report.CuttingType?.Value ?? "";
         var matches = machines?.Where(m => m.ImportProfile == report.Profile).ToArray() ?? [];
@@ -350,8 +369,8 @@ public partial class WorkflowViewModel : ObservableObject
             Date = report.Header?.Value.OrderDate.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? "",
             Machine = machineName,
             Material = report.Material?.Value ?? "",
-            Thickness = Number(dimensions?.ThicknessMillimeters),
-            BlankSize = dimensions is null ? "" : $"Лист {SpecificationDraft.N(dimensions.ThicknessMillimeters)}×{SpecificationDraft.N(dimensions.WidthMillimeters)}×{SpecificationDraft.N(dimensions.LengthMillimeters)}",
+            Thickness = Number(thickness),
+            BlankSize = blankSize,
             Quantity = report.SheetCount?.Value.ToString(CultureInfo.InvariantCulture) ?? "",
             Length = report.CutLengthMillimeters is { } length ? SpecificationProfileCatalog.Default.NormalizeCutLengthMeters(report.Profile, length.Value).ToString(CultureInfo.InvariantCulture) : "",
             Pierces = report.PunchCount?.Value.ToString(CultureInfo.InvariantCulture) ?? "",
@@ -365,6 +384,33 @@ public partial class WorkflowViewModel : ObservableObject
         draft.MaterialNeedsReview = review; draft.MaterialConfirmed = false;
         return draft;
     }
+
+    private static (decimal? Thickness, string Description) ReportBlankSize(SpecificationParseResult report)
+    {
+        var groups = report.SheetLayouts.GroupBy(layout => layout.Value.Dimensions).ToArray();
+        if (groups.Length <= 1)
+        {
+            var size = report.Dimensions?.Value ?? groups.FirstOrDefault()?.Key;
+            return size is null ? (null, "") : (size.ThicknessMillimeters,
+                $"Лист {SpecificationDraft.N(size.ThicknessMillimeters)}×{SpecificationDraft.N(size.WidthMillimeters)}×{SpecificationDraft.N(size.LengthMillimeters)}");
+        }
+
+        if (report.Profile != HansPdfSpecificationParser.Profile)
+            throw new WorkflowValidationException("В спецификации разные размеры заготовок. Этот случай будет добавлен следующим этапом.");
+        var thickness = groups[0].Key.ThicknessMillimeters;
+        if (groups.Any(group => group.Key.ThicknessMillimeters != thickness))
+            throw new WorkflowValidationException("В спецификации HansLaser листы разной толщины. Разделите их по проектам.");
+
+        var sizes = groups.Select(group =>
+        {
+            var dimensions = $"{SpecificationDraft.N(group.Key.LengthMillimeters)}×{SpecificationDraft.N(group.Key.WidthMillimeters)}";
+            if (group.Any(layout => layout.Value.SheetCount is null)) return dimensions;
+            var quantity = group.Sum(layout => (long)layout.Value.SheetCount!.Value);
+            return $"{dimensions} ({quantity.ToString(CultureInfo.InvariantCulture)} шт.)";
+        });
+        return (thickness, $"Листы {SpecificationDraft.N(thickness)} мм: {string.Join("; ", sizes)}");
+    }
+
     private SpecificationDraft CreateDraft(WorkflowSpecification specification) =>
         new(specification, CurrentOrder?.Projects.SingleOrDefault(p => p.Id == specification.Id)?.NativePath);
 

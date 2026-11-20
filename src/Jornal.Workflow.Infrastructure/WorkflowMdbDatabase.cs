@@ -169,6 +169,8 @@ public sealed partial class WorkflowMdbDatabase
                     string.Equals(Convert.ToString(r["COLUMN_NAME"], CultureInfo.InvariantCulture), column.Name, StringComparison.OrdinalIgnoreCase));
                 if (column.Required && physical["IS_NULLABLE"] is not false) throw WrongDatabase(table.Name + "." + column.Name + ": допускается NULL");
                 if (column.Type == WorkflowMdbType.Text && Convert.ToInt32(row["ColumnSize"], CultureInfo.InvariantCulture) != column.Size) throw WrongDatabase(table.Name + "." + column.Name + ": размер " + row["ColumnSize"]);
+                if (column.Type == WorkflowMdbType.Memo && row["IsLong"] is not true)
+                    throw WrongDatabase(table.Name + "." + column.Name + ": ожидалось поле Long Text");
                 if (column.Type is WorkflowMdbType.Decimal or WorkflowMdbType.Int64 or WorkflowMdbType.UInt32 &&
                     (Convert.ToInt32(row["NumericPrecision"], CultureInfo.InvariantCulture) != (column.Type == WorkflowMdbType.Decimal ? 28 : column.Type == WorkflowMdbType.Int64 ? 19 : 10) ||
                      Convert.ToInt32(row["NumericScale"], CultureInfo.InvariantCulture) != (column.Type == WorkflowMdbType.Decimal ? 10 : 0))) throw WrongDatabase(table.Name + "." + column.Name + ": точность " + row["NumericPrecision"] + ", масштаб " + row["NumericScale"]);

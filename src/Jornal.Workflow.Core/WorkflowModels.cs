@@ -21,6 +21,8 @@ public sealed record CuttingParameters(string Machine, string Material, string M
     long? DurationSeconds, decimal ManualCoefficient, bool HasBending, string? Comment,
     bool MaterialNeedsReview = false)
 {
+    public const int MaximumCommentLength = 8_000;
+
     public Guid MachineId { get; init; }
     public bool HasChamfer { get; init; }
     public bool SameInputs(CuttingParameters other) => MachineId == other.MachineId && this with { Machine = other.Machine } == other;
@@ -31,7 +33,8 @@ public sealed record CuttingParameters(string Machine, string Material, string M
             WeightKg is < 0 || DurationSeconds is < 0 || ManualCoefficient <= 0)
             throw new WorkflowValidationException("Проверьте материал, толщину, количество и параметры резки.");
         if (MaterialNeedsReview) throw new WorkflowValidationException("Подтвердите или исправьте материал спецификации.");
-        if (Comment?.Length > 255) throw new WorkflowValidationException("Комментарий — не более 255 символов.");
+        if (Comment?.Length > MaximumCommentLength)
+            throw new WorkflowValidationException($"Комментарий — не более {MaximumCommentLength} символов.");
     }
 }
 

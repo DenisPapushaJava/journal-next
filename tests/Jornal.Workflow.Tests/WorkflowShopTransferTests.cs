@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using Jornal.Parsing.Documents;
 using Jornal.Workflow.Core;
 using Jornal.Workflow.Infrastructure;
@@ -94,6 +95,31 @@ public sealed class WorkflowShopTransferTests
         var prefix = new string('a', 249);
         Assert.Equal("Карты раскроев.pdf", WorkflowShopTransfer.BundleFileName(ShopMapBundle.Pdf,
             [prefix + "-1.DOC", prefix + "-3.DOC"]));
+    }
+
+    [Theory]
+    [InlineData(ShopMapBundle.Pdf, 1, false)]
+    [InlineData(ShopMapBundle.Pdf, 2, false)]
+    [InlineData(ShopMapBundle.Doc, 1, true)]
+    [InlineData(ShopMapBundle.Doc, 2, true)]
+    public async Task PreviousShopBundleNeedsReplacementOnlyForPdf(ShopMapBundle format, int legacyVersion, bool matches)
+    {
+        using var fixture = new ShopFixture("HansLaser");
+        File.Move(Path.Combine(fixture.Source, "Карта.DOC"), Path.Combine(fixture.Source, "Лист-1.DOC"));
+        var second = legacyVersion == 2 ? "Лист-2.DOC" : "Карта.DOC";
+        await File.WriteAllTextAsync(Path.Combine(fixture.Source, second), "Second map", Token);
+        var plan = Assert.Single(await fixture.Discover());
+        var selection = ShopFixture.Choose(plan) with { MapBundle = format };
+        var tree = WorkflowShopTransfer.DesiredTree(selection);
+        var legacyKey = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            Version = legacyVersion,
+            Format = format,
+            Files = tree.Files.OrderBy(file => file.RelativePath, StringComparer.Ordinal),
+            Directories = tree.Directories.Order(StringComparer.Ordinal)
+        })));
+        Assert.Equal(matches, WorkflowShopTransfer.MatchesDestination(selection, tree, legacyKey));
+        Assert.True(WorkflowShopTransfer.MatchesDestination(selection, tree, legacyKey, WorkflowMapBundlePdf.ExportVersion));
     }
 
     [Fact]

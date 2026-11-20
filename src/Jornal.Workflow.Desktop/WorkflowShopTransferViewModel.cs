@@ -25,10 +25,10 @@ public partial class WorkflowShopProjectChoice : ObservableObject
     public WorkflowShopFileChoice[] Files { get; }
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasDestination))] private string? _destinationRevision;
     public bool HasDestination => DestinationRevision is not null;
-    private ShopTree? _destinationContents;
-    private string? _destinationBundleKey;
+    private ShopDestinationInspection? _destinationInspection;
     private readonly ShopMapBundle _mapBundle;
-    public bool RequiresReplacement => _destinationContents is not null && !WorkflowShopTransfer.MatchesDestination(Selection, _destinationContents, _destinationBundleKey);
+    public bool RequiresReplacement => _destinationInspection is { Contents: { } contents } target &&
+        !WorkflowShopTransfer.MatchesDestination(Selection, contents, target.BundleKey, target.PdfExportVersion);
     public string? Problem { get; }
     public bool HasBending => Plan.Bending is not null;
     public string SelectionHelp => Problem is not null ? "" : Plan.ReviewReason ?? (Files.Length == 0 ?
@@ -55,13 +55,13 @@ public partial class WorkflowShopProjectChoice : ObservableObject
         { if (e.PropertyName == nameof(WorkflowShopFileChoice.IsSelected)) { Reviewed = false; Result = null; Changed(); } };
     }
     public void SetDestination(ShopDestinationInspection inspection)
-    { _destinationContents = inspection.Contents; _destinationBundleKey = inspection.BundleKey; DestinationRevision = inspection.Revision; Changed(); }
+    { _destinationInspection = inspection; DestinationRevision = inspection.Revision; Changed(); }
     public void ApplyResult(ShopTransferResult result)
     {
         if (result.Success)
         {
-            _destinationContents = WorkflowShopTransfer.DesiredTree(Selection);
-            _destinationBundleKey = result.BundleKey;
+            _destinationInspection = new(result.DestinationRevision, WorkflowShopTransfer.DesiredTree(Selection))
+                { BundleKey = result.BundleKey, PdfExportVersion = result.PdfExportVersion };
         }
         DestinationRevision = result.DestinationRevision; Result = result.Message; Changed();
     }

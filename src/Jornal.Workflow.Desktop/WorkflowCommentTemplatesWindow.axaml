@@ -1,0 +1,18 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="using:Jornal.Desktop.Controls" x:Class="Jornal.Workflow.Desktop.WorkflowCommentTemplatesWindow"
+        Title="Шаблоны комментариев" Width="580" Height="420" MinWidth="400" MinHeight="300"
+        Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,*,Auto" Margin="24,20">
+    <TextBlock Margin="0,0,0,12" Text="Один шаблон на строку. Шаблоны сохраняются на этом компьютере." Classes="muted" TextWrapping="Wrap" />
+    <TextBox x:Name="CommentTemplatesInput" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"
+             ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Шаблоны комментариев, по одному на строку" />
+    <StackPanel Grid.Row="2" Margin="0,12,0,0" Spacing="8">
+      <TextBlock x:Name="CommentTemplatesError" IsVisible="False" Foreground="{DynamicResource JournalDangerForeground}"
+                 TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+        <ui:JournalButton x:Name="CancelCommentTemplates" Label="Отмена" Click="OnCancel" />
+        <ui:JournalButton x:Name="SaveCommentTemplates" Label="Сохранить" Classes="primary" Click="OnSave" />
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</Window>

@@ -78,7 +78,8 @@ public sealed class WorkflowNativeMdbTests
             order = book.Orders.Single(); var renamed = order.Projects.Single();
             Assert.Equal(WorkflowProjectNames.Name(machine, 8, at), renamed.Name);
             Assert.Null(renamed.Rename); Assert.True(File.Exists(renamed.NativePath)); Assert.False(Directory.Exists(folder));
-            var parameters = new CuttingParameters(machine.Name, "Ст3", "Базовая", 8, "1500×3000", 1, 12.3456789m, 3, null, null, 1.2m, true, "")
+            var legacyComment = "Первая строка.\r\n" + new string('Я', 230);
+            var parameters = new CuttingParameters(machine.Name, "Ст3", "Базовая", 8, "1500×3000", 1, 12.3456789m, 3, null, null, 1.2m, true, legacyComment)
             { MachineId = machine.Id, HasChamfer = true };
             var rate = new CuttingRate(Guid.NewGuid(), machine.Name, "Базовая", 8, 111.25m, 1.5m) { MachineId = machine.Id };
             book = await store.WriteAsync(book.Version, w => WorkflowChanges.SetRate(w, rate), TestContext.Current.CancellationToken);
@@ -150,6 +151,16 @@ public sealed class WorkflowNativeMdbTests
                 TestContext.Current.CancellationToken);
             book = await new WorkflowMdbStore(path, client, created.DatabaseId).ReadAsync(TestContext.Current.CancellationToken);
             Assert.Equal("Unimach&HL", book.Machines.Single(m => m.Id == machine.Id).ShopFolderName);
+            await MakeEarlierSchemaFixture(path, 6);
+            var versionSixBytes = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+            await store.InspectAsync(TestContext.Current.CancellationToken);
+            var versionSixBackup = Assert.Single(Directory.GetFiles(directory, "*.schema-v6-*.bak"));
+            Assert.Equal(versionSixBytes, await File.ReadAllBytesAsync(versionSixBackup, TestContext.Current.CancellationToken));
+            var v6 = await store.ReadOrderAsync(refreshed.Id, TestContext.Current.CancellationToken);
+            Assert.Equal(legacyComment, v6.Orders.Single().Specifications.Single().Current.Parameters.Comment);
+            Assert.Equal("Unimach&HL", v6.Machines.Single(m => m.Id == machine.Id).ShopFolderName);
+            await store.InspectAsync(TestContext.Current.CancellationToken);
+            Assert.Single(Directory.GetFiles(directory, "*.schema-v6-*.bak"));
             // A prepared calculation patch may cross a metadata-only transfer commit.
             var latest = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOrders, path, created.DatabaseId, OrderIds: [refreshed.Id]), TestContext.Current.CancellationToken);
             var raced = await client.SendAsync(new(1, WorkflowAccessOperation.Apply, path, created.DatabaseId,
@@ -181,10 +192,10 @@ public sealed class WorkflowNativeMdbTests
             Assert.Equal(second.Id, Assert.Single(order.ActiveSpecifications).Id);
             store.Query = new(Search: "Заказчик Ст3"); book = await store.ReadAsync(TestContext.Current.CancellationToken); Assert.Single(book.Orders);
             // Exercise actual Jet EXISTS/correlations, not the managed MemoryMdb filter.
-            async Task CheckFilter(WorkflowOrderFilter filter, int expected)
+            async Task CheckFilter(WorkflowOrderFilter filter, int expected, string search = "")
             {
                 var response = await client.SendAsync(new(1, WorkflowAccessOperation.Read, path, created.DatabaseId,
-                    Query: new(Limit: 1, Filter: filter)), TestContext.Current.CancellationToken);
+                    Query: new(Search: search, Limit: 1, Filter: filter)), TestContext.Current.CancellationToken);
                 Assert.Equal(expected, response.TotalCount); Assert.Equal(expected, response.PageIds!.Length);
             }
             await CheckFilter(new(actor, WorkflowWorkFilter.InWork, true, true), 1);
@@ -199,8 +210,20 @@ public sealed class WorkflowNativeMdbTests
             await CheckFilter(new(WithBending: true), 0); await CheckFilter(new(WithChamfer: true), 0);
             book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowProjects.SetIncluded(w, order.Id, order.Version,
                 second.ItemId, true, actor, at), TestContext.Current.CancellationToken); order = book.Orders.Single();
+            var longComment = legacyComment + "\r\n" + new string('Ж', 2_000) + "\r\nОтдельнаяПроверкаХвоста";
+            var original = Assert.Single(order.ActiveSpecifications).Current;
+            book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.SaveSpecificationComment(w, order.Id, order.Version,
+                second.Id, longComment, actor, at), TestContext.Current.CancellationToken);
+            order = book.Orders.Single();
+            var reread = await store.ReadOrderAsync(order.Id, TestContext.Current.CancellationToken);
+            var commented = Assert.Single(reread.Orders.Single().ActiveSpecifications).Current;
+            Assert.Equal(original.Parameters with { Comment = longComment }, commented.Parameters);
+            Assert.Equal(original.Calculation, commented.Calculation);
+            await CheckFilter(new(), 1, "отдельнаяпроверкахвоста");
+            await CheckFilter(new(WithBending: true, WithChamfer: true), 1);
             book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.SaveSpecification(w, order.Id, order.Version,
-                second.Id, parameters with { HasBending = false, HasChamfer = false }, "native-2", new(2026, 10, 25), actor, at, null, machine.ImportProfile, rate), TestContext.Current.CancellationToken);
+                second.Id, commented.Parameters with { HasBending = false, HasChamfer = false }, "native-2", new(2026, 10, 25), actor, at, null,
+                machine.ImportProfile, rate), TestContext.Current.CancellationToken);
             order = book.Orders.Single();
             await CheckFilter(new(WithBending: true), 0); await CheckFilter(new(WithChamfer: true), 0); // The old variant still has both operations.
             await CheckFilter(new(Work: WorkflowWorkFilter.InWork), 1); // Changed handoff remains in work.
@@ -221,7 +244,8 @@ public sealed class WorkflowNativeMdbTests
         var start = new System.Diagnostics.ProcessStartInfo(powershell) { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true };
         start.Environment["WORKFLOW_SCHEMA_FIXTURE"] = path;
         start.ArgumentList.Add("-NoProfile"); start.ArgumentList.Add("-NonInteractive"); start.ArgumentList.Add("-Command");
-        var sql = new List<string> { "ALTER TABLE [machines] DROP COLUMN [shop_folder_name]" };
+        var sql = new List<string> { "ALTER TABLE [specifications] ALTER COLUMN [comment] TEXT(255)" };
+        if (schema < 6) sql.Add("ALTER TABLE [machines] DROP COLUMN [shop_folder_name]");
         if (schema < 5) sql.Add("DROP TABLE [project_shop_handoff_inputs]");
         if (schema < 4) sql.Add("DROP TABLE [project_shop_handoffs]");
         if (schema == 1) sql.Add("DROP TABLE [order_shop_handoffs]");
