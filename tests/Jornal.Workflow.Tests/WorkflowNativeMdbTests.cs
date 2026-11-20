@@ -211,15 +211,20 @@ public sealed class WorkflowNativeMdbTests
             book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowProjects.SetIncluded(w, order.Id, order.Version,
                 second.ItemId, true, actor, at), TestContext.Current.CancellationToken); order = book.Orders.Single();
             var longComment = legacyComment + "\r\n" + new string('Ж', 2_000) + "\r\nОтдельнаяПроверкаХвоста";
-            var originalCalculation = Assert.Single(order.ActiveSpecifications).Current.Calculation;
+            var original = Assert.Single(order.ActiveSpecifications).Current;
             book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.SaveSpecificationComment(w, order.Id, order.Version,
                 second.Id, longComment, actor, at), TestContext.Current.CancellationToken);
             order = book.Orders.Single();
             var reread = await store.ReadOrderAsync(order.Id, TestContext.Current.CancellationToken);
             var commented = Assert.Single(reread.Orders.Single().ActiveSpecifications).Current;
-            Assert.Equal(longComment, commented.Parameters.Comment);
-            Assert.Equal(originalCalculation, commented.Calculation);
+            Assert.Equal(original.Parameters with { Comment = longComment }, commented.Parameters);
+            Assert.Equal(original.Calculation, commented.Calculation);
             await CheckFilter(new(), 1, "отдельнаяпроверкахвоста");
+            await CheckFilter(new(WithBending: true, WithChamfer: true), 1);
+            book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.SaveSpecification(w, order.Id, order.Version,
+                second.Id, commented.Parameters with { HasBending = false, HasChamfer = false }, "native-2", new(2026, 10, 25), actor, at, null,
+                machine.ImportProfile, rate), TestContext.Current.CancellationToken);
+            order = book.Orders.Single();
             await CheckFilter(new(WithBending: true), 0); await CheckFilter(new(WithChamfer: true), 0); // The old variant still has both operations.
             await CheckFilter(new(Work: WorkflowWorkFilter.InWork), 1); // Changed handoff remains in work.
             book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.MoveOrderToTrash(w, order.Id, order.Version, actor, at), TestContext.Current.CancellationToken);
