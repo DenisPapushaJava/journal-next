@@ -10,6 +10,7 @@ public sealed record WorkflowPreferences(bool DarkTheme = false)
     public bool AutomaticJournalRefresh { get; init; } = true;
     public Guid? EmployeeId { get; init; }
     public WorkflowEntrySuggestions? EntrySuggestions { get; init; }
+    public string? CommentTemplates { get; init; }
     public WorkflowResultPricing? ResultPricing { get; init; }
     public ResultTextStyle? ResultFormatting { get; init; }
     public string? ShopRoot { get; init; }

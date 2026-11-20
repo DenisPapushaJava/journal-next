@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Interactivity;
@@ -319,6 +321,45 @@ public sealed class WorkflowManagerMapsTests
         Assert.Contains("Состав карт изменился", error.Message);
         Assert.False(File.Exists(Path.Combine(folder, hans.Name + "-Блок-Карта.pdf")));
         Assert.Empty(Directory.GetFiles(Path.Combine(folder, WorkflowManagerMapBundle.MarkerFolder), "*.tmp"));
+    }
+
+    [Theory]
+    [InlineData(ShopMapBundle.Pdf, 1)]
+    [InlineData(ShopMapBundle.Doc, 0)]
+    public async Task UpgradingThePdfExportRebuildsOnlyTheOwnedPdfBundle(ShopMapBundle format, int builds)
+    {
+        using var fixture = new ProjectFixture();
+        await fixture.InitializeAsync();
+        var hans = await fixture.AddAsync("HansLaser");
+        var machine = fixture.Model.ProjectMachines.Single(m => m.Id == hans.MachineId);
+        var folder = Path.GetDirectoryName(hans.NativePath!)!;
+        var sources = new[] { "Лист-1.DOC", "Лист-2.DOC" };
+        foreach (var name in sources) await File.WriteAllTextAsync(Path.Combine(folder, name), name, Token);
+        var sourceInfo = new List<(string Name, long Length, string Sha256)>();
+        foreach (var name in sources)
+        {
+            var (length, hash) = await ShopFileSystem.FingerprintAsync(Path.Combine(folder, name), Token);
+            sourceInfo.Add((name, length, hash));
+        }
+        var legacyKey = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
+            sourceInfo.Select(file => new { file.Name, file.Length, file.Sha256 }))));
+        var extension = format == ShopMapBundle.Pdf ? ".pdf" : ".doc";
+        var output = Path.Combine(folder, hans.Name + WorkflowManagerMapBundle.FileSuffix + extension);
+        await File.WriteAllTextAsync(output, "Previous bundle", Token);
+        var (_, previousHash) = await ShopFileSystem.FingerprintAsync(output, Token);
+        var state = Directory.CreateDirectory(Path.Combine(folder, WorkflowManagerMapBundle.MarkerFolder));
+        await File.WriteAllTextAsync(Path.Combine(state.FullName, Path.GetFileName(output)),
+            JsonSerializer.Serialize(new { Current = new { InputsHash = legacyKey, OutputHash = previousHash } }), Token);
+
+        var word = new ShopWordEditor();
+        Task<string?> Build() => WorkflowManagerMapBundle.CreateAsync(hans, machine, format, word, _ => Task.CompletedTask, Token);
+        Assert.Equal(output, await Build());
+        Assert.Equal(output, await Build());
+        Assert.Equal(builds, word.BundleCalls);
+        var (_, outputHash) = await ShopFileSystem.FingerprintAsync(output, Token);
+        Assert.Equal(format == ShopMapBundle.Doc, outputHash == previousHash);
+        using var receipt = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(state.FullName, Path.GetFileName(output)), Token));
+        Assert.Equal(legacyKey, receipt.RootElement.GetProperty("Current").GetProperty("InputsHash").GetString());
     }
 
     [Fact]

@@ -90,6 +90,7 @@
               <TextBlock Text="Выбор — на этом компьютере. Цвет видят коллеги." Classes="muted" TextWrapping="Wrap" />
               <ui:JournalButton x:Name="WorkflowEntrySuggestionsButton" Label="Данные для выпадающих списков" Icon="list-plus" Click="OnEntrySuggestions" HorizontalAlignment="Left" />
               <TextBlock Text="{Binding EntrySuggestionsSummary}" Classes="muted" FontSize="12" />
+              <ui:JournalButton x:Name="WorkflowCommentTemplatesButton" Label="Шаблоны комментариев" Click="OnCommentTemplates" HorizontalAlignment="Left" />
             </StackPanel>
             <Border Classes="workflow-settings-group">
               <StackPanel Spacing="8">

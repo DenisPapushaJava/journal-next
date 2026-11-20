@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Jornal.Workflow.Core;
 
 namespace Jornal.Workflow.Infrastructure;
@@ -9,7 +10,11 @@ public static class WorkflowManagerMapBundle
     internal const string MarkerFolder = ".workflow-manager-maps";
     internal const string FileSuffix = "-Блок-Карта";
     internal const string PreviousFileSuffix = " — карты раскроя";
-    private sealed record BundleVersion(string InputsHash, string OutputHash);
+    private sealed record BundleVersion(string InputsHash, string OutputHash)
+    {
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public int PdfExportVersion { get; init; }
+    }
     private sealed record Receipt(BundleVersion Current, BundleVersion? Previous);
 
     public static bool Supports(CuttingProject project, WorkflowMachine machine) =>
@@ -100,7 +105,7 @@ public static class WorkflowManagerMapBundle
         var sources = pairedCards is null ? candidates : candidates.Concat(pairedCards.Values).ToArray();
         var inputs = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
             sources.OrderBy(f => f.Name, StringComparer.Ordinal).Select(f => new { f.Name, f.Length, f.Sha256 }))));
-        if ((await ReadOwnedAsync(output, receiptPath, token))?.InputsHash == inputs) return output;
+        if (CanReuse(await ReadOwnedAsync(output, receiptPath, token), inputs, format)) return output;
 
         Directory.CreateDirectory(state);
         WorkflowServiceFiles.TryHide(state);
@@ -121,8 +126,12 @@ public static class WorkflowManagerMapBundle
                 if (await ShopFileSystem.FingerprintAsync(file.SourcePath, token) != (file.Length, file.Sha256))
                     throw new WorkflowValidationException($"Карта «{file.Name}» изменилась. Объедините карты повторно.");
             var previous = await ReadOwnedAsync(output, receiptPath, token);
-            if (previous?.InputsHash == inputs) return output;
-            await File.WriteAllTextAsync(stagedReceipt, JsonSerializer.Serialize(new Receipt(new(inputs, built.Sha256), previous)), token);
+            if (CanReuse(previous, inputs, format)) return output;
+            var current = new BundleVersion(inputs, built.Sha256)
+            {
+                PdfExportVersion = format == ShopMapBundle.Pdf ? WorkflowMapBundlePdf.ExportVersion : 0
+            };
+            await File.WriteAllTextAsync(stagedReceipt, JsonSerializer.Serialize(new Receipt(current, previous)), token);
             token.ThrowIfCancellationRequested();
             // Exclude the name before publishing and keep the previous fingerprint
             // valid if the replacement is interrupted or the file is locked.
@@ -137,6 +146,10 @@ public static class WorkflowManagerMapBundle
         }
         finally { TryDelete(stage); TryDelete(stagedReceipt); }
     }
+
+    private static bool CanReuse(BundleVersion? saved, string inputsHash, ShopMapBundle format) =>
+        saved is not null && saved.InputsHash == inputsHash &&
+        (format != ShopMapBundle.Pdf || saved.PdfExportVersion >= WorkflowMapBundlePdf.ExportVersion);
 
     private static async Task<BundleVersion?> ReadOwnedAsync(string output, string receiptPath, CancellationToken token)
     {

@@ -107,6 +107,33 @@ public partial class WorkflowWindow : Window
         if (Avalonia.Application.Current is { } app) app.RequestedThemeVariant = theme;
     }
     private void OnOpenOrder(object? sender, TappedEventArgs e) => Model?.OpenOrderCommand.Execute(null);
+    private async void OnChooseCommentTemplates(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { CanUse: true, SelectedDraft: { } draft } model || OwnedWindows.Count > 0) return;
+        var templates = WorkflowViewModel.CommentTemplateLines(model.CommentTemplatesText);
+        var picker = new WorkflowCommentTemplatePicker(templates, draft.Comment) { RequestedThemeVariant = ActualThemeVariant };
+        var changes = await picker.ShowDialog<WorkflowCommentTemplateChanges?>(this);
+        if (!IsVisible || !ReferenceEquals(Model, model) || !ReferenceEquals(model.SelectedDraft, draft) || !model.CanUse) return;
+
+        if (changes is not null)
+            draft.Comment = WorkflowViewModel.ApplyCommentTemplateChanges(draft.Comment, changes);
+        WorkflowSpecificationComment.Focus();
+        if (changes is { Added.Length: > 0 })
+            WorkflowSpecificationComment.CaretIndex = WorkflowSpecificationComment.Text?.Length ?? 0;
+    }
+    private void OnClearComment(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { CanUse: true, SelectedDraft: { } draft }) return;
+        draft.ClearComment();
+        WorkflowSpecificationComment.Focus();
+    }
+    private void OnUndoClearComment(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { CanUse: true, SelectedDraft: { } draft }) return;
+        draft.UndoClearComment();
+        WorkflowSpecificationComment.Focus();
+        WorkflowSpecificationComment.CaretIndex = WorkflowSpecificationComment.Text?.Length ?? 0;
+    }
     private void OnFocusNewOrder(object? sender, RoutedEventArgs e) => Dispatcher.UIThread.Post(() =>
     { if (IsVisible && Model is { IsCreating: true, CanUse: true }) NewManagerInput.Focus(); });
     private void OnFocusProject(object? sender, RoutedEventArgs e) => Dispatcher.UIThread.Post(() =>

@@ -52,7 +52,9 @@ public static class WorkflowMdbQueries
                     parts.Add($"EXISTS (SELECT * FROM [employees] e WHERE e.[id]=o.[{field}] AND " + Contains("e.[display_name]") + ")");
                 parts.Add("EXISTS (SELECT * FROM [cutting_projects] p WHERE p.[order_id]=o.[id] AND p.[deleted_at] IS NULL AND (" +
                     Contains("p.[project_name]") + " OR " + Contains("(CStr(p.[thickness_mm]) & ' мм')", true) + " OR EXISTS (SELECT * FROM [machines] m WHERE m.[id]=p.[machine_id] AND " + Contains("m.[display_name]") + ")))");
-                var specFields = new[] { "document_number", "material", "material_group", "blank_size", "comment", "machine_name" }.Select(f => Contains($"s.[{f}]")).ToList();
+                var specFields = new[] { "document_number", "material", "material_group", "blank_size", "machine_name" }.Select(f => Contains($"s.[{f}]")).ToList();
+                Param(WorkflowMdbType.Memo, term);
+                specFields.Add("InStr(1,s.[comment],?,1)>0");
                 specFields.Add(Contains("(CStr(s.[thickness_mm]) & ' мм')", true));
                 specFields.Add(Contains("Format(s.[document_date],'dd.mm.yyyy')"));
                 specFields.Add("EXISTS (SELECT * FROM [accepted_reports] r WHERE r.[specification_id]=s.[id] AND " + Contains("r.[file_name]") + ")");

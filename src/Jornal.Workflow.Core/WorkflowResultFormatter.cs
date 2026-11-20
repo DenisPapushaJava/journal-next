@@ -19,8 +19,7 @@ public static partial class WorkflowResultFormatter
         IReadOnlyList<WorkflowMachine> machines, WorkflowResultPricing? pricing = null)
     {
         pricing = (pricing ?? new()).Normalize();
-        var saved = specifications.OrderBy(s => s.Parameters.ThicknessMm)
-            .ThenBy(s => s.Parameters.Material, StringComparer.Create(Culture, ignoreCase: true)).ToArray();
+        var saved = OrderForLetter(specifications).ToArray();
         if (saved.Length == 0) return "";
         var names = machines.ToDictionary(m => m.Id, m => m.Name);
         var rows = saved.Select(s =>
@@ -52,7 +51,34 @@ public static partial class WorkflowResultFormatter
             if (p.HasBending) result.Append("   ГИБКА");
             result.Append('\n');
         }
-        return result.Append('\n').ToString();
+        return result.Append('\n').Append(FormatCommentBlock(saved)).ToString();
+    }
+
+    public static string? RefreshComments(string generated, IEnumerable<SpecificationState> previous,
+        IEnumerable<SpecificationState> current)
+    {
+        var previousBlock = FormatCommentBlock(OrderForLetter(previous));
+        if (!generated.EndsWith("\n\n", StringComparison.Ordinal) || !generated.EndsWith(previousBlock, StringComparison.Ordinal))
+            return null;
+        return generated[..^previousBlock.Length] + FormatCommentBlock(OrderForLetter(current));
+    }
+
+    private static IOrderedEnumerable<SpecificationState> OrderForLetter(IEnumerable<SpecificationState> specifications) =>
+        specifications.OrderBy(s => s.Parameters.ThicknessMm)
+            .ThenBy(s => s.Parameters.Material, StringComparer.Create(Culture, ignoreCase: true));
+
+    private static string FormatCommentBlock(IEnumerable<SpecificationState> specifications)
+    {
+        var result = new StringBuilder();
+        foreach (var parameters in specifications.Select(s => s.Parameters))
+        {
+            if (string.IsNullOrWhiteSpace(parameters.Comment)) continue;
+            var lines = parameters.Comment!.Split(['\r', '\n'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            result.Append(parameters.ThicknessMm.ToString("0.###", Culture)).Append(" мм, ")
+                .Append(parameters.Material).Append(": ").AppendJoin(' ', lines).Append('\n');
+        }
+        if (result.Length > 0) result.Append('\n');
+        return result.ToString();
     }
 
     private static string Number(decimal value) => value.ToString("0.############################", Culture);

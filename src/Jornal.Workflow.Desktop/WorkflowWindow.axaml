@@ -490,7 +490,24 @@
                               <PathIcon Width="18" Height="18" Data="{StaticResource WorkflowFolderIcon}" />
                             </Button>
                           </StackPanel>
-                          <TextBox Grid.Column="2" Text="{Binding Comment}" PlaceholderText="Комментарий" AutomationProperties.Name="Комментарий к расчёту" AcceptsReturn="True" TextWrapping="Wrap" MaxLength="255" MinHeight="32" MaxHeight="64" />
+                          <Grid Grid.Column="2" ColumnDefinitions="*,8,Auto">
+                            <TextBox x:Name="WorkflowSpecificationComment" Text="{Binding Comment}" PlaceholderText="Комментарий"
+                                     AutomationProperties.Name="Комментарий к расчёту" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="32" MaxHeight="96"
+                                     VerticalContentAlignment="Top" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                              <TextBox.InnerRightContent>
+                                <Grid VerticalAlignment="Top" Margin="0,2,4,0">
+                                  <ui:JournalButton x:Name="ClearWorkflowComment" Classes="search-clear" Label="Очистить комментарий" Icon="x" IconOnly="True"
+                                                    Width="28" Height="28" MinHeight="28" Padding="0" IsVisible="{Binding HasComment}" Click="OnClearComment"
+                                                    ToolTip.Tip="Очистить комментарий" />
+                                  <Button x:Name="UndoClearWorkflowComment" Content="Отменить" Classes="progress-link" Margin="0"
+                                          AutomationProperties.Name="Отменить очистку комментария" ToolTip.Tip="Отменить очистку комментария"
+                                          IsVisible="{Binding CanUndoClearComment}" Click="OnUndoClearComment" />
+                                </Grid>
+                              </TextBox.InnerRightContent>
+                            </TextBox>
+                            <ui:JournalButton Grid.Column="2" x:Name="ChooseWorkflowCommentTemplates" Label="Шаблоны…" Click="OnChooseCommentTemplates"
+                                              VerticalAlignment="Top" AutomationProperties.Name="Выбрать шаблоны комментария" />
+                          </Grid>
                         </Grid>
                         <Expander x:Name="WorkflowCalculationDetails" HorizontalAlignment="Stretch">
                           <Expander.Header><TextBlock Text="{Binding DetailsSummary}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip.Tip="Заготовка, количество, вес и тариф · раскрыть для изменения" /></Expander.Header>
@@ -580,6 +597,8 @@
                 <TextBlock x:Name="WorkflowResultStatus" Text="{Binding ResultStatus}" Classes="muted result-feedback" Classes.problem="{Binding HasResultStatusError}"
                            FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ResultStatus}" AutomationProperties.LiveSetting="Polite" />
                 <Button x:Name="UndoWorkflowResultClear" Grid.Column="2" Content="Отменить очистку" Classes="progress-link" Margin="0" Command="{Binding UndoClearResultCommand}" IsVisible="{Binding CanUndoClearResult}" />
+                <Button x:Name="UpdateWorkflowLetter" Grid.Column="2" Content="Обновить письмо" Classes="progress-link" Margin="0"
+                        IsVisible="{Binding CanUpdateStaleLetter}" ToolTip.Tip="Сформировать письмо по сохранённым расчётам" Click="OnGenerateResult" />
               </Grid>
             </Grid>
           </TabItem>

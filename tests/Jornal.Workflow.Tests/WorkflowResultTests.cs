@@ -13,7 +13,7 @@ public sealed class WorkflowResultTests
 {
     private static SpecificationState State(decimal price = 1105m, bool chamfer = false, bool bending = false) => new("1025-014010",
         new(2026, 10, 25), DateTimeOffset.UtcNow, Guid.NewGuid(),
-        new("Лазер", "Ст3", "Базовая", 6, "Лист 6×3000×1500", 1, 11, 5, 48.2m, 600, 1, bending, "Не включать в письмо") { HasChamfer = chamfer },
+        new("Лазер", "Ст3", "Базовая", 6, "Лист 6×3000×1500", 1, 11, 5, 48.2m, 600, 1, bending, null) { HasChamfer = chamfer },
         new(Guid.NewGuid(), 100, 1, 1100, 5, price), null, "block-html/v1");
 
     [Theory]
@@ -34,7 +34,130 @@ public sealed class WorkflowResultTests
         Assert.Equal("\u00a0", paragraphs[2].TextContent);
         Assert.EndsWith("\\par \n\\par \n}", clipboard.Rtf);
         if (chamfer) { Assert.Contains("ФАСКА", WebUtility.HtmlDecode(clipboard.Html)); Assert.Contains(@"\u1060?", clipboard.Rtf); }
-        Assert.DoesNotContain("Не включать", text); Assert.Equal(1105m, state.Calculation.TotalCost);
+        Assert.Equal(1105m, state.Calculation.TotalCost);
+    }
+
+    [Fact]
+    public void LetterAppendsOneLinePerCommentInCalculationOrder()
+    {
+        var first = State();
+        var thin = first with { Parameters = first.Parameters with { ThicknessMm = 2.5m, Material = "09Г2С", Comment = "  Упаковать отдельно.\r\n\r\nПромаркировать комплект.  " } };
+        var thick = first with { Parameters = first.Parameters with { ThicknessMm = 10, Comment = "Согласовать замену." } };
+        var noComments = WorkflowResultFormatter.Format([first, thin with { Parameters = thin.Parameters with { Comment = null } },
+            thick with { Parameters = thick.Parameters with { Comment = null } }], []);
+        var letter = WorkflowResultFormatter.Format([thick, first, thin], []);
+        Assert.Equal(noComments + "2,5 мм, 09Г2С: Упаковать отдельно. Промаркировать комплект.\n10 мм, Ст3: Согласовать замену.\n\n", letter);
+        Assert.Contains("Промаркировать комплект", WebUtility.HtmlDecode(ResultClipboardContent.FromText(letter).Html));
+    }
+
+    [Fact]
+    public async Task SavingOnlyACommentRefreshesAnAutomaticLetterWithoutReloadingReportsOrChangingPrices()
+    {
+        using var f = new ProjectFixture();
+        await f.InitializeAsync();
+        var project = await f.AddAsync();
+        await ProjectFixture.WriteAsync(project);
+        await f.AcceptAsync();
+        f.Model.GenerateResultCommand.Execute(null);
+        var initialLetter = f.Model.ResultText;
+        var initial = f.Model.SelectedDraft!.Saved!;
+        f.Model.OrderTabIndex = 0;
+        using (var settings = f.Model.CreateGeneralSettings()) settings.ResultMinimumText = "2000";
+        await ProjectFixture.WriteAsync(project, 20_000);
+
+        f.Model.SelectedDraft!.Comment = "Отдельная упаковка.";
+        await f.Model.SaveSpecificationCommand.ExecuteAsync(null);
+        Assert.Null(f.Model.Error);
+        Assert.Equal(initialLetter + "6 мм, Ст3: Отдельная упаковка.\n\n", f.Model.ResultText);
+        Assert.False(f.Model.ResultIsStale);
+        Assert.Equal(0, f.Model.OrderTabIndex);
+        Assert.Equal(initial.Calculation, f.Model.SelectedDraft!.Saved!.Calculation);
+        Assert.Equal(initial.Report!.Sha256, f.Model.SelectedDraft.Saved.Report!.Sha256);
+
+        f.Model.SelectedDraft.Comment = "";
+        await f.Model.SaveSpecificationCommand.ExecuteAsync(null);
+        Assert.Equal(initialLetter, f.Model.ResultText);
+        Assert.False(f.Model.ResultIsStale);
+    }
+
+    [Fact]
+    public async Task EachSavedCommentUpdatesTheLetterWhileAnotherProjectHasADraft()
+    {
+        var token = TestContext.Current.CancellationToken;
+        using var f = new ProjectFixture();
+        await f.InitializeAsync();
+        var laser = await f.AddAsync();
+        var plasma = await f.AddAsync("Плазма");
+        await ProjectFixture.WriteAsync(laser);
+        await ProjectFixture.WriteAsync(plasma);
+        await f.AcceptAsync();
+        f.Model.GenerateResultCommand.Execute(null);
+        var initialLetter = f.Model.ResultText;
+        Assert.NotEmpty(initialLetter);
+
+        var laserDraft = f.Model.Drafts.Single(d => d.Id == laser.Id);
+        var plasmaDraft = f.Model.Drafts.Single(d => d.Id == plasma.Id);
+        laserDraft.Comment = "Детали упаковать отдельно.";
+        plasmaDraft.Comment = "Добавить маркировку.";
+        f.Model.SelectedProject = f.Model.Projects.Single(row => row.Project.Id == laser.Id);
+        await f.Model.SaveSpecificationCommand.ExecuteAsync(null);
+
+        Assert.Null(f.Model.Error);
+        Assert.False(f.Model.ResultIsStale);
+        Assert.Equal(initialLetter + "6 мм, Ст3: Детали упаковать отдельно.\n\n", f.Model.ResultText);
+        Assert.True(plasmaDraft.IsDirty);
+        var afterFirstSave = (await f.Store.ReadAsync(token)).Orders.Single();
+        Assert.Null(afterFirstSave.Specifications.Single(s => s.Id == plasma.Id).Current.Parameters.Comment);
+
+        f.Model.SelectedProject = f.Model.Projects.Single(row => row.Project.Id == plasma.Id);
+        await f.Model.SaveSpecificationCommand.ExecuteAsync(null);
+
+        Assert.Null(f.Model.Error);
+        Assert.False(f.Model.ResultIsStale);
+        var saved = (await f.Store.ReadAsync(token)).Orders.Single();
+        Assert.Equal("Добавить маркировку.", saved.Specifications.Single(s => s.Id == plasma.Id).Current.Parameters.Comment);
+        Assert.Equal(WorkflowResultFormatter.Format(saved.ActiveSpecifications.Select(s => s.Current), []), f.Model.ResultText);
+    }
+
+    [Fact]
+    public async Task MissingArchiveAllowsCommentSaveButStillGuardsChangesToTheCalculation()
+    {
+        var token = TestContext.Current.CancellationToken;
+        using var f = new ProjectFixture();
+        await f.InitializeAsync();
+        var project = await f.AddAsync();
+        await ProjectFixture.WriteAsync(project);
+        await f.AcceptAsync();
+        var order = (await f.Store.ReadAsync(token)).Orders.Single();
+        var initial = order.Specifications.Single().Current;
+        File.Delete(initial.Report!.ArchivePath);
+
+        f.Model.SelectedDraft!.Comment = "Позвонить перед отгрузкой.";
+        await f.Model.SaveSpecificationCommand.ExecuteAsync(null);
+
+        Assert.Null(f.Model.Error);
+        var saved = (await f.Store.ReadAsync(token)).Orders.Single();
+        Assert.Equal(order.Version + 1, saved.Version);
+        var state = saved.Specifications.Single().Current;
+        Assert.Equal(initial with
+        {
+            Parameters = initial.Parameters with { Comment = "Позвонить перед отгрузкой." },
+            SavedAt = state.SavedAt,
+            AuthorId = state.AuthorId
+        }, state);
+        Assert.Contains("6 мм, Ст3: Позвонить перед отгрузкой.", f.Model.ResultText);
+
+        var draft = f.Model.SelectedDraft!;
+        draft.Coefficient = "2";
+        draft.Comment = "Проверить количество.";
+        await f.Model.SaveSpecificationCommand.ExecuteAsync(null);
+
+        Assert.NotNull(f.Model.Error);
+        Assert.Same(draft, f.Model.SelectedDraft);
+        Assert.Equal("Проверить количество.", draft.Comment);
+        var unchanged = (await f.Store.ReadAsync(token)).Orders.Single();
+        Assert.Equal(saved.Version, unchanged.Version);
+        Assert.Equal(state, unchanged.Specifications.Single().Current);
     }
 
     [Theory]

@@ -31,6 +31,165 @@ public sealed class WorkflowResultWorkspaceTests
     private sealed class Clipboard(Func<ResultClipboardContent, Task> write) : IResultClipboard
     { public Task WriteAsync(ResultClipboardContent content) => write(content); }
 
+    [AvaloniaFact]
+    public async Task LocalTemplatesAppendToTheSelectedSpecificationAndReachTheLetterAfterSave()
+    {
+        using var log = new WorkflowWindowTests.BindingLog();
+        using var fixture = new ProjectFixture();
+        await Ready(fixture);
+        var preferences = new WorkflowPreferencesStore(Path.Combine(fixture.DirectoryPath, "preferences.json"));
+        var window = new WorkflowWindow(preferences) { DataContext = fixture.Model };
+        try
+        {
+            window.Show();
+            await Until(() => !fixture.Model.IsBusy);
+            Click(window.FindControl<Button>("WorkflowSettings")!);
+            var settings = Assert.Single(window.OwnedWindows.OfType<WorkflowSettingsWindow>());
+            Click(settings.FindControl<Button>("WorkflowCommentTemplatesButton")!);
+            var editor = Assert.Single(settings.OwnedWindows.OfType<WorkflowCommentTemplatesWindow>());
+            var longTemplate = "Подробности " + new string('Ж', 320) + ".";
+            editor.FindControl<TextBox>("CommentTemplatesInput")!.Text = "Упаковать отдельно.\r\n\r\n" + longTemplate;
+            Click(editor.FindControl<Button>("SaveCommentTemplates")!);
+            await Until(() => !editor.IsVisible);
+            Assert.Equal("Упаковать отдельно.\n" + longTemplate, preferences.Load().CommentTemplates);
+            settings.Close();
+
+            var draft = fixture.Model.SelectedDraft!;
+            draft.Comment = "Ручная пометка.";
+            Click(window.FindControl<Button>("ChooseWorkflowCommentTemplates")!);
+            var picker = Assert.Single(window.OwnedWindows.OfType<WorkflowCommentTemplatePicker>());
+            Pump();
+            var choices = picker.GetVisualDescendants().OfType<CheckBox>().ToArray();
+            Assert.Equal(2, choices.Length);
+            var preview = Assert.IsType<TextBlock>(choices[1].Content);
+            Assert.Equal(longTemplate, preview.Text);
+            Assert.Equal(TextWrapping.NoWrap, preview.TextWrapping);
+            Assert.Equal(TextTrimming.CharacterEllipsis, preview.TextTrimming);
+            Assert.Equal(1, preview.MaxLines);
+            Assert.InRange(preview.Bounds.Width, 1, picker.Bounds.Width);
+            ToolTip.SetIsOpen(choices[1], true);
+            Pump();
+            Assert.Equal(longTemplate, Assert.IsType<TextBlock>(ToolTip.GetTip(choices[1])).Text);
+            ToolTip.SetIsOpen(choices[1], false);
+            var insert = picker.FindControl<Button>("ApplyCommentTemplates")!;
+            Assert.False(insert.IsEnabled);
+            foreach (var choice in choices) choice.IsChecked = true;
+            Assert.True(insert.IsEnabled);
+            Click(insert);
+            await Until(() => !picker.IsVisible);
+            var comment = "Ручная пометка.\nУпаковать отдельно.\n" + longTemplate;
+            Assert.Equal(comment, draft.Comment);
+            Assert.Null((await fixture.Store.ReadAsync(Token)).Orders.Single().Specifications.Single().Current.Parameters.Comment);
+            await fixture.Model.SaveSpecificationCommand.ExecuteAsync(null);
+            Assert.Equal(comment, (await fixture.Store.ReadAsync(Token)).Orders.Single().Specifications.Single().Current.Parameters.Comment);
+            Assert.Contains("6 мм, Ст3: Ручная пометка. Упаковать отдельно.", fixture.Model.ResultText);
+            Assert.Equal(0, fixture.Model.OrderTabIndex);
+
+            Click(window.FindControl<Button>("ChooseWorkflowCommentTemplates")!);
+            var reopened = Assert.Single(window.OwnedWindows.OfType<WorkflowCommentTemplatePicker>());
+            Pump();
+            var alreadyInserted = reopened.GetVisualDescendants().OfType<CheckBox>().ToArray();
+            Assert.Equal(2, alreadyInserted.Length);
+            Assert.All(alreadyInserted, choice =>
+            {
+                Assert.False(choice.IsEnabled);
+                Assert.True(choice.IsChecked);
+            });
+            Assert.False(reopened.FindControl<Button>("ApplyCommentTemplates")!.IsEnabled);
+            Click(reopened.GetVisualDescendants().OfType<Button>().First(button => button.Name == "RemoveInsertedCommentTemplate"));
+            Assert.True(reopened.FindControl<Button>("ApplyCommentTemplates")!.IsEnabled);
+            Assert.Equal(comment, fixture.Model.SelectedDraft!.Comment);
+            Click(reopened.FindControl<Button>("CloseCommentTemplatePicker")!);
+            await Until(() => !reopened.IsVisible);
+            Assert.Equal(comment, fixture.Model.SelectedDraft!.Comment);
+
+            Click(window.FindControl<Button>("ChooseWorkflowCommentTemplates")!);
+            reopened = Assert.Single(window.OwnedWindows.OfType<WorkflowCommentTemplatePicker>());
+            Pump();
+            var removeFirst = reopened.GetVisualDescendants().OfType<Button>().First(button => button.Name == "RemoveInsertedCommentTemplate");
+            Click(removeFirst);
+            var firstChoice = reopened.GetVisualDescendants().OfType<CheckBox>().First();
+            Assert.True(firstChoice.IsEnabled);
+            Click(firstChoice);
+            Assert.False(reopened.FindControl<Button>("ApplyCommentTemplates")!.IsEnabled);
+            Click(removeFirst);
+            Click(reopened.FindControl<Button>("ApplyCommentTemplates")!);
+            await Until(() => !reopened.IsVisible);
+            var remaining = "Ручная пометка.\n" + longTemplate;
+            Assert.Equal(remaining, fixture.Model.SelectedDraft!.Comment);
+
+            var clear = window.FindControl<Button>("ClearWorkflowComment")!;
+            var undo = window.FindControl<Button>("UndoClearWorkflowComment")!;
+            Assert.True(clear.IsVisible);
+            Assert.False(undo.IsVisible);
+            Click(clear);
+            Assert.Empty(fixture.Model.SelectedDraft!.Comment!);
+            Assert.False(clear.IsVisible);
+            Assert.True(undo.IsVisible);
+            Assert.Equal(comment, (await fixture.Store.ReadAsync(Token)).Orders.Single().Specifications.Single().Current.Parameters.Comment);
+            Click(undo);
+            Assert.Equal(remaining, fixture.Model.SelectedDraft!.Comment);
+            Assert.False(undo.IsVisible);
+
+            await fixture.Model.SaveSpecificationCommand.ExecuteAsync(null);
+            Assert.EndsWith("\n\n6 мм, Ст3: Ручная пометка. " + longTemplate + "\n\n", fixture.Model.ResultText);
+            Assert.Empty(log.Errors);
+        }
+        finally
+        {
+            foreach (var child in window.OwnedWindows.ToArray())
+            {
+                foreach (var modal in child.OwnedWindows.ToArray()) modal.Close();
+                child.Close();
+            }
+            WorkflowTestWindows.Close(window);
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task ManuallyEditedLetterCanBeUpdatedFromSavedCommentsWithoutRecalculation()
+    {
+        using var f = new ProjectFixture();
+        await Ready(f);
+        var window = new WorkflowWindow(new(Path.Combine(f.DirectoryPath, "preferences.json"))) { DataContext = f.Model };
+        try
+        {
+            window.Show();
+            await Until(() => !f.Model.IsBusy);
+            var project = f.Model.SelectedProject!.Project;
+            var originalCalculation = f.Model.SelectedDraft!.Saved!.Calculation;
+            f.Model.ResultText = "Исправленный вручную текст";
+            await ProjectFixture.WriteAsync(project, 20_000);
+            f.Model.SelectedDraft.Comment = "Промаркировать.";
+            await f.Model.SaveSpecificationCommand.ExecuteAsync(null);
+            Assert.Equal("Исправленный вручную текст", f.Model.ResultText);
+            f.Model.OrderTabIndex = 1;
+            Pump();
+            var update = window.FindControl<Button>("UpdateWorkflowLetter")!;
+            Assert.True(update.IsEffectivelyVisible);
+            Click(update);
+            var confirmation = Assert.Single(window.OwnedWindows.OfType<WorkflowResultReplaceWindow>());
+            Click(confirmation.FindControl<Button>("KeepWorkflowResult")!);
+            Assert.Equal("Исправленный вручную текст", f.Model.ResultText);
+            Click(update);
+            confirmation = Assert.Single(window.OwnedWindows.OfType<WorkflowResultReplaceWindow>());
+            Click(confirmation.FindControl<Button>("ReplaceWorkflowResult")!);
+            await Until(() => !confirmation.IsVisible && !f.Model.ResultIsStale);
+            Assert.EndsWith("6 мм, Ст3: Промаркировать.\n\n", f.Model.ResultText);
+            Assert.Equal(originalCalculation, f.Model.SelectedDraft!.Saved!.Calculation);
+        }
+        finally { WorkflowTestWindows.Close(window); }
+    }
+
+    [Fact]
+    public void TemplateRemovalChangesOnlyExactLinesAndKeepsManualSpacing()
+    {
+        const string comment = "Примечание.\r\n\r\nУдалить.\r\nУдалить. Дополнение.\r\nПоследняя строка.";
+        var updated = WorkflowViewModel.ApplyCommentTemplateChanges(comment, new(["Последняя строка."], ["Удалить."]));
+        Assert.Equal("Примечание.\r\n\r\nУдалить. Дополнение.\r\nПоследняя строка.", updated);
+        Assert.Empty(WorkflowViewModel.ApplyCommentTemplateChanges("Удалить.", new([], ["Удалить."])));
+    }
+
     [AvaloniaTheory]
     [InlineData(false, 1180)] [InlineData(true, 1180)] [InlineData(false, 1366)] [InlineData(true, 1366)]
     public async Task WorkspaceFitsKeepsManualTextAndCopiesChosenStyle(bool dark, int width)

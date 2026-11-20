@@ -26,17 +26,26 @@ internal static partial class WorkflowWordMap
         for (var i = 0; i < names.Length; i++)
         {
             var part = Path.Combine(folder, $"pages-{i}.pdf");
+            var pages = 0;
             UseBundleCard(documents, folder, i, names[i], match, (card, _) =>
             {
                 dynamic doc = card;
                 doc.Repaginate();
-                var pages = (int)doc.ComputeStatistics(2);
+                pages = (int)doc.ComputeStatistics(2);
                 doc.ExportAsFixedFormat(OutputFileName: part, ExportFormat: 17, OpenAfterExport: false);
+            });
+            try
+            {
                 using var pdf = PdfReader.Open(part, PdfDocumentOpenMode.Import);
                 if (pages < 1 || pdf.PageCount != pages)
                     throw new WorkflowValidationException("При экспорте изменилось количество страниц.");
+                WorkflowHansPdfDrawing.Correct(pdf, Path.Combine(folder, $"input-{i}.doc"));
                 foreach (var page in pdf.Pages) result.AddPage(page);
-            });
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or WorkflowValidationException or PdfReaderException)
+            {
+                throw BundleCardError(names[i], ex);
+            }
         }
         return WorkflowMapBundlePdf.Save(result, output);
     }
@@ -106,11 +115,13 @@ internal static partial class WorkflowWordMap
         }
         catch (Exception ex) when (ex is COMException or IOException or UnauthorizedAccessException or WorkflowValidationException or PdfReaderException)
         {
-            var message = ex is WorkflowValidationException ? ex.Message : "Word не смог прочитать карту или сохранить результат.";
-            throw new WorkflowValidationException($"Карта «{name}». {message}");
+            throw BundleCardError(name, ex);
         }
         finally { if (card is not null) card.Close(SaveChanges: 0); }
     }
+
+    private static WorkflowValidationException BundleCardError(string name, Exception error) =>
+        new($"Карта «{name}». " + (error is WorkflowValidationException ? error.Message : "Word не смог прочитать карту или сохранить результат."));
 
     private static void ValidateBundleCard(object card, ComScope scope, object documents, string folder, int index, string name, WordMapMatch match)
     {
@@ -208,6 +219,8 @@ internal static partial class WorkflowWordMap
 
 internal static class WorkflowMapBundlePdf
 {
+    internal const int ExportVersion = 1;
+
     internal static int Save(PdfDocument document, string output)
     {
         // PDFsharp invalidates the in-memory document when Save completes.

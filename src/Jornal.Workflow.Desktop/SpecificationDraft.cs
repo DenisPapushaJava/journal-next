@@ -72,6 +72,29 @@ public partial class SpecificationDraft : ObservableObject
     [ObservableProperty] private bool _hasBending;
     [ObservableProperty] private bool _hasChamfer;
     [ObservableProperty] private string? _comment;
+    private string? _clearedComment;
+    public bool HasComment => !string.IsNullOrEmpty(Comment);
+    public bool CanUndoClearComment => !HasComment && _clearedComment is not null;
+
+    partial void OnCommentChanged(string? value)
+    {
+        if (!string.IsNullOrEmpty(value)) _clearedComment = null;
+        base.OnPropertyChanged(new PropertyChangedEventArgs(nameof(HasComment)));
+        base.OnPropertyChanged(new PropertyChangedEventArgs(nameof(CanUndoClearComment)));
+    }
+
+    internal void ClearComment()
+    {
+        if (!HasComment) return;
+        _clearedComment = Comment;
+        Comment = "";
+    }
+
+    internal void UndoClearComment()
+    {
+        if (CanUndoClearComment) Comment = _clearedComment;
+    }
+
     [ObservableProperty] private bool _materialNeedsReview;
     [ObservableProperty] private bool _materialConfirmed;
     [ObservableProperty] private string _pricePerMeter = "";
@@ -99,6 +122,11 @@ public partial class SpecificationDraft : ObservableObject
         }
     }
     public bool CanSave => Quote is not null && IsDirty && (!MaterialNeedsReview || MaterialConfirmed);
+
+    internal bool ChangesOnlyComment(SpecificationState saved, CuttingParameters parameters, DateOnly date) =>
+        IncomingReport is null && Number == saved.DocumentNumber && date == saved.DocumentDate &&
+        SourcePath == saved.SourcePath && ImportProfile == saved.ImportProfile && Quote == saved.Calculation &&
+        parameters.Comment != saved.Parameters.Comment && parameters.SameInputs(saved.Parameters with { Comment = parameters.Comment });
 
     public SpecificationDraft() { }
     public SpecificationDraft(WorkflowSpecification specification, string? nativeProjectPath = null)

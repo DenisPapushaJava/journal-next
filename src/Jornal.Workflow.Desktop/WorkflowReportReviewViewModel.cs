@@ -71,7 +71,8 @@ public partial class WorkflowReportCandidate : ObservableObject
     internal void MarkSourceChanged(string message) { _sourceProblem = message; WasAccepted = false; Changed(); }
     internal void MarkAccepted() { WasAccepted = true; IsSelected = false; Changed(); }
     private bool _guided;
-    public bool ShowMaterialCheck => !_guided && Draft?.MaterialNeedsReview == true;
+    public bool ShowMaterialQuestion => Draft?.MaterialNeedsReview == true;
+    public bool ShowMaterialCheck => !_guided && ShowMaterialQuestion;
     internal void UseGuidance(bool value) { if (_guided == value) return; _guided = value; OnPropertyChanged(nameof(ShowMaterialCheck)); }
     public bool HasSourceChoice => Choices.Count > 1 || Snapshot is null && Choices.Count > 0;
     internal bool HasManualEdits => _hasManualEdits;
@@ -291,6 +292,7 @@ public partial class WorkflowReportCandidate : ObservableObject
     { value?.SetMaterialSuggestions(_materialSuggestions); OnPropertyChanged(nameof(HasDraft)); }
     private void Changed()
     {
+        OnPropertyChanged(nameof(ShowMaterialQuestion));
         OnPropertyChanged(nameof(ShowMaterialCheck)); OnPropertyChanged(nameof(ShowCategoryQuestion)); OnPropertyChanged(nameof(ShowPierceQuestion)); OnPropertyChanged(nameof(PierceQuestion)); OnPropertyChanged(nameof(NeedsTariffCategory)); OnPropertyChanged(nameof(NeedsPierceCount)); OnPropertyChanged(nameof(CanConfirmMaterial)); OnPropertyChanged(nameof(HasSourceChoice)); OnPropertyChanged(nameof(Status)); OnPropertyChanged(nameof(Message)); OnPropertyChanged(nameof(Total)); OnPropertyChanged(nameof(Ready)); OnPropertyChanged(nameof(CardTitle)); OnPropertyChanged(nameof(ReportSummary)); _changed();
     }
     internal static ReportValues Values(SpecificationDraft d) =>

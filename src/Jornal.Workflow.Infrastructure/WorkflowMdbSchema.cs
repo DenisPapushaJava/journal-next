@@ -23,7 +23,7 @@ public sealed record WorkflowMdbForeignKey(string Name, string Table, string[] C
 public static class WorkflowMdbSchema
 {
     public const string ProductId = "DenisPapusha.JournalWorkflow";
-    public const int Version = 6;
+    public const int Version = 7;
     private static WorkflowMdbColumn C(string name, string? path, WorkflowMdbType type, bool required = true, int size = 255) => new(name, path, type, required, size);
     private static WorkflowMdbColumn Id() => C("id", "Id", WorkflowMdbType.Guid);
     private static WorkflowMdbColumn Owner(string name) => C(name, null, WorkflowMdbType.Guid);
@@ -89,7 +89,8 @@ public static class WorkflowMdbSchema
             foreach (var sql in CreateSql().Where(sql => sql.Contains("[project_shop_handoffs]", StringComparison.Ordinal) && !sql.Contains("[project_shop_handoff_inputs]", StringComparison.Ordinal))) yield return sql;
         if (from < 5)
             foreach (var sql in CreateSql().Where(sql => sql.Contains("[project_shop_handoff_inputs]", StringComparison.Ordinal))) yield return sql;
-        yield return "ALTER TABLE [machines] ADD COLUMN [shop_folder_name] TEXT(255)";
+        if (from < 6) yield return "ALTER TABLE [machines] ADD COLUMN [shop_folder_name] TEXT(255)";
+        yield return "ALTER TABLE [specifications] ALTER COLUMN [comment] LONGTEXT";
     }
 
     private static WorkflowMdbColumn[] SpecificationColumns()
@@ -104,7 +105,7 @@ public static class WorkflowMdbSchema
             P("blank_size","BlankSize",WorkflowMdbType.Memo), P("blank_quantity","BlankQuantity",WorkflowMdbType.Decimal), P("cut_length_m","CutLengthMeters",WorkflowMdbType.Decimal),
             P("pierce_count","PierceCount",WorkflowMdbType.Int32,false), P("weight_kg","WeightKg",WorkflowMdbType.Decimal,false), P("duration_seconds","DurationSeconds",WorkflowMdbType.Int64,false),
             P("manual_coefficient","ManualCoefficient",WorkflowMdbType.Decimal), P("has_bending","HasBending",WorkflowMdbType.Boolean), P("has_chamfer","HasChamfer",WorkflowMdbType.Boolean),
-            P("comment","Comment",WorkflowMdbType.Text,false), P("material_needs_review","MaterialNeedsReview",WorkflowMdbType.Boolean),
+            P("comment","Comment",WorkflowMdbType.Memo,false), P("material_needs_review","MaterialNeedsReview",WorkflowMdbType.Boolean),
             Q("rate_id","RateId",WorkflowMdbType.Guid), Q("price_per_meter","PricePerMeter",WorkflowMdbType.Decimal), Q("price_per_pierce","PricePerPierce",WorkflowMdbType.Decimal),
             Q("length_cost","LengthCost",WorkflowMdbType.Decimal), Q("pierce_cost","PierceCost",WorkflowMdbType.Decimal), Q("total_cost","TotalCost",WorkflowMdbType.Decimal),
             Q("formula_version","FormulaVersion",WorkflowMdbType.Text)];

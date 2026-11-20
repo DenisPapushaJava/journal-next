@@ -303,6 +303,82 @@ public sealed class WorkflowAutomaticCalculationTests
         else { Assert.True(candidate.Ready); Assert.Contains("Два разных", candidate.Message); }
     }
 
+    [Theory]
+    [InlineData(0)] [InlineData(24)]
+    public async Task HansRecalculationAcceptsMixedSheetSizesAndPreservesTheOldReport(int additionalSizes)
+    {
+        using var f = new ProjectFixture();
+        await f.InitializeAsync();
+        var project = await f.AddAsync("HansLaser");
+        var folder = Path.GetDirectoryName(project.NativePath!)!;
+        var source = Path.ChangeExtension(project.NativePath!, ".pdf");
+        WriteHans(project, [(6000, 1500, 2, 6, "St-3_0")]);
+        var initial = Assert.IsType<WorkflowReportReviewViewModel>(await f.Model.CalculateOrderAsync(Token));
+        Assert.True(await f.Model.FinalizeCalculationAsync(initial, Token), f.Model.CalculationNotice);
+        var originalOrder = (await f.Store.ReadAsync(Token)).Orders.Single();
+        var original = Assert.Single(originalOrder.Specifications).Current;
+        var originalBytes = await File.ReadAllBytesAsync(source, Token);
+        Assert.Equal("Лист 6×1500×6000", original.Parameters.BlankSize);
+
+        var layouts = new List<(int X, int Y, int Quantity, int Thickness, string Material)>
+        { (6000, 1500, 1, 6, "St-3_0"), (1400, 1700, 1, 6, "St-3_0"), (1400, 1700, 2, 6, "St-3_0") };
+        for (var i = 0; i < additionalSizes; i++) layouts.Add((3100 + i, 2000, 1, 6, "St-3_0"));
+        WriteHans(project, layouts, cutMillimeters: 17034, punches: 20);
+        var updated = Assert.IsType<WorkflowReportReviewViewModel>(await f.Model.CalculateOrderAsync(Token));
+        Assert.Empty(updated.GuidedCandidates);
+        Assert.True(await f.Model.FinalizeCalculationAsync(updated, Token), f.Model.CalculationNotice);
+
+        var savedOrder = (await f.Store.ReadAsync(Token)).Orders.Single();
+        var specification = Assert.Single(savedOrder.Specifications);
+        Assert.Equal(project.Id, specification.Id);
+        var current = specification.Current;
+        const string mixedSizes = "Листы 6 мм: 6000×1500 (1 шт.); 1400×1700 (3 шт.)";
+        Assert.StartsWith(mixedSizes, current.Parameters.BlankSize);
+        if (additionalSizes > 0) Assert.Contains("3123×2000 (1 шт.)", current.Parameters.BlankSize);
+        Assert.Equal(4 + additionalSizes, current.Parameters.BlankQuantity);
+        Assert.Equal(18, current.Parameters.CutLengthMeters);
+        Assert.Equal(20, current.Parameters.PierceCount);
+        Assert.Equal(1820m, current.Calculation.TotalCost);
+        Assert.NotEqual(original.Report!.Sha256, current.Report!.Sha256);
+        f.Model.GenerateResultCommand.Execute(null);
+        Assert.Contains(mixedSizes, f.Model.ResultText);
+        var history = await WorkflowCalculationHistory.ReadAsync(folder, savedOrder.Id, project.Id, Token);
+        Assert.Null(history.Warning);
+        Assert.Equal(original, Assert.Single(history.Snapshots).State);
+        Assert.Equal(originalBytes, await File.ReadAllBytesAsync(original.Report.ArchivePath, Token));
+    }
+
+    [AvaloniaTheory]
+    [InlineData(8, 2, "St-3_0", "разной толщины")]
+    [InlineData(6, 3, "St-3_0", "Сумма «К-во»")]
+    [InlineData(6, 2, "09G2S_0", "разные значения: материал")]
+    public async Task InvalidHansUpdateKeepsSavedCalculationAndHidesTheWaterjetMaterialPrompt(int thickness, int totalSheets,
+        string material, string expectedMessage)
+    {
+        using var f = new ProjectFixture();
+        await f.InitializeAsync();
+        var project = await f.AddAsync("HansLaser");
+        WriteHans(project, [(6000, 1500, 2, 6, "St-3_0")]);
+        var initial = Assert.IsType<WorkflowReportReviewViewModel>(await f.Model.CalculateOrderAsync(Token));
+        Assert.True(await f.Model.FinalizeCalculationAsync(initial, Token), f.Model.CalculationNotice);
+        var before = await File.ReadAllBytesAsync(f.Store.FilePath, Token);
+
+        WriteHans(project, [(6000, 1500, 1, 6, "St-3_0"), (1400, 1700, 1, thickness, material)], totalSheets: totalSheets);
+        var review = Assert.IsType<WorkflowReportReviewViewModel>(await f.Model.CalculateOrderAsync(Token));
+        var candidate = Assert.Single(review.GuidedCandidates);
+        Assert.Equal("hans-pdf/v1", candidate.Snapshot!.Parsed.Profile);
+        Assert.Contains(expectedMessage, candidate.Message);
+        Assert.Equal(before, await File.ReadAllBytesAsync(f.Store.FilePath, Token));
+
+        var window = new WorkflowReportReviewWindow { DataContext = review };
+        try
+        {
+            window.Show(); Pump();
+            Assert.False(window.FindControl<Control>("ReviewMaterialInput")!.IsEffectivelyVisible);
+        }
+        finally { window.Close(); }
+    }
+
     [Fact]
     public async Task SourceChangeAfterAcceptanceStopsFinalResultAndBecomesAnExplainedReview()
     {
@@ -344,6 +420,38 @@ public sealed class WorkflowAutomaticCalculationTests
             Assert.NotEmpty(f.Model.ResultText); Assert.Equal(before, await File.ReadAllBytesAsync(f.Store.FilePath, Token));
         }
         finally { foreach (var dialog in window.OwnedWindows.ToArray()) dialog.Close(); WorkflowTestWindows.Close(window); }
+    }
+
+    private static void WriteHans(CuttingProject project, IReadOnlyList<(int X, int Y, int Quantity, int Thickness, string Material)> layouts,
+        int cutMillimeters = 10000, int punches = 5, int? totalSheets = null)
+    {
+        using var pdf = new PdfSharp.Pdf.PdfDocument();
+        var page = pdf.AddPage(); page.Width = XUnit.FromPoint(720); page.Height = XUnit.FromPoint(842);
+        using (var g = XGraphics.FromPdfPage(page))
+        {
+            var font = WorkflowPdfFont.Create(10);
+            void Text(string value, double x, double y) => g.DrawString(value, font, XBrushes.Black, new XPoint(x, y));
+            void Number(int value, double x, double y) => Text(FormattableString.Invariant($"{value}"), x, y);
+            Text("Заказ", 30, 70); Text(Path.GetFileName(project.NativePath!), 170, 70);
+            Text("Длина реза:(мм)", 30, 100); Number(cutMillimeters, 215, 100);
+            Text("Общие кол-во деталей:", 30, 130); Text("7", 215, 130);
+            Text("Пробивки:", 30, 160); Number(punches, 215, 160);
+            Text("Вес", 550, 70); Text("48.2", 640, 70);
+            Text("Листов", 550, 100); Number(totalSheets ?? layouts.Sum(layout => layout.Quantity), 640, 100);
+            Text("Время обработки, всего", 550, 130); Text("00:10:00", 675, 130);
+            Text("Листы", 30, 200);
+            Text("№", 30, 224); Text("Размер X", 80, 224); Text("Размер Y", 160, 224);
+            Text("Материал", 250, 224); Text("Gas", 350, 224); Text("Толщ. (мм)", 425, 224); Text("К-во", 540, 224);
+            for (var i = 0; i < layouts.Count; i++)
+            {
+                var layout = layouts[i]; var y = 254 + 18 * i;
+                Number(i + 1, 30, y); Number(layout.X, 90, y); Number(layout.Y, 170, y);
+                Text(layout.Material, 255, y); Text("O2", 350, y);
+                Number(layout.Thickness, 445, y); Number(layout.Quantity, 550, y);
+            }
+            Text("Детали", 30, 260 + 18 * layouts.Count);
+        }
+        pdf.Save(Path.ChangeExtension(project.NativePath!, ".pdf"));
     }
 
     internal static void WriteAwjc(CuttingProject project, int? punches = null, int quantity = 1,
