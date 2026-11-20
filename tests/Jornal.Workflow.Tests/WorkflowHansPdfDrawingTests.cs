@@ -47,8 +47,10 @@ public sealed class WorkflowHansPdfDrawingTests
 
         """;
 
-    [Fact]
-    public void CorrectsSheetDimensionsAndPartNumbersInTheImportedPageWithoutRewritingGeometry()
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public void CorrectsSheetDimensionsAndPartNumbersInTheImportedPageWithoutRewritingGeometry(string lineEnd)
     {
         var folder = Directory.CreateTempSubdirectory("next-hans-pdf-");
         try
@@ -57,7 +59,8 @@ public sealed class WorkflowHansPdfDrawingTests
             var export = Path.Combine(folder.FullName, "export.pdf");
             var bundle = Path.Combine(folder.FullName, "bundle.pdf");
             WriteSource(source, "42");
-            WriteExport(export, Drawing);
+            var wordDrawing = Drawing.ReplaceLineEndings(lineEnd);
+            WriteExport(export, wordDrawing);
             using (var input = PdfReader.Open(export, PdfDocumentOpenMode.Import))
             {
                 WorkflowHansPdfDrawing.Correct(input, source);
@@ -67,14 +70,15 @@ public sealed class WorkflowHansPdfDrawingTests
             }
             using var saved = PdfReader.Open(bundle, PdfDocumentOpenMode.Import);
             var corrected = ReadDrawing(saved);
-            Assert.StartsWith(Geometry, corrected);
-            Assert.Contains("1 0 0 1 44 90 Tm\n1 0 0 rg\n0 Tc[(850.0)]", corrected);
-            Assert.Contains("0 1 -1 0 90 54 Tm\n[(1500.0)]", corrected);
-            Assert.Contains("1 0 0 1 48 50 Tm\n0 g\n0 Tc[(42)]", corrected);
-            Assert.Contains("0 1 -1 0 80 69 Tm\n[(7)]", corrected);
-            Assert.Contains("-1 0 0 -1 81 45 Tm\n[(3)]", corrected);
-            Assert.Contains("0 -1 1 0 60 31 Tm\n[(5)]", corrected);
-            Assert.Equal(Drawing, ReadOriginalExport(export));
+            Assert.StartsWith(Geometry.ReplaceLineEndings(lineEnd), corrected);
+            var operators = corrected.ReplaceLineEndings("\n");
+            Assert.Contains("1 0 0 1 44 90 Tm\n1 0 0 rg\n0 Tc[(850.0)]", operators);
+            Assert.Contains("0 1 -1 0 90 54 Tm\n[(1500.0)]", operators);
+            Assert.Contains("1 0 0 1 48 50 Tm\n0 g\n0 Tc[(42)]", operators);
+            Assert.Contains("0 1 -1 0 80 69 Tm\n[(7)]", operators);
+            Assert.Contains("-1 0 0 -1 81 45 Tm\n[(3)]", operators);
+            Assert.Contains("0 -1 1 0 60 31 Tm\n[(5)]", operators);
+            Assert.Equal(wordDrawing, ReadOriginalExport(export));
             WorkflowHansPdfDrawing.Correct(saved, source);
             Assert.Equal(corrected, ReadDrawing(saved));
         }
