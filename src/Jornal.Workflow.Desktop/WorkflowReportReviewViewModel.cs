@@ -68,6 +68,7 @@ public partial class WorkflowReportCandidate : ObservableObject
         $"{draft.Material} · {draft.Thickness} мм · {draft.BlankSize}\nРез: {draft.Length} м · пробивки: {draft.Pierces} · время: {draft.Duration}\nКоличество: {draft.Quantity} · вес: {draft.Weight} кг";
     public bool HasDraft => Draft is not null;
     internal bool WasAccepted { get; private set; }
+    internal bool RetryRequired { get; init; }
     internal void MarkSourceChanged(string message) { _sourceProblem = message; WasAccepted = false; Changed(); }
     internal void MarkAccepted() { WasAccepted = true; IsSelected = false; Changed(); }
     private bool _guided;
@@ -78,7 +79,7 @@ public partial class WorkflowReportCandidate : ObservableObject
     internal bool HasManualEdits => _hasManualEdits;
     internal bool CanAcceptAutomatically => !WasAccepted && !UsesEstimatedPierces && (_latestReportWins || IsSelected) && Ready && (_latestReportWins || !_hasManualEdits) &&
         Snapshot?.Parsed.Issues.All(i => i.Severity != SpecificationIssueSeverity.Error) == true;
-    internal bool NeedsDecision => !WasAccepted && Status != "Без изменений" && (Choices.Count > 0 || HasDraft);
+    internal bool NeedsDecision => !RetryRequired && !WasAccepted && Status != "Без изменений" && (Choices.Count > 0 || HasDraft);
     public bool NeedsAttention => !WasAccepted && (_sourceProblem is not null || Conflicts.Any(c => c.Selection < 0) ||
         (Snapshot is null ? Choices.Count > 0 || _existing is not null : Snapshot.Sha256 != _existing?.Current.Report?.Sha256 || Draft?.IsDirty == true));
     [ObservableProperty] private bool _isSelected;
@@ -320,6 +321,7 @@ public partial class WorkflowReportReviewViewModel : ObservableObject
     public long PreviewOrderVersion { get; internal set; }
     internal Func<bool>? IsContextCurrent { get; init; }
     internal Func<long?>? CurrentOrderVersion { get; init; }
+    internal bool NeedsOfficeComparison { get; set; }
     private bool _isGuided;
     public bool IsGuided { get => _isGuided; internal set { if (_isGuided == value) return; _isGuided = value; Changed(); } }
     public IEnumerable<WorkflowReportCandidate> GuidedCandidates => Candidates.Where(c => c.NeedsDecision);

@@ -20,14 +20,14 @@ public sealed partial class WorkflowMdbDatabase
         try
         {
             // Read identity before the transaction so concurrent writers do not upgrade shared metadata locks.
-            var original = ReadMetadata(session, request.DatabaseId); session.Begin();
+            var original = ReadWorkspaceMetadata(session, request); session.Begin();
             if (patch.ExpectedVersion is { } version && original.Revision != version) throw new WorkflowConflictException();
             // Acquire one short write token before touching business rows. Never hold it for UI or report I/O.
             var sql = "UPDATE [app_metadata] SET [revision]=[revision]+1 WHERE [singleton]=1 AND [database_id]=?";
             var args = new List<(WorkflowMdbColumn, object?)> { (WorkflowMdbSession.GuidColumn, original.DatabaseId) };
             if (patch.ExpectedVersion is { } expected) { sql += " AND [revision]=?"; args.Add((WorkflowMdbSession.LongColumn, (decimal)expected)); }
             if (session.Execute(sql, args.ToArray()) != 1) throw new WorkflowConflictException();
-            var meta = ReadMetadata(session, request.DatabaseId);
+            var meta = ReadWorkspaceMetadata(session, request with { DatabaseId = original.DatabaseId });
             if (meta.CatalogVersion != patch.ExpectedCatalogVersion) throw new WorkflowConflictException();
             var currentOrders = WorkflowMdbMapping.Orders(ReadOrders(session, CheckedIds(patch.Orders.Select(o => o.Id).ToArray())));
             var changed = new List<WorkflowOrder>();
@@ -107,14 +107,14 @@ public sealed partial class WorkflowMdbDatabase
                 foreach (var row in newRows[table].Values.OrderBy(r => r.Id))
                 {
                     if (!oldRows[table].TryGetValue(row.Id, out var old))
-                        session.Insert(row);
-                    else session.Update(old, row);
+                        session.Insert(row, shortComment: meta.SchemaVersion == 6);
+                    else session.Update(old, row, shortComment: meta.SchemaVersion == 6);
                 }
             if (patch.Catalog is not null)
                 session.Execute("UPDATE [app_metadata] SET [catalog_revision]=[catalog_revision]+1,[project_root]=?,[price_source]=?,[price_loaded_at]=? WHERE [singleton]=1",
                     (WorkflowMdbSession.TextColumn, nextCatalog.ProjectRoot), (WorkflowMdbSession.TextColumn, nextCatalog.PriceSource?.Path),
                     (WorkflowMdbSession.DateColumn, nextCatalog.PriceSource?.LoadedAt.UtcDateTime));
-            var result = ReadResponse(session, ReadMetadata(session, request.DatabaseId), request with
+            var result = ReadResponse(session, ReadWorkspaceMetadata(session, request with { DatabaseId = original.DatabaseId }), request with
             { Operation = WorkflowAccessOperation.ReadOrders, OrderIds = patch.Orders.Select(o => o.Id).ToArray() });
             // Read back and validate before commit. Returned timestamps are the values Jet actually stores.
             (result.Catalog ?? nextCatalog).WithOrders(result.Revision, result.Orders ?? []).Validate();

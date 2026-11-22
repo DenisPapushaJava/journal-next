@@ -54,6 +54,14 @@ public partial class WorkflowViewModel
         string? path = null;
         await RunAsync(async () =>
         {
+            if (_connection.RemoteClient is { } remote)
+            {
+                var folder = await remote.OpenCopyAsync(order.Id, project.Id, token, OfficeCopiesRoot, project.NativePath);
+                var local = WorkflowOfficeProjectPaths.FileInProject(folder, "ГИБКА");
+                if (local is null) throw new WorkflowValidationException("Не удалось определить папку ГИБКА в локальной копии.");
+                path = Directory.CreateDirectory(local).FullName;
+                return;
+            }
             await EnsureSavedBendingFoldersAsync(order, [project.Id], token);
             if (!FailedBendingProjects().Any(p => p.Id == project.Id)) path = Path.Combine(Path.GetDirectoryName(project.NativePath!)!, "ГИБКА");
         });

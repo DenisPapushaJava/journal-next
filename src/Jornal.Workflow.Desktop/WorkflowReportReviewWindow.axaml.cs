@@ -22,6 +22,7 @@ public partial class WorkflowReportReviewWindow : Window
     }
     private void OnReviewChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (IsVisible && _observed is { IsBusy: false, NeedsOfficeComparison: true }) { Close(); return; }
         if (IsVisible && _observed is { IsGuided: true, IsBusy: false, Error: null } guided && !guided.GuidedCandidates.Any()) { Close(); return; }
         if (e.PropertyName == nameof(WorkflowReportReviewViewModel.IsBusy) &&
             _observed is { WasSaved: true, IsBusy: false }) Close();
@@ -44,7 +45,7 @@ public partial class WorkflowReportReviewWindow : Window
     private async void OnOpenProjectFolder(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not WorkflowReportReviewViewModel { CanEdit: true, Selected: { } candidate } model || OwnedWindows.Count > 0) return;
-        var path = Path.GetDirectoryName(candidate.Project.NativePath ?? candidate.Snapshot?.SourcePath);
+        var path = Path.GetDirectoryName(candidate.Snapshot?.SourcePath ?? candidate.Project.NativePath);
         if (path is null) { model.Error = "Папка проекта не задана."; return; }
         try { if (!await Launcher.LaunchDirectoryInfoAsync(new DirectoryInfo(path))) model.Error = "Не удалось открыть папку проекта. Проверьте доступ к сети."; }
         catch (Exception ex) when (ex is not OutOfMemoryException) { if (IsVisible) model.Error = "Папка проекта недоступна. Проверьте путь и доступ к сети."; }

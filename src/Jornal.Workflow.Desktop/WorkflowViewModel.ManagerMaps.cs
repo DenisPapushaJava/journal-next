@@ -54,7 +54,7 @@ public partial class WorkflowViewModel
 
     internal Task MergeManagerMapsAfterCalculationAsync(WorkflowReportReviewViewModel review, CancellationToken token)
     {
-        if (!CanUse || CurrentOrder is not { } order || review.IsContextCurrent?.Invoke() != true ||
+        if (IsRemoteStorage || !CanUse || CurrentOrder is not { } order || review.IsContextCurrent?.Invoke() != true ||
             review.PreviewOrderVersion != order.Version) return Task.CompletedTask;
         var included = CalculationProjectIds(order);
         var projects = order.ActiveProjects.Where(p => included.Contains(p.Id) && order.Specifications.Any(s => s.Id == p.Id)).ToArray();

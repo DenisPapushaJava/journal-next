@@ -32,14 +32,14 @@ internal static class WorkflowCalculationSnapshots
     }
 
     internal static async Task PreserveAsync(string? folder, Guid orderId, Guid projectId, Guid actor,
-        SpecificationState? state, SpecificationDraft? draft, CancellationToken token, long orderVersion = 0)
+        SpecificationState? state, SpecificationDraft? draft, CancellationToken token, long orderVersion = 0, bool localDraftOnly = false)
     {
         if (state is null && draft is null) return;
         if (folder is null) throw new WorkflowValidationException("Для сохранения предыдущего расчёта укажите рабочую папку проекта.");
         CalculationDraftSnapshot? raw = null;
         if (draft is not null)
         {
-            var report = draft.Saved?.Report;
+            var report = localDraftOnly ? null : draft.Saved?.Report;
             if (draft.IncomingReport is { } incoming)
             {
                 // The working file may already be replaced. Preserve the captured bytes,

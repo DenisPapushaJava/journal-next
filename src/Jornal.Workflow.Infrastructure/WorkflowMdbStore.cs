@@ -142,13 +142,21 @@ public sealed partial class WorkflowMdbStore(string path, IWorkflowAccessTranspo
     public Task<WorkflowWorkspace> WriteAsync(long expectedVersion, Func<WorkflowWorkspace, WorkflowWorkspace> change, CancellationToken token = default, bool backupBeforeWrite = false) =>
         Write([], expectedVersion, change, token);
     public Task<WorkflowWorkspace> WriteOrderAsync(Guid orderId, long expectedOrderVersion, Func<WorkflowWorkspace, WorkflowWorkspace> change, CancellationToken token = default, bool allowTrashed = false) =>
+        WriteOrderAsync(orderId, expectedOrderVersion, change, token, allowTrashed, officeReportVersions: null);
+
+    public Task<WorkflowWorkspace> WriteOfficeCalculationAsync(Guid orderId, long expectedOrderVersion, Func<WorkflowWorkspace, WorkflowWorkspace> change,
+        WorkflowOfficeReportVersion[] reportVersions, CancellationToken token = default) =>
+        WriteOrderAsync(orderId, expectedOrderVersion, change, token, allowTrashed: false, officeReportVersions: reportVersions);
+
+    private Task<WorkflowWorkspace> WriteOrderAsync(Guid orderId, long expectedOrderVersion, Func<WorkflowWorkspace, WorkflowWorkspace> change,
+        CancellationToken token, bool allowTrashed, WorkflowOfficeReportVersion[]? officeReportVersions) =>
         Write([orderId], null, book =>
         {
             var order = book.Orders.SingleOrDefault(o => o.Id == orderId);
             if (order?.Version != expectedOrderVersion) throw new WorkflowConflictException();
             if (order.IsDeleted && !allowTrashed) throw new WorkflowValidationException("Заявка находится в корзине.");
             return change(book);
-        }, token, allowTrashed);
+        }, token, allowTrashed, officeReportVersions: officeReportVersions);
     public Task<WorkflowWorkspace> SaveEmployeeProfileAsync(Employee? expected, string name, uint color, CancellationToken token = default) =>
         Write([], null, w => WorkflowChanges.SaveEmployeeProfile(w, expected, name, color), token);
     public Task<WorkflowWorkspace> ArchiveTechnologistAsync(Employee expected, Guid actor, CancellationToken token = default) =>
@@ -184,7 +192,8 @@ public sealed partial class WorkflowMdbStore(string path, IWorkflowAccessTranspo
         }, token, creation: id).ConfigureAwait(false);
         _pendingCreate = null; return (workspace, id);
     }
-    private Task<WorkflowWorkspace> Write(Guid[] ids, long? expectedVersion, Func<WorkflowWorkspace, WorkflowWorkspace> change, CancellationToken token, bool allowTrashed = false, Guid? creation = null) => Locked(async () =>
+    private Task<WorkflowWorkspace> Write(Guid[] ids, long? expectedVersion, Func<WorkflowWorkspace, WorkflowWorkspace> change, CancellationToken token,
+        bool allowTrashed = false, Guid? creation = null, WorkflowOfficeReportVersion[]? officeReportVersions = null) => Locked(async () =>
     {
         if (RequiresRefresh) throw new WorkflowValidationException("Исход предыдущей записи не подтверждён. Сначала обновите журнал (F5) и проверьте результат.");
         var read = await Send(WorkflowAccessOperation.ReadOrders, token, ids: ids).ConfigureAwait(false);
@@ -199,7 +208,7 @@ public sealed partial class WorkflowMdbStore(string path, IWorkflowAccessTranspo
             return SameOrder(old, value) ? null : new WorkflowOrderReplacement(id, old?.Version, value, allowTrashed);
         }).OfType<WorkflowOrderReplacement>().ToArray();
         if (catalog is null && changes.Length == 0) return _snapshot;
-        var patch = new WorkflowAccessPatch(expectedVersion, read.CatalogVersion, catalog, changes);
+        var patch = new WorkflowAccessPatch(expectedVersion, read.CatalogVersion, catalog, changes) { OfficeReportVersions = officeReportVersions };
         try
         {
             var result = await Send(WorkflowAccessOperation.Apply, token, patch: patch).ConfigureAwait(false);

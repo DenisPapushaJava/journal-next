@@ -85,7 +85,8 @@ internal static class ShopFileSystem
         return (length, hash);
     }
 
-    internal static async Task<ShopTree> TreeAsync(string root, CancellationToken token, string? ignoreName = null, Action<string>? onFile = null)
+    internal static async Task<ShopTree> TreeAsync(string root, CancellationToken token, string? ignoreName = null,
+        Action<string>? onFile = null, Func<string, bool>? includeEntry = null)
     {
         RequireOrdinaryPath(root);
         if (!Directory.Exists(root)) throw new WorkflowValidationException($"Папка недоступна: {root}");
@@ -95,6 +96,7 @@ internal static class ShopFileSystem
         {
             foreach (var path in Directory.EnumerateFileSystemEntries(folder).Order(StringComparer.Ordinal))
             {
+                if (includeEntry is not null && !includeEntry(Path.GetFileName(path))) continue;
                 token.ThrowIfCancellationRequested(); RequireOrdinaryPath(path);
                 var relative = Path.GetRelativePath(root, path);
                 if (relative == ignoreName) continue;

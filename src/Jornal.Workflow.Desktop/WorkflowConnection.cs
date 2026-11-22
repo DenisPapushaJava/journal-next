@@ -4,10 +4,12 @@ using Jornal.Workflow.Infrastructure;
 namespace Jornal.Workflow.Desktop;
 
 // The active employee belongs to this open store, not to whichever source another process selected on disk.
-internal sealed record WorkflowConnection(IWorkflowWorkspaceStore Store, Guid? EmployeeId = null)
+internal sealed record WorkflowConnection(IWorkflowWorkspaceStore Store, Guid? EmployeeId = null,
+    WorkflowOfficeStorageSettings? Office = null, WorkflowOfficeStorageClient? RemoteClient = null)
 {
     public bool Matches(WorkflowPreferences preferences)
     {
+        if (Office is not null || preferences.ActiveOfficeStorage is not null) return Office == preferences.ActiveOfficeStorage;
         var path = Store is WorkflowMdbStore ? Store.FilePath : null;
         return string.Equals(path, preferences.DatabasePath is { } value ? Path.GetFullPath(value) : null,
                 OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) &&

@@ -1,0 +1,17 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="using:Jornal.Desktop.Controls" x:Class="Jornal.Workflow.Desktop.WorkflowOfficeReportComparisonWindow"
+        Title="Версии спецификации" Width="560" SizeToContent="Height" CanResize="False"
+        Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="24" Spacing="12">
+    <TextBlock x:Name="ComparedFile" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
+    <TextBlock x:Name="ComparisonDescription" Text="Файл изменён и дома, и в офисе. Выбранная версия станет рабочей и по ней пересчитается проект. Обе копии останутся в папке сравнения." TextWrapping="Wrap" />
+    <ui:JournalButton x:Name="OpenComparedCopies" Label="Открыть папку с копиями" HorizontalAlignment="Left" Click="OnOpenCopies" />
+    <TextBlock x:Name="OpenError" IsVisible="False" Text="Не удалось открыть папку с копиями."
+               TextWrapping="Wrap" Foreground="{DynamicResource JournalDangerForeground}" />
+    <WrapPanel HorizontalAlignment="Right" ItemSpacing="8" LineSpacing="8">
+      <ui:JournalButton x:Name="CancelChoice" Label="Отмена" Click="OnCancel" />
+      <ui:JournalButton x:Name="ChooseOfficeVersion" Label="Офисная версия" Click="OnOffice" />
+      <ui:JournalButton x:Name="ChooseHomeVersion" Label="Моя версия" Click="OnHome" />
+    </WrapPanel>
+  </StackPanel>
+</Window>

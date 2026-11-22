@@ -57,6 +57,29 @@ public partial class WorkflowSettingsWindow : Window
     private void OnResultMinimumLostFocus(object? sender, RoutedEventArgs e) => Model?.NormalizeResultPriceInput();
     private void OnClose(object? sender, RoutedEventArgs e)
     { if (OwnedWindows.Count == 0 && Model is { CanClose: true }) { _discard = true; Close(); } }
+    private async void OnOpenOfficePreview(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { CanEdit: true } || OwnedWindows.Count > 0) return;
+        await new WorkflowOfficePreviewWindow { RequestedThemeVariant = ActualThemeVariant }.ShowDialog(this);
+        if (IsVisible) OpenOfficePreview.Focus();
+    }
+    private async void OnOpenOfficeConnection(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { CanEdit: true } model || OwnedWindows.Count > 0) return;
+        await new WorkflowOfficeConnectionWindow(model.Journal.SavedOfficeAddress, model.ConnectOfficeStorageAsync)
+            { RequestedThemeVariant = ActualThemeVariant }.ShowDialog<bool>(this);
+        if (IsVisible) OpenOfficeConnection.Focus();
+    }
+    private async void OnReturnToLocalStorage(object? sender, RoutedEventArgs e)
+    {
+        if (Model is { CanEdit: true } model && OwnedWindows.Count == 0)
+            await model.ReturnToLocalStorageAsync();
+    }
+    private async void OnUseSavedOfficeConnection(object? sender, RoutedEventArgs e)
+    {
+        if (Model is { CanEdit: true, CanUseSavedOfficeStorage: true } model && OwnedWindows.Count == 0)
+            await model.UseSavedOfficeStorageAsync(CancellationToken.None);
+    }
     private async void OnEntrySuggestions(object? sender, RoutedEventArgs e)
     {
         if (Model is not { CanEdit: true } model || OwnedWindows.Count > 0) return;
@@ -151,27 +174,25 @@ public partial class WorkflowSettingsWindow : Window
         }
         e.Handled = true;
     }
-    private async void OnBrowseProjects(object? sender, RoutedEventArgs e)
+    private async void OnBrowseProjects(object? sender, RoutedEventArgs e) =>
+        await BrowseStorageFolderAsync("Общая папка проектов", (model, path) => model.ProjectRoot = path);
+
+    private async void OnBrowseShopRoot(object? sender, RoutedEventArgs e) =>
+        await BrowseStorageFolderAsync("Папка заданий в цех", (model, path) => model.ShopRoot = path);
+
+    private async void OnBrowseOfficeCopiesRoot(object? sender, RoutedEventArgs e) =>
+        await BrowseStorageFolderAsync("Папка для локальных копий", (model, path) => model.OfficeCopiesRoot = path);
+
+    private async Task BrowseStorageFolderAsync(string title, Action<WorkflowSettingsViewModel, string> apply)
     {
         if (Model is not { CanEdit: true } model || !StorageProvider.CanPickFolder) return;
         try
         {
-            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Общая папка проектов", AllowMultiple = false });
-            if (IsVisible && folders.FirstOrDefault()?.TryGetLocalPath() is { } path) model.ProjectRoot = path;
+            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = title, AllowMultiple = false });
+            if (IsVisible && ReferenceEquals(Model, model) && model.CanEdit && folders.FirstOrDefault()?.TryGetLocalPath() is { } path) apply(model, path);
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { model.Error = "Не удалось открыть выбор папки."; }
-    }
-    private async void OnBrowseShopRoot(object? sender, RoutedEventArgs e)
-    {
-        if (Model is not { CanEdit: true } model || !StorageProvider.CanPickFolder) return;
-        try
-        {
-            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Папка заданий в цех", AllowMultiple = false });
-            if (IsVisible && folders.FirstOrDefault()?.TryGetLocalPath() is { } path) model.ShopRoot = path;
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { model.Error = "Не удалось открыть выбор папки цеха. Можно ввести полный путь вручную."; }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { model.Error = "Не удалось открыть выбор папки. Можно ввести полный путь вручную."; }
     }
     private async void OnConnectDatabase(object? sender, RoutedEventArgs e) => await ChooseDatabaseAsync(false);
     private async void OnCreateDatabase(object? sender, RoutedEventArgs e) => await ChooseDatabaseAsync(true);

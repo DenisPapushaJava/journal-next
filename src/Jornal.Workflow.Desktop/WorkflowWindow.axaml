@@ -381,6 +381,8 @@
                             <TextBlock Text="{Binding VariantCaption}" IsVisible="{Binding HasAlternatives}" Classes="muted" FontSize="12" Margin="0,0,8,0" />
                             <TextBlock Text="{Binding Material}" Classes="workflowProjectInfo projectMaterial" Classes.excluded="{Binding IsExcluded}" FontSize="12" Margin="0,0,8,0" />
                             <TextBlock Text="{Binding State}" Classes="workflowProjectInfo" Classes.excluded="{Binding IsExcluded}" FontSize="12" />
+                            <TextBlock Text="Есть неотправленные файлы" IsVisible="{Binding HasPendingOfficeFiles}" Classes="muted"
+                                       FontSize="12" Margin="8,0,0,0" ToolTip.Tip="Отправьте рабочие файлы через меню проекта." />
                           </WrapPanel>
                         </StackPanel>
                         <Grid x:Name="WorkflowCompactProject" ColumnDefinitions="*,8,Auto" Margin="4,0" VerticalAlignment="Center"
@@ -437,7 +439,8 @@
                         <Button.Flyout>
                           <MenuFlyout Opened="OnProjectActionsOpened">
                             <MenuItem Header="{Binding EditCaption}" IsEnabled="{Binding CanEdit}" IsVisible="{Binding IsActive}" Click="OnEditProject" />
-                            <MenuItem Header="Создать другой вариант…" IsVisible="{Binding IsActive}" IsEnabled="{Binding CanTrash}" Click="OnRedoProject" />
+                            <MenuItem Header="Создать другой вариант…" IsVisible="{Binding IsActive}" IsEnabled="{Binding CanCreateVariant}" Click="OnRedoProject" />
+                            <MenuItem Header="Отправить изменённые файлы…" IsVisible="{Binding CanPublishFiles}" Click="OnPublishOfficeProject" />
                             <MenuItem Header="Использовать в итоге" IsVisible="{Binding CanChooseForTotal}" Click="OnSelectProjectForTotal" />
                             <MenuItem Header="История расчёта…" IsEnabled="{Binding CanViewHistory}" Click="OnCalculationHistory" />
                             <MenuItem Header="Подписать карты раскроя" IsVisible="{Binding IsActive}" IsEnabled="{Binding CanSignMaps}" ToolTip.Tip="{Binding MapSigningHint}" ToolTip.ShowOnDisabled="True" Click="OnSignProjectMaps" />

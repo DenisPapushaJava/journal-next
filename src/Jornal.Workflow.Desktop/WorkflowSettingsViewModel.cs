@@ -22,6 +22,9 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     private bool _loading;
     private HsvColor _spectrum = new(Color.FromUInt32(0xFF628DB2));
     public string WorkspacePath => Journal.WorkspacePath;
+    public bool IsRemoteStorage => Journal.IsRemoteStorage;
+    public bool CanUseSavedOfficeStorage => !IsRemoteStorage && Journal.SavedOfficeAddress is not null;
+    public string OfficeConnectionLabel => Journal.SavedOfficeAddress is null ? "Подключиться к серверу…" : "Настроить сервер…";
     public string DatabaseDescription => Journal.DatabaseDescription;
     public bool CanChooseDatabase => CanEdit && Journal.CanConnectDatabase;
     public string DatabasePlatformHint => Journal.CanConnectDatabase ? "Создание новой базы не переносит тестовые заявки прототипа. Прежняя MDB подходит только для импорта цен." :
@@ -56,7 +59,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     public bool HasRootChanges => ProjectRoot != _originalRoot;
     public bool HasProfileChanges => ProfileName != _originalProfile.Name || ProfileColorArgb != _originalProfile.ColorArgb ||
         (!_employees.Any(e => e.Id == _originalProfile.EmployeeId) && !string.IsNullOrWhiteSpace(ProfileName));
-    public bool HasChanges => HasRootChanges || HasProfileChanges || HasShopRootChanges || HasHansMapChanges || HasManagerMapFormatChanges;
+    public bool HasChanges => HasRootChanges || HasProfileChanges || HasShopRootChanges || HasOfficeCopiesRootChanges || HasHansMapChanges || HasManagerMapFormatChanges;
     public bool CanEdit => !IsBusy && !IsExporting && !Updates.IsApplying;
     public string CloseLabel => HasChanges ? "Отмена" : "Закрыть";
     public bool IsSaveVisible => IsProfile || IsStorage;
@@ -106,7 +109,8 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
         catch (OperationCanceledException) { Status = "Операция отменена. Обновите журнал перед повтором."; }
         finally { IsBusy = false; }
     }
-    private bool CanSave => CanEdit && (IsProfile ? HasProfileChanges || HasHansMapChanges || HasManagerMapFormatChanges : IsStorage && (HasRootChanges || HasShopRootChanges));
+    private bool CanSave => CanEdit && (IsProfile ? HasProfileChanges || HasHansMapChanges || HasManagerMapFormatChanges :
+        IsStorage && (HasRootChanges || HasShopRootChanges || HasOfficeCopiesRootChanges));
 
     public WorkflowSettingsViewModel(string workspacePath, Func<WorkflowWorkspace> snapshot,
         Func<string?, string?, CancellationToken, Task<string?>> saveRoot, Func<WorkflowProfileDraft> profile,
@@ -117,7 +121,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
         _snapshot = snapshot; _saveRoot = saveRoot; _profile = profile; _saveProfile = saveProfile;
         _suggestions = suggestions; _saveSuggestions = saveSuggestions;
         Journal = journal; Updates.PropertyChanged += OnUpdatesChanged; Journal.PropertyChanged += OnJournalAvailabilityChanged;
-        _originalProfile = profile(); ReloadRoot(); ReloadProfile(); ReloadShopRoot(); ReloadHansMaps(); ReloadResultPricing();
+        _originalProfile = profile(); ReloadRoot(); ReloadProfile(); ReloadShopRoot(); ReloadOfficeCopiesRoot(); ReloadHansMaps(); ReloadResultPricing();
         _originalManagerMapsAsPdf = _managerMapsAsPdf = Journal.ManagerMapsAsPdf;
         Changed();
     }
@@ -169,13 +173,44 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
             Error = await Journal.ConnectDatabaseAsync(path, create, token);
             if (Error is null)
             {
-                ReloadRoot(); ReloadProfile();
-                OnPropertyChanged(nameof(WorkspacePath)); OnPropertyChanged(nameof(DatabaseDescription));
+                RefreshStorageSettings();
                 Status = (create ? "База создана и подключена." : "База подключена.") +
                     (Journal.CurrentEmployee is null ? " Выберите себя в разделе «Общие → Технолог»." : "");
             }
         }
         finally { IsBusy = false; }
+    }
+    internal Task<string?> ConnectOfficeStorageAsync(string? address, string? key, CancellationToken token) =>
+        SwitchOfficeStorageAsync(() => Journal.ConnectOfficeStorageAsync(address, key, token));
+
+    internal Task<string?> UseSavedOfficeStorageAsync(CancellationToken token) => Journal.SavedOfficeAddress is { } address
+        ? ConnectOfficeStorageAsync(address, null, token) : Task.FromResult<string?>(null);
+
+    internal Task<string?> ReturnToLocalStorageAsync() => SwitchOfficeStorageAsync(() => Journal.ReturnToLocalStorageAsync(CancellationToken.None));
+
+    private async Task<string?> SwitchOfficeStorageAsync(Func<Task<string?>> change)
+    {
+        if (!CanEdit) return "Дождитесь завершения операции.";
+        if (HasChanges) return Error = "Сохраните изменения настроек перед сменой базы.";
+        IsBusy = true; Error = null; Status = null;
+        try
+        {
+            Error = await change();
+            if (Error is null)
+            {
+                RefreshStorageSettings();
+                Status = IsRemoteStorage ? "Сервер подключён, настройки сохранены." : "Локальное хранилище подключено.";
+            }
+            return Error;
+        }
+        finally { IsBusy = false; }
+    }
+
+    private void RefreshStorageSettings()
+    {
+        ReloadRoot(); ReloadProfile(); ReloadOfficeCopiesRoot();
+        OnPropertyChanged(nameof(WorkspacePath)); OnPropertyChanged(nameof(DatabaseDescription)); OnPropertyChanged(nameof(IsRemoteStorage));
+        OnPropertyChanged(nameof(CanUseSavedOfficeStorage)); OnPropertyChanged(nameof(OfficeConnectionLabel)); Changed();
     }
     private void OnUpdatesChanged(object? sender, PropertyChangedEventArgs e)
     { if (e.PropertyName is nameof(AppUpdatesViewModel.IsApplying) or nameof(AppUpdatesViewModel.RestartScheduled)) NotifyAvailability(); }

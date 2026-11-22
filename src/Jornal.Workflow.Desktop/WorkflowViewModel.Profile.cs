@@ -124,8 +124,14 @@ public partial class WorkflowViewModel
         {
             _connection.RequireMatchingSource(_preferences.Load());
             var expectedId = _connection.EmployeeId;
-            _workspace = await _store.SaveEmployeeProfileAsync(expectedEmployee, profile.Name, profile.ColorArgb, token);
-            var employee = _workspace.Employees.Single(e => e.Name.Equals(profile.Name.Trim(), StringComparison.OrdinalIgnoreCase));
+            var name = profile.Name.Trim();
+            var employee = IsRemoteStorage ? _workspace.Employees.SingleOrDefault(e => e.CanWork &&
+                e.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && (e.ColorArgb ?? 0xFF628DB2) == profile.ColorArgb) : null;
+            if (employee is null)
+            {
+                _workspace = await _store.SaveEmployeeProfileAsync(expectedEmployee, profile.Name, profile.ColorArgb, token);
+                employee = _workspace.Employees.Single(e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            }
             RefreshEmployees(expectedId); RefreshOrders();
             try
             {

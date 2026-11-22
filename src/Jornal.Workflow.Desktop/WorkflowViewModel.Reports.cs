@@ -32,10 +32,12 @@ public partial class WorkflowViewModel
         if (!calculation && !CheckPendingCalculationReview()) { Error = CalculationNotice; return null; }
         previous ??= CurrentReportReview;
         var source = _store; var requestedOrderId = order.Id;
+        var remote = _connection.RemoteClient;
         var localDrafts = Drafts.Where(d => d.IsDirty).ToDictionary(d => d.Id);
         WorkflowReportReviewViewModel? review = null;
         await RunAsync(async () =>
         {
+            if (remote is not null) await remote.RequireCalculationSupportAsync(token);
             var latest = await source.ReadOrderAsync(order.Id, token); var latestOrder = latest.Orders.Single(o => o.Id == order.Id);
             if (!calculation && previous is not null && latestOrder.Version != previous.PreviewOrderVersion)
             {
@@ -48,17 +50,18 @@ public partial class WorkflowViewModel
             if (calculation)
             {
                 foreach (var local in localDrafts.Values.Where(d => CalculationProjectIds(latestOrder).Contains(d.Id)))
-                    await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(order, local.Id, actorForHistory, local.Saved, local, local.SourcePath, token), token);
+                    await PreservePendingCalculationAsync(order, local.Id, actorForHistory, local, local.SourcePath, remote, token);
                 if (previous is not null)
                     foreach (var candidate in previous.Candidates.Where(c => !c.WasAccepted && c.HasUnpreservedEdits && c.Draft is not null))
-                        await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(order, candidate.Project.Id, actorForHistory, candidate.Draft!.Saved, candidate.Draft, candidate.Snapshot?.SourcePath, token), token);
+                        await PreservePendingCalculationAsync(order, candidate.Project.Id, actorForHistory, candidate.Draft!, candidate.Snapshot?.SourcePath, remote, token);
             }
             if (calculation && _reportReview is { } other && other.OrderId != order.Id)
             {
                 foreach (var candidate in other.Review.Candidates.Where(c => !c.WasAccepted && c.HasUnpreservedEdits && c.Draft is not null))
                     await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(
-                        Path.GetDirectoryName(candidate.Project.NativePath ?? candidate.Draft!.SourcePath), other.OrderId, candidate.Project.Id,
-                        actorForHistory, candidate.Draft!.Saved, candidate.Draft, token, other.Review.PreviewOrderVersion), token);
+                        Path.GetDirectoryName(remote is null ? candidate.Project.NativePath ?? candidate.Draft!.SourcePath : candidate.Snapshot?.SourcePath),
+                        other.OrderId, candidate.Project.Id, actorForHistory, remote is null ? candidate.Draft!.Saved : null,
+                        candidate.Draft, token, other.Review.PreviewOrderVersion, localDraftOnly: remote is not null), token);
             }
             _workspace = latest; order = latestOrder; RefreshOrders(preserveRows: true); LoadReportOrder(order);
             if (order.IsDeleted || order.HasProjectRename) throw new WorkflowValidationException("Подбор недоступен: заявка в корзине или изменение проекта не завершено.");
@@ -67,6 +70,7 @@ public partial class WorkflowViewModel
                 {
                     if (calculation) CanRetryCalculation = false;
                     var error = await ApplyReportReviewAsync(order, actor, candidates, source, cancellation, calculation);
+                    review!.NeedsOfficeComparison = error is not null && _officeReportConflict is { } conflict && conflict.Conflict.OrderId == order.Id;
                     if (error is not null && calculation && CanRetryCalculation)
                     {
                         review!.MarkOrderChanged();
@@ -89,7 +93,7 @@ public partial class WorkflowViewModel
                 }, () => _workspace) { MaterialSuggestions = MaterialSuggestions, PreviewOrderVersion = order.Version, CurrentOrderVersion = () => CurrentOrder?.Version, IsContextCurrent = () => ReferenceEquals(source, _store) && CurrentOrder?.Id == requestedOrderId && !_cuttingTaskDetached };
             var scopes = await Task.Run(async () =>
             {
-                var result = new List<(CuttingProject Project, ReportFileSnapshot[] Files, string State)>();
+            var result = new List<(CuttingProject Project, ReportFileSnapshot[] Files, string State, bool RetryRequired)>();
                 var profiles = new Dictionary<string, Dictionary<string, (ReportFileSnapshot[] Files, string State)>>(StringComparer.Ordinal);
                 long totalBytes = 0;
                 foreach (var project in order.ActiveProjects.Where(p => order.Items.Any(i => i.Id == p.ItemId && i.IsIncluded) &&
@@ -98,9 +102,18 @@ public partial class WorkflowViewModel
                 {
                     token.ThrowIfCancellationRequested();
                     var existing = order.Specifications.SingleOrDefault(s => s.Id == project.Id);
-                    var folder = project.NativePath is { } native ? Path.GetDirectoryName(native) :
-                        existing?.Current.SourcePath is { } reportSource ? Path.GetDirectoryName(reportSource) : null;
-                    if (folder is null) { result.Add((project, [], "Папка проекта не задана")); continue; }
+                    string? folder;
+                    HashSet<string>? skipped = null;
+                    string[] unavailable = [];
+                    try
+                    {
+                        if (remote is not null && project.NativePath is not null)
+                            (folder, skipped, unavailable) = await remote.OpenCalculationFolderAsync(order.Id, project, OfficeCopiesRoot, token);
+                        else folder = remote is null ? WorkflowCalculationSnapshots.ProjectFolder(order, project.Id) : null;
+                    }
+                    catch (Exception ex) when (ex is WorkflowValidationException or IOException or UnauthorizedAccessException or HttpRequestException)
+                    { result.Add((project, [], ex is WorkflowValidationException ? ex.Message : "Не удалось обновить локальную папку проекта.", remote is not null)); continue; }
+                    if (folder is null) { result.Add((project, [], "Папка проекта не задана", false)); continue; }
                     if (calculation && existing is null && !localDrafts.ContainsKey(project.Id) && previous?.Candidates.SingleOrDefault(c => c.Project.Id == project.Id)?.Draft is null)
                     {
                         var history = await WorkflowCalculationHistory.ReadAsync(folder, order.Id, project.Id, token);
@@ -120,7 +133,8 @@ public partial class WorkflowViewModel
                         var files = new List<ReportFileSnapshot>(); var state = "Отчётов пока нет";
                         try
                         {
-                            var candidates = WorkflowReportFiles.ListReports(folder, project.ImportProfile).Take(101).ToArray();
+                            var candidates = WorkflowReportFiles.ListReports(folder, project.ImportProfile)
+                                .Where(file => skipped?.Contains(Path.GetFileName(file.Path)) != true).Take(101).ToArray();
                             if (candidates.Length > 100) state = "В папке больше 100 отчётов. Уточните папку проекта.";
                             else foreach (var candidate in candidates)
                             {
@@ -147,21 +161,27 @@ public partial class WorkflowViewModel
                         scanned = (files.ToArray(), state); folders.Add(folder, scanned);
                     }
                     var preferred = existing?.Current.SourcePath ?? previous?.Candidates.SingleOrDefault(c => c.Project.Id == project.Id)?.Snapshot?.SourcePath;
+                    if (remote is not null && preferred is not null)
+                        preferred = Path.Combine(folder, WorkflowOfficeProjectPaths.FileName(preferred));
                     var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
                     var matched = scanned.Files.Where(file => WorkflowReportFiles.Matches(file, project, existing,
                             snapshot.Machines.Single(m => m.Id == project.MachineId)))
                         .OrderByDescending(file => preferred is not null && pathComparer.Equals(preferred, file.SourcePath))
                         .GroupBy(file => file.Sha256).Select(group => group.First()).ToArray();
-                    if (calculation && preferred is not null && matched.FirstOrDefault(file => pathComparer.Equals(preferred, file.SourcePath)) is { } bound)
-                        result.Add((project, [bound], ""));
-                    else result.Add((project, matched, scanned.State));
+                    var unavailableName = preferred is { } preferredPath && unavailable.Contains(Path.GetFileName(preferredPath), StringComparer.OrdinalIgnoreCase)
+                        ? Path.GetFileName(preferredPath) : matched.Length == 0 ? unavailable.FirstOrDefault() : null;
+                    if (unavailableName is not null)
+                        result.Add((project, [], $"Спецификация «{unavailableName}» недоступна в офисной папке. Повторите расчёт после сохранения файла.", true));
+                    else if (calculation && preferred is not null && matched.FirstOrDefault(file => pathComparer.Equals(preferred, file.SourcePath)) is { } bound)
+                        result.Add((project, [bound], "", false));
+                    else result.Add((project, matched, scanned.State, false));
                 }
                 return result;
             }, token);
             foreach (var scope in scopes)
                 review.Candidates.Add(new(snapshot, scope.Project, order.Items.Single(i => i.Id == scope.Project.ItemId).Number,
                     scope.Files, scope.State, review.Changed, previous?.Candidates.SingleOrDefault(c => c.Project.Id == scope.Project.Id && !c.WasAccepted),
-                    calculation, calculation ? localDrafts.GetValueOrDefault(scope.Project.Id) : null));
+                    calculation, calculation ? localDrafts.GetValueOrDefault(scope.Project.Id) : null) { RetryRequired = scope.RetryRequired });
             review.Selected = review.Candidates.FirstOrDefault(c => c.Draft is not null) ?? review.Candidates.FirstOrDefault();
             review.Changed();
             previous = null; localDrafts.Clear();
@@ -170,6 +190,20 @@ public partial class WorkflowViewModel
             NotifyCompleteness();
         });
         return Error is null ? review : null;
+    }
+
+    private async Task PreservePendingCalculationAsync(WorkflowOrder order, Guid projectId, Guid actor,
+        SpecificationDraft draft, string? sourcePath, WorkflowOfficeStorageClient? remote, CancellationToken token)
+    {
+        if (remote is null)
+        {
+            await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(order, projectId, actor, draft.Saved, draft, sourcePath, token), token);
+            return;
+        }
+        if (order.ActiveProjects.SingleOrDefault(project => project.Id == projectId) is not { NativePath: not null } project) return;
+        var (folder, _, _) = await remote.OpenCalculationFolderAsync(order.Id, project, OfficeCopiesRoot, token);
+        await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(folder, order.Id, projectId, actor, null, draft,
+            token, order.Version, localDraftOnly: true), token);
     }
 
     private void RequireUnchangedReportDrafts(WorkflowOrder order)
@@ -206,42 +240,62 @@ public partial class WorkflowViewModel
             }).ToArray();
             if (changes.Length == 0) throw new WorkflowValidationException("Нет готовых отчётов для сохранения.");
             var accepted = new List<(SpecificationDraft Draft, CuttingParameters Parameters, CuttingRate Rate,
-                DateOnly Date, string Number, AcceptedReport Report)>();
+                DateOnly Date, string Number, string? SourcePath, AcceptedReport? Report)>();
+            var remote = _connection.RemoteClient;
+            if (!calculation) RequireUnchangedReportDrafts(previewOrder);
             foreach (var change in changes)
             {
                 await Task.Run(() => WorkflowReportFiles.RevalidateAsync(change.Snapshot, token), token);
-                var prior = change.Draft.Saved?.Report;
-                var report = prior?.Sha256 == change.Snapshot.Sha256 ? prior :
-                    await Task.Run(() => WorkflowReportFiles.ArchiveAsync(change.Snapshot, change.Baseline, token), token);
-                accepted.Add((change.Draft, change.Parameters, change.Rate, change.Date, change.Number, report));
+                string? sourcePath;
+                AcceptedReport? report;
+                if (remote is not null)
+                {
+                    var prepared = await PrepareRemoteCalculationAsync(remote, previewOrder, change.Draft.Id, actor,
+                        change.Snapshot, change.Baseline, change.Parameters.HasBending, calculation, token);
+                    sourcePath = prepared.SourcePath; report = prepared.Report;
+                }
+                else
+                {
+                    sourcePath = change.Draft.SourcePath;
+                    var prior = change.Draft.Saved?.Report;
+                    report = prior?.Sha256 == change.Snapshot.Sha256 ? prior :
+                        await Task.Run(() => WorkflowReportFiles.ArchiveAsync(change.Snapshot, change.Baseline, token), token);
+                }
+                accepted.Add((change.Draft, change.Parameters, change.Rate, change.Date, change.Number, sourcePath, report));
             }
-            if (!calculation) RequireUnchangedReportDrafts(previewOrder);
             foreach (var candidate in candidates)
             {
                 var prior = previewOrder.Specifications.SingleOrDefault(s => s.Id == candidate.Project.Id)?.Current;
-                await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(previewOrder, candidate.Project.Id, actor, prior, null,
-                    candidate.Snapshot!.SourcePath, token), token);
-                if (candidate.HasUnpreservedEdits && candidate.Draft is { } edited)
-                    await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(previewOrder, candidate.Project.Id, actor, edited.Saved, edited,
+                if (remote is null)
+                    await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(previewOrder, candidate.Project.Id, actor, prior, null,
                         candidate.Snapshot!.SourcePath, token), token);
+                if (candidate.HasUnpreservedEdits && candidate.Draft is { } edited)
+                    await PreservePendingCalculationAsync(previewOrder, candidate.Project.Id, actor, edited, candidate.Snapshot!.SourcePath, remote, token);
             }
             WorkflowWorkspace savedWorkspace;
-            try { savedWorkspace = await source.WriteOrderAsync(previewOrder.Id, previewOrder.Version, book =>
+            try
             {
-                var next = book;
-                foreach (var entry in accepted)
-                    next = WorkflowChanges.SaveSpecification(next, previewOrder.Id, next.Orders.Single(o => o.Id == previewOrder.Id).Version,
-                        entry.Draft.Id, entry.Parameters, entry.Number, entry.Date, actor, DateTimeOffset.UtcNow,
-                        entry.Draft.SourcePath, entry.Draft.ImportProfile, entry.Rate, entry.Report);
-                return next;
-            }, token); }
+                WorkflowWorkspace Update(WorkflowWorkspace book)
+                {
+                    var next = book;
+                    foreach (var entry in accepted)
+                        next = WorkflowChanges.SaveSpecification(next, previewOrder.Id, next.Orders.Single(o => o.Id == previewOrder.Id).Version,
+                            entry.Draft.Id, entry.Parameters, entry.Number, entry.Date, actor, DateTimeOffset.UtcNow,
+                            entry.SourcePath, entry.Draft.ImportProfile, entry.Rate, entry.Report);
+                    return next;
+                }
+                savedWorkspace = remote is not null && source is WorkflowMdbStore mdb
+                    ? await mdb.WriteOfficeCalculationAsync(previewOrder.Id, previewOrder.Version, Update,
+                        changes.Select(change => new WorkflowOfficeReportVersion(change.Draft.Id, change.Snapshot.Sha256)).ToArray(), token)
+                    : await source.WriteOrderAsync(previewOrder.Id, previewOrder.Version, Update, token);
+            }
             catch (WorkflowConflictException) { if (calculation) CanRetryCalculation = true; throw; }
             saved = true;
             if (!ReferenceEquals(source, _store) || CurrentOrder?.Id != previewOrder.Id || _cuttingTaskDetached)
                 throw new WorkflowValidationException("Расчёты сохранены. Откройте прежнюю заявку и обновите журнал (F5), чтобы увидеть результат.");
             _workspace = savedWorkspace; RefreshOrders(preserveRows: true); LoadReportOrder(_workspace.Orders.Single(o => o.Id == previewOrder.Id), candidates.Select(c => c.Project.Id).ToHashSet()); applied = true;
             var bending = accepted.Where(entry => entry.Parameters.HasBending && entry.Draft.Saved?.Parameters.HasBending != true).Select(entry => entry.Draft.Id).ToArray();
-            if (bending.Length > 0) await EnsureSavedBendingFoldersAsync(CurrentOrder!, bending, token);
+            if (remote is null && bending.Length > 0) await EnsureSavedBendingFoldersAsync(CurrentOrder!, bending, token);
         });
         if (!saved && Error is null) token.ThrowIfCancellationRequested();
         return saved && applied ? null : Error ?? "Отчёты не сохранены; подбор остался в окне.";

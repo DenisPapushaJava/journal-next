@@ -7,8 +7,10 @@ namespace Jornal.Workflow.Desktop;
 public partial class WorkflowSettingsViewModel
 {
     private string? _originalShopRoot;
+    private string? _originalOfficeCopiesRoot;
     private (bool Combine, bool AsPdf) _originalHansMaps;
     [ObservableProperty] private string _shopRoot = "";
+    [ObservableProperty] private string _officeCopiesRoot = "";
     [ObservableProperty] private bool _combineHansMaps = true;
     private bool _hansMapsAsPdf;
     public bool HansMapsPdf
@@ -31,6 +33,7 @@ public partial class WorkflowSettingsViewModel
     }
     partial void OnCombineHansMapsChanged(bool value) => InputChanged();
     public bool HasShopRootChanges => ShopRoot != (_originalShopRoot ?? "");
+    private bool HasOfficeCopiesRootChanges => IsRemoteStorage && OfficeCopiesRoot != (_originalOfficeCopiesRoot ?? "");
     private bool HasHansMapChanges => (CombineHansMaps, _hansMapsAsPdf) != _originalHansMaps;
     public string ShopFolderPreview => Journal.ShopFolderPreview(ShopRoot);
     private void ReloadShopRoot()
@@ -40,6 +43,16 @@ public partial class WorkflowSettingsViewModel
         finally { _loading = false; }
         Changed();
     }
+
+    private void ReloadOfficeCopiesRoot()
+    {
+        _loading = true;
+        try { _originalOfficeCopiesRoot = Journal.OfficeCopiesRoot; OfficeCopiesRoot = _originalOfficeCopiesRoot ?? ""; }
+        finally { _loading = false; }
+        Changed();
+    }
+
+    partial void OnOfficeCopiesRootChanged(string value) => InputChanged();
 
     private void ReloadHansMaps()
     {
@@ -65,9 +78,19 @@ public partial class WorkflowSettingsViewModel
 
     private async Task SaveStorageAsync(CancellationToken token)
     {
-        // Validate both edits before committing either setting; the shared and local stores are independent.
+        // Validate the edits before updating the shared or local store.
         if (HasRootChanges) _ = WorkflowProjects.SetRoot(_snapshot(), ProjectRoot);
         if (HasShopRootChanges) WorkflowShopFolderPaths.NormalizeRoot(ShopRoot);
+        string? copiesRoot = null;
+        if (HasOfficeCopiesRootChanges && !string.IsNullOrWhiteSpace(OfficeCopiesRoot))
+        {
+            var input = OfficeCopiesRoot.Trim();
+            if (!Path.IsPathFullyQualified(input) || input.Any(char.IsControl))
+                throw new WorkflowValidationException("Укажите полный путь к папке для локальных копий или оставьте поле пустым.");
+            copiesRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(input));
+            if (!await Task.Run(() => Directory.Exists(copiesRoot), token))
+                throw new WorkflowValidationException("Папка для локальных копий недоступна. Выберите существующую папку.");
+        }
         Status = null;
         if (HasRootChanges)
         {
@@ -81,6 +104,13 @@ public partial class WorkflowSettingsViewModel
             if (Error is not null) return;
             ReloadShopRoot();
             Status = Status is null ? "Папка цеха сохранена на этом компьютере." : "Общая папка проектов и личный путь цеха сохранены.";
+        }
+        if (HasOfficeCopiesRootChanges)
+        {
+            Error = await Journal.SaveOfficeCopiesRootAsync(_originalOfficeCopiesRoot, copiesRoot, token);
+            if (Error is not null) return;
+            ReloadOfficeCopiesRoot();
+            Status = Status is null ? "Папка для локальных копий сохранена." : Status + " Папка для локальных копий сохранена.";
         }
     }
 }

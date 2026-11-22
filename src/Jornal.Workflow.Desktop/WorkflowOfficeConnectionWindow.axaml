@@ -1,0 +1,20 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="using:Jornal.Desktop.Controls" x:Class="Jornal.Workflow.Desktop.WorkflowOfficeConnectionWindow"
+        Title="Подключиться к серверу" Width="560" MinWidth="440" SizeToContent="Height" CanResize="False"
+        Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="20" Spacing="8">
+    <TextBlock Text="MDB и папка проектов берутся из настроек сервера." TextWrapping="Wrap" />
+    <StackPanel x:Name="ConnectionFields" Spacing="5">
+      <Label Content="Адрес сервера" Target="{Binding #ServerAddress}" Padding="0" />
+      <TextBox x:Name="ServerAddress" PlaceholderText="Адрес из панели сервера" MaxLength="160" />
+      <Label Content="Ключ администратора" Target="{Binding #AdministratorKey}" Padding="0" />
+      <TextBox x:Name="AdministratorKey" PasswordChar="●" MaxLength="128" />
+    </StackPanel>
+    <TextBlock x:Name="ConnectionError" TextWrapping="Wrap" IsVisible="False" AutomationProperties.LiveSetting="Polite"
+               Foreground="{DynamicResource JournalDangerForeground}" />
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <ui:JournalButton x:Name="CancelOfficeConnection" Label="Отмена" IsCancel="True" Click="OnCancel" />
+      <ui:JournalButton x:Name="ConnectOffice" Label="Подключить и сохранить" Classes="primary" IsDefault="True" Click="OnConnect" />
+    </StackPanel>
+  </StackPanel>
+</Window>

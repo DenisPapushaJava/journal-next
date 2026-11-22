@@ -75,9 +75,23 @@ public partial class WorkflowWindow
             case CalculationTarget.Recalculate: OnCalculateOrder(sender, e); break;
             case CalculationTarget.Refresh: model.ReloadCommand.Execute(null); break;
             case CalculationTarget.Settings: await ShowSettingsAsync(0); break;
+            case CalculationTarget.CompareOfficeReport:
+                var comparison = await model.CompareOfficeReportAsync(_lifetime.Token);
+                if (comparison is null || !IsVisible || !ReferenceEquals(Model, model) || _lifetime.IsCancellationRequested) break;
+                var dialog = new WorkflowOfficeReportComparisonWindow(comparison.FileName, () => OpenFolderAsync(comparison.Folder))
+                    { RequestedThemeVariant = ActualThemeVariant };
+                var choice = await dialog.ShowDialog<WorkflowOfficeReportChoice>(this);
+                if (choice != WorkflowOfficeReportChoice.Cancel && IsVisible && ReferenceEquals(Model, model) &&
+                    await model.ChooseOfficeReportAsync(comparison, useOffice: choice == WorkflowOfficeReportChoice.Office, _lifetime.Token))
+                    OnCalculateOrder(sender, e);
+                break;
             case CalculationTarget.Folder:
-                if (model.SelectedProject?.Project.NativePath is { } path)
-                    try { if (!await OpenFolderAsync(Path.GetDirectoryName(path)!)) model.Error = "Папка проекта недоступна. Проверьте путь и доступ к сети."; }
+                if (model.SelectedProject is { Project.NativePath: { } path } project)
+                    try
+                    {
+                        var folder = model.IsRemoteStorage ? await OpenOfficeWorkingFolderAsync(model, project) : Path.GetDirectoryName(path);
+                        if (folder is not null && !await OpenFolderAsync(folder)) model.Error = "Папка проекта недоступна. Проверьте путь и доступ к сети.";
+                    }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { model.Error = "Не удалось открыть папку проекта. Проверьте доступ к сети."; }
                 break;
         }

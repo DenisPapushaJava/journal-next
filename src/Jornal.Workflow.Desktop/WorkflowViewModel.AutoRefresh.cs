@@ -36,7 +36,7 @@ public partial class WorkflowViewModel
         }
     }
     internal long BackgroundGeneration => _backgroundGeneration;
-    public bool CanRefreshAutomatically => AutomaticJournalRefresh && _store is WorkflowMdbStore && _hasLoadedOrders &&
+    public bool CanRefreshAutomatically => AutomaticJournalRefresh && IsMdb && _hasLoadedOrders &&
         !_cuttingTaskDetached && CanUse && !_searchPending && !IsCopyingCuttingTask && !RequiresDatabaseRefresh;
     partial void OnBackgroundRefreshErrorChanged(string? value) => OnPropertyChanged(nameof(HasBackgroundRefreshError));
     internal void CancelBackgroundRefresh()

@@ -51,6 +51,14 @@ public sealed partial class WorkflowMdbDatabase
         catch (System.Data.OleDb.OleDbException ex)
         { throw new WorkflowValidationException("Не удалось проверить MDB программы «Заявки»: файл занят, недоступен либо имеет другую структуру. Проверьте файл и доступ к папке. Код: " + ex.HResult.ToString("X8")); }
     }
+    private static Metadata ReadWorkspaceMetadata(WorkflowMdbSession session, WorkflowAccessRequest request)
+    {
+        var metadata = ReadMetadata(session, request.DatabaseId, allowEarlierSchema: request.OfficeSchema6);
+        if (request.OfficeSchema6 && metadata.SchemaVersion < 6)
+            throw new WorkflowValidationException("Для удалённого хранения нужна MDB схемы 6 или новее.");
+        return metadata;
+    }
+
     private static WorkflowValidationException WrongDatabase(string? detail = null) => new("Это не база программы «Заявки» или её структура повреждена. Прежнюю MDB используйте только для импорта цен." +
         (detail is null ? "" : " Проверка: " + detail + "."));
 
