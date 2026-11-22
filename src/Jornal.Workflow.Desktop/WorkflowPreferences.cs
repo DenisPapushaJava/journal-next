@@ -20,8 +20,12 @@ public sealed record WorkflowPreferences(bool DarkTheme = false)
     public uint ShopHandoffColorArgb { get; init; } = 0xFF80FFFF;
     public string? DatabasePath { get; init; }
     public Guid? DatabaseId { get; init; }
+    public WorkflowOfficeStorageSettings? OfficeStorage { get; init; }
+    public bool UseOfficeStorage { get; init; }
+    public string? OfficeCopiesRoot { get; init; }
     public Dictionary<string, Guid?>? DatabaseEmployees { get; init; }
-    [System.Text.Json.Serialization.JsonIgnore] public string SourceKey => DatabaseId?.ToString("N") ?? "local";
+    [System.Text.Json.Serialization.JsonIgnore] public WorkflowOfficeStorageSettings? ActiveOfficeStorage => UseOfficeStorage ? OfficeStorage : null;
+    [System.Text.Json.Serialization.JsonIgnore] public string SourceKey => (ActiveOfficeStorage?.DatabaseId ?? DatabaseId)?.ToString("N") ?? "local";
     public void Validate()
     {
         if (ShopHandoffColorArgb >> 24 != 255) throw new InvalidDataException("Цвет отметки передачи в цех должен быть непрозрачным.");
@@ -32,6 +36,11 @@ public sealed record WorkflowPreferences(bool DarkTheme = false)
         if (DatabaseEmployees is { } people && (people.Count > 64 || people.Any(p => p.Value == Guid.Empty ||
             p.Key != "local" && !Guid.TryParseExact(p.Key, "N", out _))))
             throw new InvalidDataException("Проверьте локальные профили баз.");
+        if (UseOfficeStorage && OfficeStorage is null || OfficeStorage is { } remote &&
+            (remote.DatabaseId == Guid.Empty || remote.CredentialId == Guid.Empty || !Uri.TryCreate(remote.Address, UriKind.Absolute, out _)))
+            throw new InvalidDataException("Проверьте настройки удалённого хранилища.");
+        if (OfficeCopiesRoot is { } copiesRoot && (!Path.IsPathFullyQualified(copiesRoot) || copiesRoot.Any(char.IsControl)))
+            throw new InvalidDataException("Проверьте папку для локальных копий проектов.");
         try { EntrySuggestions?.Normalize(); }
         catch (ArgumentException ex) { throw new InvalidDataException("Проверьте локальные списки ввода: " + ex.Message, ex); }
     }

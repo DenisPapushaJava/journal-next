@@ -105,7 +105,8 @@ public partial class WorkflowViewModel : ObservableObject
     public bool IsOrderOpen => _openOrderId is not null;
     public bool HasSelectedDraft => SelectedDraft is not null;
     internal string? SpecificationSourcePath => SelectedDraft?.Saved?.SourcePath is { } path &&
-        Path.IsPathFullyQualified(path) && WorkflowReportFiles.IsReport(path) ? path : null;
+        (IsRemoteStorage ? SelectedProject?.Project.NativePath is not null : Path.IsPathFullyQualified(path)) &&
+        WorkflowReportFiles.IsReport(WorkflowOfficeProjectPaths.FileName(path)) ? path : null;
     public bool CanOpenSpecificationSource => SpecificationSourcePath is not null;
     public bool CanUse => !IsBusy && !_readingDatabase && !_savingProjectInclusion && !Updates.IsApplying;
     public bool CanBrowseWorkspace => (!IsBusy || _savingProjectInclusion) && !Updates.IsApplying;
@@ -121,9 +122,10 @@ public partial class WorkflowViewModel : ObservableObject
 
     public WorkflowViewModel(IWorkflowWorkspaceStore store, AppUpdatesViewModel updates, DiagnosticService? diagnostics = null,
         WorkflowPreferencesStore? preferences = null, IWorkflowDatabaseService? databases = null, WorkflowPreferences? initialPreferences = null,
-        IWorkflowWordMapEditor? wordMapEditor = null)
+        IWorkflowWordMapEditor? wordMapEditor = null, IWorkflowAccessTransport? remoteTransport = null)
     {
-        _connection = new(store); Updates = updates; Diagnostics = diagnostics;
+        _connection = new(store, Office: initialPreferences?.ActiveOfficeStorage, RemoteClient: remoteTransport as WorkflowOfficeStorageClient);
+        Updates = updates; Diagnostics = diagnostics;
         _wordMapEditor = wordMapEditor ?? new WorkflowWordMapProcess(Environment.ProcessPath!,
             string.Equals(Path.GetFileNameWithoutExtension(Environment.ProcessPath), "dotnet", StringComparison.OrdinalIgnoreCase) ? typeof(Program).Assembly.Location : null);
         _preferences = preferences ?? new(store is WorkflowMdbStore ? WorkflowIdentity.PreferencesPath : Path.Combine(Path.GetDirectoryName(store.FilePath)!, "preferences.json"));
@@ -280,17 +282,30 @@ public partial class WorkflowViewModel : ObservableObject
             {
                 var rate = draft.Rate(); var documentNumber = draft.Number;
                 AcceptedReport? report = null;
-                if (draft.IncomingReport is { } incoming)
+                var sourcePath = draft.SourcePath;
+                var remote = _connection.RemoteClient;
+                var incoming = draft.IncomingReport;
+                if (incoming is not null) await WorkflowReportFiles.RevalidateAsync(incoming);
+                if (remote is not null)
                 {
-                    await WorkflowReportFiles.RevalidateAsync(incoming);
+                    var values = incoming is null ? null : WorkflowReportCandidate.Values(FromReport(incoming.Parsed, incoming.SourcePath, _workspace.Machines));
+                    var prepared = await PrepareRemoteCalculationAsync(remote, order with { Version = expected }, draft.Id, actorId,
+                        incoming, values, parameters.HasBending, calculation: false, CancellationToken.None);
+                    report = prepared.Report; sourcePath = prepared.SourcePath;
+                }
+                else if (incoming is not null)
+                {
                     report = draft.Saved?.Report?.Sha256 == incoming.Sha256 ? draft.Saved.Report :
                         await WorkflowReportFiles.ArchiveAsync(incoming, WorkflowReportCandidate.Values(FromReport(incoming.Parsed, incoming.SourcePath, _workspace.Machines)));
                 }
-                if (before is not null && order.Projects.Any(p => p.Id == draft.Id && p.NativePath is not null) &&
+                if (remote is null && before is not null && order.Projects.Any(p => p.Id == draft.Id && p.NativePath is not null) &&
                     WorkflowCalculationSnapshots.ProjectFolder(order, draft.Id, draft.SourcePath) is not null)
                     await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(order, draft.Id, actorId, before, null, draft.SourcePath, CancellationToken.None));
-                _workspace = await source.WriteOrderAsync(order.Id, expected, book => WorkflowChanges.SaveSpecification(book, order.Id, expected,
-                    draft.Id, parameters, documentNumber, date, actorId, DateTimeOffset.UtcNow, draft.SourcePath, draft.ImportProfile, rate, report));
+                WorkflowWorkspace Update(WorkflowWorkspace book) => WorkflowChanges.SaveSpecification(book, order.Id, expected,
+                    draft.Id, parameters, documentNumber, date, actorId, DateTimeOffset.UtcNow, sourcePath, draft.ImportProfile, rate, report);
+                _workspace = remote is not null && incoming is not null && source is WorkflowMdbStore mdb
+                    ? await mdb.WriteOfficeCalculationAsync(order.Id, expected, Update, [new(draft.Id, incoming.Sha256)])
+                    : await source.WriteOrderAsync(order.Id, expected, Update);
             }
             var savedOrder = CurrentOrder!;
             _loadedOrderVersion = savedOrder.Version;
@@ -302,7 +317,7 @@ public partial class WorkflowViewModel : ObservableObject
             }
             else MarkResultStale();
             RefreshProjects(draft.Id); RefreshOrders(); NotifyOrder();
-            if (!commentOnly && parameters.HasBending && draft.Saved?.Parameters.HasBending != true)
+            if (!IsRemoteStorage && !commentOnly && parameters.HasBending && draft.Saved?.Parameters.HasBending != true)
                 await EnsureSavedBendingFoldersAsync(savedOrder, [draft.Id]);
         });
         if (commentSaved is not null && ReferenceEquals(source, _store))
@@ -560,7 +575,7 @@ public partial class WorkflowViewModel : ObservableObject
         }
         finally { IsBusy = false; NotifyDatabase(); }
     }
-    public void Detach() { _cuttingTaskDetached = true; CancelManagerMapJobs(); StopShopFolderChecks(); ResetShopTransfer(); _copiedCuttingTask = null; _cuttingTaskPreview = null; _bendingFolderFailures = null; CancelDatabaseSearch(); _reportReview = null; if (SelectedDraft is { } draft) draft.PropertyChanged -= DraftChanged; NotifyMapSigning(); }
+    public void Detach() { _cuttingTaskDetached = true; CancelOfficeFileCheck(); CancelManagerMapJobs(); StopShopFolderChecks(); ResetShopTransfer(); _copiedCuttingTask = null; _cuttingTaskPreview = null; _bendingFolderFailures = null; CancelDatabaseSearch(); _reportReview = null; if (SelectedDraft is { } draft) draft.PropertyChanged -= DraftChanged; NotifyMapSigning(); }
     public WorkflowRestartDraft CreateRestartDraft()
     {
         CaptureCard();

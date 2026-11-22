@@ -77,14 +77,27 @@ internal sealed class WorkflowMdbSession : IDisposable
         }
         return rows;
     }
-    internal void Insert(WorkflowMdbRow row)
+    internal void Insert(WorkflowMdbRow row, bool shortComment = false)
     {
         var statement = WorkflowMdbStatements.Insert(row);
-        Execute(statement.Sql, statement.Parameters);
+        Execute(statement.Sql, ParametersFor(row.Table, statement.Parameters, shortComment));
     }
-    internal void Update(WorkflowMdbRow before, WorkflowMdbRow after)
+    internal void Update(WorkflowMdbRow before, WorkflowMdbRow after, bool shortComment = false)
     {
-        if (WorkflowMdbStatements.Update(before, after) is { } statement) Execute(statement.Sql, statement.Parameters);
+        if (WorkflowMdbStatements.Update(before, after) is { } statement)
+            Execute(statement.Sql, ParametersFor(after.Table, statement.Parameters, shortComment));
+    }
+    private static (WorkflowMdbColumn Column, object? Value)[] ParametersFor(string table,
+        (WorkflowMdbColumn Column, object? Value)[] values, bool shortComment)
+    {
+        if (!shortComment || table != "specifications") return values;
+        return values.Select(parameter =>
+        {
+            if (parameter.Column.Name != "comment") return parameter;
+            if (parameter.Value is string { Length: > 255 })
+                throw new WorkflowValidationException("В этой версии MDB комментарий вмещает до 255 символов.");
+            return (parameter.Column with { Type = WorkflowMdbType.Text, Size = 255 }, parameter.Value);
+        }).ToArray();
     }
     internal static readonly WorkflowMdbColumn GuidColumn = new("id", null, WorkflowMdbType.Guid);
     internal static readonly WorkflowMdbColumn LongColumn = new("version", null, WorkflowMdbType.Int64);

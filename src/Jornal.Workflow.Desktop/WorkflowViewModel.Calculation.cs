@@ -3,7 +3,7 @@ using Jornal.Workflow.Infrastructure;
 
 namespace Jornal.Workflow.Desktop;
 
-public enum CalculationTarget { None, Header, Project, Reports, Recalculate, Refresh, Settings, Folder }
+public enum CalculationTarget { None, Header, Project, Reports, Recalculate, Refresh, Settings, Folder, CompareOfficeReport }
 
 public partial class WorkflowViewModel
 {
@@ -11,8 +11,10 @@ public partial class WorkflowViewModel
     internal bool CanRetryCalculation { get; private set; }
     internal void ExplainCalculationRetry() => SetCalculationNotice("Заявка сейчас обновляется. Повторите «Рассчитать» — введённые данные сохранены.", CalculationTarget.Recalculate);
     private (IWorkflowWorkspaceStore Source, Guid OrderId, string Text, CalculationTarget Target, Guid? ProjectId)? _calculationNotice;
+    private (WorkflowOfficeStorageClient Client, WorkflowOfficeReportConflictException Conflict)? _officeReportConflict;
     public bool CanCalculateOrder => CanUse && IsCurrentOrderActive && !IsCreating && !_calculatingOrder && CurrentOrder is { } current && (current.ActiveProjects.Any() || current.ActiveSpecifications.Any());
-    public string CalculateOrderHint => CurrentOrder?.ActiveProjects.Any() != true && CurrentOrder?.ActiveSpecifications.Any() != true ? "Сначала добавьте проект в заявку." : "Найти спецификации, обновить расчёты включённых проектов и текст результата";
+    public string CalculateOrderHint => CurrentOrder?.ActiveProjects.Any() != true && CurrentOrder?.ActiveSpecifications.Any() != true
+        ? "Сначала добавьте проект в заявку." : "Найти спецификации, обновить расчёты включённых проектов и текст результата";
     private bool IsCalculationNoticeCurrent => _calculationNotice is { } notice && ReferenceEquals(notice.Source, _store) && notice.OrderId == CurrentOrder?.Id;
     public string CalculationNotice => IsCalculationNoticeCurrent ? _calculationNotice!.Value.Text : "";
     public bool HasCalculationNotice => CalculationNotice.Length > 0;
@@ -21,7 +23,8 @@ public partial class WorkflowViewModel
     {
         CalculationTarget.Header => "Открыть реквизиты", CalculationTarget.Project => "Перейти к проекту",
         CalculationTarget.Reports => "Уточнить расчёт", CalculationTarget.Recalculate => "Повторить расчёт", CalculationTarget.Refresh => "Обновить журнал",
-        CalculationTarget.Settings => "Открыть настройки", CalculationTarget.Folder => "Открыть папку проекта", _ => ""
+        CalculationTarget.Settings => "Открыть настройки", CalculationTarget.Folder => "Открыть папку проекта",
+        CalculationTarget.CompareOfficeReport => "Сравнить версии", _ => ""
     } : "";
 
     private HashSet<Guid> CalculationProjectIds(WorkflowOrder order) => order.Items.Where(i => i.IsIncluded)
@@ -76,12 +79,55 @@ public partial class WorkflowViewModel
         return notice.Target;
     }
 
+    private async Task<WorkflowOfficePreparedCalculation> PrepareRemoteCalculationAsync(WorkflowOfficeStorageClient remote,
+        WorkflowOrder order, Guid projectId, Guid actor, ReportFileSnapshot? snapshot, ReportValues? values, bool bending,
+        bool calculation, CancellationToken token)
+    {
+        try { return await remote.PrepareCalculationAsync(order, projectId, actor, snapshot, values, bending, token); }
+        catch (WorkflowConflictException) { if (calculation) CanRetryCalculation = true; throw; }
+        catch (WorkflowOfficeReportConflictException conflict)
+        {
+            _officeReportConflict = (remote, conflict);
+            SetCalculationNotice(conflict.Message, CalculationTarget.CompareOfficeReport, projectId);
+            throw new WorkflowValidationException(conflict.Message);
+        }
+    }
+
+    private bool IsCurrentOfficeReportConflict(WorkflowOfficeStorageClient client, WorkflowOfficeReportConflictException conflict) =>
+        ReferenceEquals(client, _connection.RemoteClient) && CurrentOrder?.Id == conflict.OrderId && !_cuttingTaskDetached;
+
+    internal async Task<WorkflowOfficeReportComparison?> CompareOfficeReportAsync(CancellationToken token)
+    {
+        if (_officeReportConflict is not { } context || !IsCurrentOfficeReportConflict(context.Client, context.Conflict) ||
+            CurrentOrder?.ActiveProjects.SingleOrDefault(p => p.Id == context.Conflict.ProjectId) is not { } project) return null;
+        WorkflowOfficeReportComparison? comparison = null;
+        await RunAsync(async () => comparison = await context.Client.CompareReportsAsync(context.Conflict, project.ImportProfile, token),
+            "Не удалось скачать копии для сравнения.");
+        return IsCurrentOfficeReportConflict(context.Client, context.Conflict) ? comparison : null;
+    }
+
+    internal async Task<bool> ChooseOfficeReportAsync(WorkflowOfficeReportComparison comparison, bool useOffice, CancellationToken token)
+    {
+        if (_officeReportConflict is not { } context || !IsCurrentOfficeReportConflict(context.Client, context.Conflict) ||
+            context.Conflict.ProjectId != comparison.ProjectId || context.Conflict.OrderId != comparison.OrderId ||
+            context.Conflict.FileName != comparison.FileName ||
+            CurrentOrder?.ActiveProjects.SingleOrDefault(p => p.Id == context.Conflict.ProjectId) is not { } project) return false;
+        var chosen = false;
+        await RunAsync(async () =>
+        {
+            await context.Client.ChooseReportAsync(comparison, project.ImportProfile, useOffice, token);
+            chosen = true;
+        }, "Не удалось сохранить выбранную версию спецификации.");
+        return chosen && IsCurrentOfficeReportConflict(context.Client, context.Conflict);
+    }
+
     // Automatic acceptance uses the same validation, archive and conditional write as manual review.
     public async Task<WorkflowReportReviewViewModel?> CalculateOrderAsync(CancellationToken token = default)
     {
         if (!CanCalculateOrder) return null;
         _acceptedReports = 0; _reportImportOrderId = null; NotifyCompleteness();
         if (!CheckCalculationInputs()) return null;
+        _officeReportConflict = null;
         CanRetryCalculation = false;
         _calculatingOrder = true; NotifyCalculationState();
         var source = _store; var id = CurrentOrder!.Id;
@@ -97,7 +143,12 @@ public partial class WorkflowViewModel
             if (_cuttingTaskDetached || !ReferenceEquals(source, _store) || CurrentOrder?.Id != id) return null;
             review.IsGuided = true;
             await review.AcceptAutomaticAsync(token);
-            if (review.Error is { } error) { SetCalculationNotice(error, RequiresDatabaseRefresh ? CalculationTarget.Refresh : CalculationTarget.Recalculate); return review; }
+            if (review.Error is { } error)
+            {
+                if (_officeReportConflict is null)
+                    SetCalculationNotice(error, RequiresDatabaseRefresh ? CalculationTarget.Refresh : CalculationTarget.Recalculate);
+                return review;
+            }
             CompleteCalculation(review);
             return review;
         }
@@ -143,7 +194,12 @@ public partial class WorkflowViewModel
         if (review.GuidedCandidates.FirstOrDefault() is { } question)
         { review.Selected = question; SetCalculationNotice($"Проект «{question.Project.Name}»: {question.Message}", CalculationTarget.Reports, question.Project.Id); return false; }
         if (review.Candidates.FirstOrDefault(c => !c.WasAccepted && c.Status != "Без изменений") is { } missing)
-        { SetCalculationNotice($"{CompletenessCaption}. Проект «{missing.Project.Name}»: {missing.Message}. Сохраните спецификацию рядом с проектом и нажмите «Рассчитать».", CalculationTarget.Folder, missing.Project.Id); return false; }
+        {
+            var message = $"{CompletenessCaption}. Проект «{missing.Project.Name}». {missing.Message}";
+            if (missing.RetryRequired) SetCalculationNotice(message, CalculationTarget.Recalculate, missing.Project.Id);
+            else SetCalculationNotice(message + ". Сохраните спецификацию рядом с проектом и нажмите «Рассчитать».", CalculationTarget.Folder, missing.Project.Id);
+            return false;
+        }
         if (ResultGenerationProblem is { } problem) { SetCalculationNotice(problem, CalculationTarget.Project); return false; }
         SetCalculationNotice("");
         return true;

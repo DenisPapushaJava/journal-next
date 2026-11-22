@@ -15,7 +15,8 @@ public sealed class WorkflowAccessClient(string? executable = null, IWorkflowAcc
         Task<WorkflowAccessResponse> Send(WorkflowAccessRequest value, CancellationToken cancellation) =>
             process?.SendAsync(value, cancellation) ?? SendProcessAsync(value, cancellation);
         if (request.Operation is not (WorkflowAccessOperation.Inspect or WorkflowAccessOperation.Read or
-            WorkflowAccessOperation.ReadOrders or WorkflowAccessOperation.ReadTrash))
+            WorkflowAccessOperation.ReadOrders or WorkflowAccessOperation.ReadTrash or WorkflowAccessOperation.ReadOfficeOrders or
+            WorkflowAccessOperation.ReadOfficeProjects or WorkflowAccessOperation.ReadOfficeTechnologists))
             return await Send(request, token).ConfigureAwait(false);
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -26,9 +27,13 @@ public sealed class WorkflowAccessClient(string? executable = null, IWorkflowAcc
             deadline.Token.ThrowIfCancellationRequested();
             // A new process has a fresh Jet cache. Read only metadata to reject any multi-table snapshot
             // assembled across another client's commit; Jet supports only ReadCommitted transactions.
-            var revision = await Send(new(1, WorkflowAccessOperation.ReadRevision, request.Path, response.DatabaseId), deadline.Token).ConfigureAwait(false);
+            var revisionOperation = request.Operation is WorkflowAccessOperation.ReadOfficeOrders or WorkflowAccessOperation.ReadOfficeProjects or
+                WorkflowAccessOperation.ReadOfficeTechnologists
+                ? WorkflowAccessOperation.ReadOfficeRevision : WorkflowAccessOperation.ReadRevision;
+            var revision = await Send(new(1, revisionOperation, request.Path, response.DatabaseId, OfficeSchema6: request.OfficeSchema6), deadline.Token).ConfigureAwait(false);
             if (revision.DatabaseId != response.DatabaseId || revision.Revision != response.Revision ||
-                revision.CatalogVersion != response.CatalogVersion) throw new WorkflowConflictException();
+                revision.CatalogVersion != response.CatalogVersion || revision.OfficeSchemaVersion != response.OfficeSchemaVersion)
+                throw new WorkflowConflictException();
             return response;
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)

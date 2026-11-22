@@ -11,7 +11,7 @@ internal enum ShopFolderAvailability { Checking, Available, NotFound, Unavailabl
 
 public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, string machine, bool isCurrent,
     SpecificationState? saved, bool included = true, bool legacyCalculation = false, bool hasAlternatives = false,
-    bool hasLocalChanges = false, bool hasManagerMapAction = false) : ObservableObject
+    bool hasLocalChanges = false, bool hasManagerMapAction = false, bool remoteStorage = false) : ObservableObject
 {
     public CuttingProject Project { get; private set; } = project;
     private WorkflowShopHandoff? _shopHandoff;
@@ -50,12 +50,16 @@ public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, s
     public SpecificationState? Saved { get; } = saved;
     public bool IsLegacyCalculation { get; } = legacyCalculation;
     public bool HasProjectActions => !IsLegacyCalculation;
-    public bool CanViewHistory => Saved is not null && Project.NativePath is not null;
+    public bool CanViewHistory => !remoteStorage && Saved is not null && Project.NativePath is not null;
     public bool CanChooseForTotal => HasProjectActions && !IsDeleted && Saved is not null && hasAlternatives;
     private bool _hasLocalChanges = hasLocalChanges;
     public bool HasLocalChanges => _hasLocalChanges;
     internal void ApplyLocalChanges(bool value)
     { if (SetProperty(ref _hasLocalChanges, value, nameof(HasLocalChanges))) { OnPropertyChanged(nameof(State)); OnPropertyChanged(nameof(DetailsHint)); } }
+    private bool _hasPendingOfficeFiles;
+    public bool HasPendingOfficeFiles => _hasPendingOfficeFiles;
+    internal void ApplyPendingOfficeFiles(bool value) =>
+        SetProperty(ref _hasPendingOfficeFiles, value && remoteStorage && !IsDeleted, nameof(HasPendingOfficeFiles));
     private bool _included = included;
     private bool _inclusionWritePending;
     private bool? _pendingIncluded;
@@ -83,7 +87,7 @@ public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, s
     public bool IsIncluded => Included && !IsDeleted;
     public bool IsExcluded => !Included && !IsDeleted;
     public bool CanToggle => HasProjectActions && !IsDeleted && Project.Rename is null;
-    public bool CanEdit => !IsDeleted && Saved is null && Project.NativePath is not null;
+    public bool CanEdit => !remoteStorage && !IsDeleted && Saved is null && Project.NativePath is not null;
     public bool CanTrash => HasProjectActions && !IsDeleted && Project.Rename is null;
     private string? _mapSigningBlock;
     internal void ApplyMapSigningBlock(string? reason)
@@ -92,7 +96,7 @@ public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, s
         _mapSigningBlock = reason;
         OnPropertyChanged(nameof(CanSignMaps)); OnPropertyChanged(nameof(MapSigningHint));
     }
-    public bool CanSignMaps => _mapSigningBlock is null && HasProjectActions && !IsDeleted && Project.Rename is null && Project.NativePath is not null && Project.ImportProfile is "block-html/v1" or "hans-pdf/v1" or "waterjet-awjc/v1";
+    public bool CanSignMaps => !remoteStorage && _mapSigningBlock is null && HasProjectActions && !IsDeleted && Project.Rename is null && Project.NativePath is not null && Project.ImportProfile is "block-html/v1" or "hans-pdf/v1" or "waterjet-awjc/v1";
     public bool HasManagerMapAction => hasManagerMapAction;
     private bool _canMergeManagerMaps;
     private string _managerMapActionCaption = "Объединить карты раскроя";
@@ -117,9 +121,11 @@ public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, s
     public string BendingMark => Saved is null ? "—" : Saved.Parameters.HasBending ? "✓" : "";
     public string ChamferHint => Saved is null ? "Фаска: спецификация ещё не загружена" : Saved.Parameters.HasChamfer ? "Фаска отмечена" : "Фаска не отмечена";
     public string BendingHint => Saved is null ? "Гибка: спецификация ещё не загружена" : Saved.Parameters.HasBending ? "Гибка отмечена" : "Гибка не отмечена";
-    public string? FolderPath => Path.GetDirectoryName(Project.NativePath ?? Saved?.SourcePath);
-    public bool HasFolder => !string.IsNullOrWhiteSpace(FolderPath);
-    public string FolderHint => HasFolder ? "Открыть папку проекта" : "Папка проекта не задана";
+    public string? FolderPath => remoteStorage ? null : Path.GetDirectoryName(Project.NativePath ?? Saved?.SourcePath);
+    public bool HasFolder => remoteStorage ? !IsDeleted && Project.NativePath is not null : !string.IsNullOrWhiteSpace(FolderPath);
+    public bool CanPublishFiles => remoteStorage && HasFolder;
+    public bool CanCreateVariant => !remoteStorage && CanTrash;
+    public string FolderHint => HasFolder ? remoteStorage ? "Открыть локальную копию проекта" : "Открыть папку проекта" : "Папка проекта не задана";
     private string? _shopFolderPath;
     private ShopFolderAvailability _shopFolderAvailability;
     public string? ShopFolderPath => _shopFolderPath;
@@ -168,7 +174,7 @@ public partial class WorkflowViewModel
     private void NotifyProjectCalculation()
     { OnPropertyChanged(nameof(ShowProjectCalculation)); OnPropertyChanged(nameof(CalculationMaxHeight)); OnPropertyChanged(nameof(CalculationEmptyText)); }
     partial void OnShowTrashedProjectsChanged(bool value) { RefreshProjects(); OnPropertyChanged(nameof(EmptyProjectText)); NotifyProjectCalculation(); }
-    public bool NeedsProjectRoot => string.IsNullOrWhiteSpace(_workspace.ProjectRoot);
+    public bool NeedsProjectRoot => !IsRemoteStorage && string.IsNullOrWhiteSpace(_workspace.ProjectRoot);
     [ObservableProperty] private WorkflowProjectRow? _selectedProject;
     private bool _refreshingProjects;
     [ObservableProperty] private bool _isPlanning;
@@ -186,6 +192,7 @@ public partial class WorkflowViewModel
     partial void OnResultTextChanged(string value) => ResultTextEdited(value);
     private Guid? _redoItem;
     private CuttingProject? _preparedProject;
+    private Guid? _remotePreparationId;
     public bool CanEditPlan => _preparedProject is null;
     public string PlanTitle => _redoItem is null ? "Новый проект" : "Другой вариант позиции";
     public string PlannedName => PlanMachine is null ? "" : WorkflowProjectNames.Tag(PlanMachine) + " · " + WorkflowProjectNames.Extension(PlanMachine) + " · время ЧЧММСС";
@@ -204,6 +211,7 @@ public partial class WorkflowViewModel
         if (CurrentOrder?.HasProjectRename == true) { Error = "Сначала завершите изменение параметров проекта."; return; }
         if (HasCurrentCardEdits) { Error = "Сохраните или отмените текущие изменения."; return; }
         _redoItem = null; PlanMachine ??= _workspace.Machines.FirstOrDefault();
+        _remotePreparationId = null;
         IsPlanning = true; OnPropertyChanged(nameof(PlanTitle)); Error = null;
     }
     [RelayCommand] private void RedoProject()
@@ -212,6 +220,7 @@ public partial class WorkflowViewModel
         if (CurrentOrder?.HasProjectRename == true) { Error = "Сначала завершите изменение параметров проекта."; return; }
         if (HasCurrentCardEdits) { Error = "Сохраните или отмените текущие изменения."; return; }
         _redoItem = row.Project.ItemId; PlanMachine = _workspace.Machines.Single(m => m.Id == row.Project.MachineId);
+        _remotePreparationId = null;
         PlanThickness = row.Thickness;
         IsPlanning = true; OnPropertyChanged(nameof(PlanTitle)); Error = null;
     }
@@ -231,11 +240,17 @@ public partial class WorkflowViewModel
             if (_preparedProject is null)
             {
                 var machine = PlanMachine ?? throw new WorkflowValidationException("Выберите станок.");
-                var root = _workspace.ProjectRoot ?? throw new WorkflowValidationException("Выберите общую папку проектов в настройках.");
                 var thickness = SpecificationDraft.Decimal(PlanThickness, "толщину");
                 var item = _redoItem;
-                _preparedProject = await Task.Run(() => WorkflowProjectFiles.PrepareAsync(root, order,
-                    CustomerName(order.CustomerId), machine, thickness, item, DateTimeOffset.Now));
+                if (_connection.RemoteClient is { } remote)
+                    _preparedProject = await remote.PrepareProjectAsync(order.Id,
+                        new(_remotePreparationId ??= Guid.NewGuid(), order.Version, actor, machine.Id, thickness, item), CancellationToken.None);
+                else
+                {
+                    var root = _workspace.ProjectRoot ?? throw new WorkflowValidationException("Выберите общую папку проектов в настройках.");
+                    _preparedProject = await Task.Run(() => WorkflowProjectFiles.PrepareAsync(root, order,
+                        CustomerName(order.CustomerId), machine, thickness, item, DateTimeOffset.Now));
+                }
                 OnPropertyChanged(nameof(CanEditPlan));
             }
             var latest = await _store.ReadOrderAsync(order.Id);
@@ -246,7 +261,7 @@ public partial class WorkflowViewModel
             _workspace = await _store.WriteOrderAsync(order.Id, target.Version, book =>
                 WorkflowProjects.Add(book, order.Id, target.Version, project, actor, DateTimeOffset.UtcNow));
             if (target.Version == CardVersion) _loadedOrderVersion = CurrentOrder!.Version;
-            _preparedProject = null; IsPlanning = false; OnPropertyChanged(nameof(CanEditPlan));
+            _preparedProject = null; _remotePreparationId = null; IsPlanning = false; OnPropertyChanged(nameof(CanEditPlan));
             RefreshOrders(); RefreshProjects(project.Id); NotifyOrder();
         });
     }
@@ -294,6 +309,7 @@ public partial class WorkflowViewModel
     private void RefreshProjects(Guid? select = null)
     {
         var id = select ?? SelectedDraft?.Id ?? SelectedProject?.Project.Id;
+        var pendingFiles = IsRemoteStorage ? Projects.Where(row => row.HasPendingOfficeFiles).Select(row => row.Project.Id).ToHashSet() : null;
         _refreshingProjects = true;
         try
         {
@@ -304,12 +320,15 @@ public partial class WorkflowViewModel
                 {
                     var item = order.Items.Single(i => i.Id == project.ItemId);
                     var machine = _workspace.Machines.SingleOrDefault(m => m.Id == project.MachineId);
-                    Projects.Add(new(project, item.Number, machine?.Name ??
+                    var row = new WorkflowProjectRow(project, item.Number, machine?.Name ??
                         order.Specifications.SingleOrDefault(s => s.Id == project.Id)?.Current.Parameters.Machine ?? "Станок удалён",
                         !project.IsDeleted && item.CurrentProjectId == project.Id, order.Specifications.SingleOrDefault(s => s.Id == project.Id)?.Current, item.IsIncluded,
                         hasAlternatives: order.ActiveProjects.Count(p => p.ItemId == project.ItemId) > 1,
                         hasLocalChanges: Drafts.SingleOrDefault(d => d.Id == project.Id)?.IsDirty == true,
-                        hasManagerMapAction: machine is not null && WorkflowManagerMapBundle.Supports(project, machine)));
+                        hasManagerMapAction: !IsRemoteStorage && machine is not null && WorkflowManagerMapBundle.Supports(project, machine),
+                        remoteStorage: IsRemoteStorage);
+                    if (pendingFiles?.Contains(project.Id) == true) row.ApplyPendingOfficeFiles(true);
+                    Projects.Add(row);
                 }
                 if (!ShowTrashedProjects)
                     foreach (var draft in Drafts.Where(d => !order.Projects.Any(p => p.Id == d.Id)))
@@ -333,5 +352,6 @@ public partial class WorkflowViewModel
         OnPropertyChanged(nameof(CustomerSuggestions));
         NotifyProfile();
         NotifyMapSigning();
+        _ = RefreshOfficeFileStatesAsync();
     }
 }

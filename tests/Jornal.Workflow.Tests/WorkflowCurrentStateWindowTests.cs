@@ -4,6 +4,7 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Logging;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Jornal.Desktop.Controls;
 using Jornal.Workflow.Desktop;
@@ -15,6 +16,35 @@ namespace Jornal.Workflow.Tests;
 
 public sealed class WorkflowCurrentStateWindowTests
 {
+    [AvaloniaTheory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task ComparisonOffersBothCopiesAndAnExplicitChoice(bool dark)
+    {
+        var owner = new Window();
+        var opened = false;
+        var comparison = new WorkflowOfficeReportComparisonWindow("6 мм. Спецификация.pdf",
+            () => Task.FromResult(opened = true)) { RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light };
+        try
+        {
+            owner.Show();
+            var result = comparison.ShowDialog<WorkflowOfficeReportChoice>(owner);
+            Pump();
+            var open = comparison.FindControl<JournalButton>("OpenComparedCopies")!;
+            var home = comparison.FindControl<JournalButton>("ChooseHomeVersion")!;
+            var office = comparison.FindControl<JournalButton>("ChooseOfficeVersion")!;
+            InWindow(open, comparison); InWindow(home, comparison); InWindow(office, comparison);
+            Click(open);
+            Assert.True(opened);
+            Click(dark ? home : office);
+            Assert.Equal(dark ? WorkflowOfficeReportChoice.Home : WorkflowOfficeReportChoice.Office, await result);
+        }
+        finally
+        {
+            WorkflowTestWindows.Close(comparison);
+            WorkflowTestWindows.Close(owner);
+        }
+    }
+
     [AvaloniaTheory]
     [InlineData(false, 1180)] [InlineData(true, 1180)] [InlineData(false, 1366)] [InlineData(true, 1366)]
     public async Task ProjectPanelOpensTheCurrentSourceInBothThemes(bool dark, int width)

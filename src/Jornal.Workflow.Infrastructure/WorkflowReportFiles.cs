@@ -80,7 +80,7 @@ public static partial class WorkflowReportFiles
                 existing.Current.DocumentNumber == header.Value.JournalNumber &&
                 (report.Parsed.Profile != "block-html/v1" || machine is not null &&
                     string.Equals(report.Parsed.CuttingType?.Value, WorkflowProjectNames.Tag(machine), StringComparison.OrdinalIgnoreCase));
-        var name = Path.GetFileName(project.NativePath);
+        var name = WorkflowOfficeProjectPaths.FileName(project.NativePath);
         if (Regex.IsMatch(header.Value.OrderName, @"(?<![\p{L}\p{N}])" + Regex.Escape(name) + @"(?=$|[\s""'])",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) return true;
         return report.Parsed.Profile switch
@@ -189,37 +189,55 @@ public static partial class WorkflowReportFiles
     private static async Task<byte[]> ReadVerifiedArchiveAsync(AcceptedReport report, CancellationToken token)
     {
         report.Validate();
+        if (!Path.IsPathFullyQualified(report.ArchivePath))
+            throw new WorkflowValidationException("Путь к архиву отчёта недоступен на этом компьютере.");
         var bytes = await CaptureAsync(report.ArchivePath, token);
         if (Convert.ToHexString(SHA256.HashData(bytes)) != report.Sha256)
             throw new WorkflowValidationException("Принятая копия отчёта изменена или повреждена.");
         return bytes;
     }
 
-    public static async Task<AcceptedReport> ArchiveAsync(ReportFileSnapshot report, ReportValues baseline, CancellationToken token = default)
+    public static Task<AcceptedReport> ArchiveAsync(ReportFileSnapshot report, ReportValues baseline, CancellationToken token = default)
     {
         if (Convert.ToHexString(SHA256.HashData(report.Bytes)) != report.Sha256)
             throw new WorkflowValidationException("Захваченная копия отчёта повреждена. Повторите подбор.");
-        var archiveRoot = Path.Combine(Path.GetDirectoryName(report.SourcePath)!, ".workflow-reports");
-        var folder = Path.Combine(archiveRoot, report.Sha256);
+        return ArchiveCapturedAsync(report.SourcePath, report.Sha256, report.Bytes, baseline, token);
+    }
+
+    public static async Task<AcceptedReport> ArchiveWorkingReportAsync(string source, string expectedHash, ReportValues baseline, CancellationToken token)
+    {
+        var bytes = await CaptureAsync(source, token);
+        var hash = Convert.ToHexString(SHA256.HashData(bytes));
+        if (!hash.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
+            throw new WorkflowConflictException();
+        return await ArchiveCapturedAsync(source, hash, bytes, baseline, token);
+    }
+
+    private static async Task<AcceptedReport> ArchiveCapturedAsync(string source, string hash, byte[] bytes, ReportValues baseline, CancellationToken token)
+    {
+        var archiveRoot = Path.Combine(Path.GetDirectoryName(source)!, ".workflow-reports");
+        var folder = Path.Combine(archiveRoot, hash);
+        var fileName = Path.GetFileName(source);
+        var path = Path.Combine(folder, fileName);
+        ShopFileSystem.RequireOrdinaryPath(path);
         Directory.CreateDirectory(folder);
         WorkflowServiceFiles.TryHide(archiveRoot);
-        var path = Path.Combine(folder, Path.GetFileName(report.SourcePath));
         var temporary = Path.Combine(folder, Guid.NewGuid().ToString("N") + ".tmp");
         try
         {
             await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            { await output.WriteAsync(report.Bytes, token); output.Flush(true); }
+            { await output.WriteAsync(bytes, token); output.Flush(true); }
             token.ThrowIfCancellationRequested();
             try { File.Move(temporary, path, overwrite: false); }
             catch (IOException) when (File.Exists(path))
             {
                 // Existing snapshots are reusable only when their bytes really match.
-                if (Convert.ToHexString(SHA256.HashData(await CaptureAsync(path, token))) != report.Sha256)
+                if (Convert.ToHexString(SHA256.HashData(await CaptureAsync(path, token))) != hash)
                     throw new WorkflowValidationException("Архив отчёта повреждён. Прежний расчёт сохранён.");
             }
         }
         finally { File.Delete(temporary); }
-        return new(Guid.NewGuid(), report.Sha256, report.Bytes.LongLength, Path.GetFileName(report.SourcePath), path, baseline);
+        return new(Guid.NewGuid(), hash, bytes.LongLength, fileName, path, baseline);
     }
 
     private static async Task<byte[]> CaptureAsync(string path, CancellationToken token)

@@ -110,7 +110,7 @@ public partial class SpecificationDraft : ObservableObject
     public string DetailsSummary => $"Заготовка: {BlankSize} · кол-во: {Quantity} · вес: {Weight} кг";
     public string TotalText => Quote is { } q ? Money(q.TotalCost) + " ₽" : "Не рассчитано";
     public string Breakdown => Quote is { } q ? $"Метры: {Money(q.LengthCost)} ₽\nПробивки: {Money(q.PierceCost)} ₽\nКоэффициент: {Coefficient}" : "";
-    public string SourceName => SourcePath is null ? "Ручной ввод" : Path.GetFileName(SourcePath);
+    public string SourceName => SourcePath is null ? "Ручной ввод" : WorkflowOfficeProjectPaths.FileName(SourcePath);
     public bool IsDirty
     {
         get

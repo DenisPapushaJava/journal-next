@@ -32,6 +32,7 @@ public partial class WorkflowWindow : Window
         { settings = new(); }
         RequestedThemeVariant = settings.DarkTheme ? ThemeVariant.Dark : ThemeVariant.Light;
         InitializeComponent(); InitializeJournalInputTracking(); InitializeOrderContextMenu(); InitializeMapSigningStatus(); InitializeResultFeedback(); InitializeShopStatus(); ThemeSwitch.IsChecked = settings.DarkTheme; ApplyTheme();
+        Activated += OnOfficeWorkspaceActivated;
         _loadingTheme = false;
     }
     protected override async void OnOpened(EventArgs e)
@@ -67,6 +68,7 @@ public partial class WorkflowWindow : Window
     }
     protected override void OnClosed(EventArgs e)
     {
+        Activated -= OnOfficeWorkspaceActivated;
         StopOrderContextMenu(); StopResultFeedback(); StopMapSigningStatus(); StopShopStatus(); StopJournalRefresh(); _pressedPointers.Clear(); _lifetime.Cancel(); Model?.Updates.ClearRestart(); Model?.Updates.CheckCommand.Cancel(); Model?.Updates.DownloadCommand.Cancel();
         Model?.Detach(); _lifetime.Dispose(); base.OnClosed(e);
     }
@@ -216,20 +218,57 @@ public partial class WorkflowWindow : Window
     {
         e.Handled = true;
         if (Model is not { CanUse: true } model) return;
-        var path = (sender as Control)?.DataContext switch
-        {
-            WorkflowProjectRow row => row.FolderPath,
-            SpecificationDraft draft => draft.FolderPath,
-            _ => null
-        };
-        if (string.IsNullOrWhiteSpace(path)) return;
         try
         {
+            var path = (sender as Control)?.DataContext switch
+            {
+                WorkflowProjectRow row when model.IsRemoteStorage => await OpenOfficeWorkingFolderAsync(model, row),
+                WorkflowProjectRow row => row.FolderPath,
+                SpecificationDraft draft when !model.IsRemoteStorage => draft.FolderPath,
+                _ => null
+            };
+            if (string.IsNullOrWhiteSpace(path)) return;
             if (!await OpenFolderAsync(path) && IsVisible && !_lifetime.IsCancellationRequested)
                 model.Error = "Рабочая папка недоступна.";
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         { if (IsVisible && !_lifetime.IsCancellationRequested) model.Error = "Рабочая папка недоступна."; }
+    }
+
+    private void OnOfficeWorkspaceActivated(object? sender, EventArgs e)
+    {
+        if (Model is { IsRemoteStorage: true, CanUse: true } model && OwnedWindows.Count == 0)
+            _ = model.RefreshOfficeFileStatesAsync(_lifetime.Token);
+    }
+
+    private async Task<string?> OpenOfficeWorkingFolderAsync(WorkflowViewModel model, WorkflowProjectRow row)
+    {
+        var token = _lifetime.Token;
+        bool Current() => IsVisible && ReferenceEquals(Model, model) && !token.IsCancellationRequested && model.Projects.Contains(row);
+        while (Current() && await model.OpenOfficeProjectAsync(row, token) is { } copy && Current())
+        {
+            if (copy.Conflicts.Count == 0) return copy.Folder;
+            foreach (var conflict in copy.Conflicts)
+            {
+                var comparison = await model.CompareOfficeWorkingFileAsync(row, conflict, token);
+                if (comparison is null || !Current()) return null;
+                var dialog = new WorkflowOfficeReportComparisonWindow(conflict, () => OpenFolderAsync(comparison.Folder))
+                    { RequestedThemeVariant = ActualThemeVariant };
+                var choice = await dialog.ShowDialog<WorkflowOfficeReportChoice>(this);
+                if (choice == WorkflowOfficeReportChoice.Cancel || !Current() ||
+                    !await model.ChooseOfficeWorkingFileAsync(row, conflict, comparison, choice == WorkflowOfficeReportChoice.Office, token))
+                    return null;
+            }
+        }
+        return null;
+    }
+    private async void OnPublishOfficeProject(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { CanUse: true } model || (sender as Control)?.DataContext is not WorkflowProjectRow row) return;
+        var result = await model.PublishOfficeProjectAsync(row, _lifetime.Token);
+        if (result is null || !IsVisible || _lifetime.IsCancellationRequested) return;
+        await new WorkflowProjectActionWindow("Файлы проекта", result, row.Name, "Закрыть", cancel: "")
+            { RequestedThemeVariant = ActualThemeVariant }.ShowDialog(this);
     }
     protected virtual async Task<bool> OpenFolderAsync(string path)
     {
@@ -273,10 +312,12 @@ public partial class WorkflowWindow : Window
         try
         {
             // The file may have been replaced since calculation. Open the current source.
-            var attributes = await Task.Run(() => File.GetAttributes(path), token);
+            var local = await model.ResolveSpecificationSourceAsync(path, token);
+            if (local is null) return;
+            var attributes = await Task.Run(() => File.GetAttributes(local), token);
             if (attributes.HasFlag(FileAttributes.Directory)) throw new FileNotFoundException();
             if (!token.IsCancellationRequested && IsVisible && model.SpecificationSourcePath == path &&
-                !await LaunchSpecificationAsync(path))
+                !await LaunchSpecificationAsync(local))
                 model.Error = "Не удалось открыть рабочую спецификацию. Проверьте приложение для PDF или HTML.";
         }
         catch (OperationCanceledException) { }

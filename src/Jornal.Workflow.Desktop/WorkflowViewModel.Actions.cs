@@ -8,7 +8,8 @@ public partial class WorkflowViewModel
     private string? CardActionProblem => !CanUse ? "Дождитесь завершения операции." :
         !IsCurrentOrderActive || IsCreating ? "Выберите активную заявку." :
         IsCurrentCardStale || RequiresDatabaseRefresh ? "Обновите карточку и проверьте изменения заявки (F5)." : null;
-    private string? AuthorProblem => ActiveEmployee is null ? "Выберите себя: Настройки → Общие → Технолог." : null;
+    private string? AuthorProblem => _connection.Office is { CanWrite: false } ? "Удалённое сохранение выключено в панели сервера." :
+        ActiveEmployee is null ? "Выберите себя: Настройки → Общие → Технолог." : null;
     private string? CardWriteProblem => CardActionProblem ?? AuthorProblem;
     private bool HasHeaderChanges => CurrentOrder is { } order &&
         (!ManagerName.Trim().Equals(EmployeeName(order.ManagerId), StringComparison.OrdinalIgnoreCase) || Technologist?.Id != order.TechnologistId ||

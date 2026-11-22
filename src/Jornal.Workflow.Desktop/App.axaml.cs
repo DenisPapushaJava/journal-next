@@ -6,6 +6,7 @@ using Jornal.Desktop.ViewModels;
 using Jornal.Desktop.Updates;
 using Jornal.Workflow.Infrastructure;
 using Jornal.Infrastructure.Diagnostics;
+using Jornal.Workflow.Core;
 
 namespace Jornal.Workflow.Desktop;
 
@@ -22,10 +23,21 @@ public partial class App : Application
             IWorkflowWorkspaceStore store = new LocalWorkflowWorkspaceStore(WorkflowIdentity.WorkspacePath);
             string? error = null;
             WorkflowPreferences connection = new();
+            WorkflowOfficeStorageClient? office = null;
             try
             {
                 connection = preferences.Load();
-                if (connection.DatabasePath is { } path) store = new WorkflowMdbStore(path, databaseId: connection.DatabaseId);
+                if (connection.ActiveOfficeStorage is { } remote)
+                {
+                    office = WorkflowOfficeStorageClient.Open(remote, preferences.DirectoryPath);
+                    store = office.CreateStore();
+                }
+                else if (connection.DatabasePath is { } path) store = new WorkflowMdbStore(path, databaseId: connection.DatabaseId);
+            }
+            catch (WorkflowValidationException ex)
+            {
+                error = ex.Message;
+                store = new WorkflowUnavailableStore(WorkflowIdentity.PreferencesPath, error);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException)
             {
@@ -33,7 +45,7 @@ public partial class App : Application
                 store = new WorkflowUnavailableStore(WorkflowIdentity.PreferencesPath, error);
             }
             RequestedThemeVariant = connection.DarkTheme ? ThemeVariant.Dark : ThemeVariant.Light;
-            var model = new WorkflowViewModel(store, updates, AppDiagnostics.Current, preferences, initialPreferences: connection);
+            var model = new WorkflowViewModel(store, updates, AppDiagnostics.Current, preferences, initialPreferences: connection, remoteTransport: office);
             desktop.MainWindow = new WorkflowWindow(preferences, connection)
             { DataContext = model, WindowState = Avalonia.Controls.WindowState.Maximized };
             if (error is not null) model.Error = error;

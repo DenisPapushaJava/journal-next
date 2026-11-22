@@ -92,6 +92,7 @@ public sealed class WorkflowNativeMdbTests
             order = book.Orders.Single();
             await MakeEarlierSchemaFixture(path);
             var versionOneBytes = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+            await VerifyOfficeReadAsync(1, order, versionOneBytes);
             store = new WorkflowMdbStore(path, client, created.DatabaseId);
             using (var writer = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete))
             {
@@ -153,6 +154,26 @@ public sealed class WorkflowNativeMdbTests
             Assert.Equal("Unimach&HL", book.Machines.Single(m => m.Id == machine.Id).ShopFolderName);
             await MakeEarlierSchemaFixture(path, 6);
             var versionSixBytes = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+            await VerifyOfficeReadAsync(6, book.Orders.Single(), versionSixBytes);
+            var remoteCopy = Path.Combine(directory, "remote-schema-6.mdb");
+            File.Copy(path, remoteCopy);
+            var remoteToken = TestContext.Current.CancellationToken;
+            var earlier = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOrders, remoteCopy, created.DatabaseId,
+                OrderIds: [refreshed.Id], OfficeSchema6: true), remoteToken);
+            var earlierOrder = Assert.Single(earlier.Orders!);
+            var updated = earlierOrder with
+            {
+                Version = earlierOrder.Version + 1, Blcb = "1234",
+                Specifications = earlierOrder.Specifications.Select(specification => specification with
+                { Current = specification.Current with { Parameters = specification.Current.Parameters with { Comment = "Правка из дома" } } }).ToArray()
+            };
+            var applied = await client.SendAsync(new(1, WorkflowAccessOperation.Apply, remoteCopy, created.DatabaseId,
+                Patch: new(null, earlier.CatalogVersion, null, [new(earlierOrder.Id, earlierOrder.Version, updated)]),
+                OfficeSchema6: true), remoteToken);
+            Assert.Equal("1234", Assert.Single(applied.Orders!).Blcb);
+            Assert.Equal("Правка из дома", Assert.Single(Assert.Single(applied.Orders!).Specifications).Current.Parameters.Comment);
+            Assert.Equal(6, (await client.SendAsync(new(1, WorkflowAccessOperation.ReadOfficeRevision, remoteCopy), remoteToken)).OfficeSchemaVersion);
+            Assert.Empty(Directory.GetFiles(directory, "remote-schema-6.mdb.schema-*"));
             await store.InspectAsync(TestContext.Current.CancellationToken);
             var versionSixBackup = Assert.Single(Directory.GetFiles(directory, "*.schema-v6-*.bak"));
             Assert.Equal(versionSixBytes, await File.ReadAllBytesAsync(versionSixBackup, TestContext.Current.CancellationToken));
@@ -229,11 +250,60 @@ public sealed class WorkflowNativeMdbTests
             await CheckFilter(new(Work: WorkflowWorkFilter.InWork), 1); // Changed handoff remains in work.
             book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.MoveOrderToTrash(w, order.Id, order.Version, actor, at), TestContext.Current.CancellationToken);
             order = book.Orders.Single(); Assert.True(order.IsDeleted);
+            var officeAfterTrash = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOfficeOrders, path), TestContext.Current.CancellationToken);
+            Assert.Equal(WorkflowMdbSchema.Version, officeAfterTrash.OfficeSchemaVersion);
+            Assert.Equal(0, officeAfterTrash.TotalCount);
+            Assert.Empty(officeAfterTrash.OfficeOrders!);
+            var officeProjectsAfterTrash = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOfficeProjects, path,
+                OrderIds: [order.Id]), TestContext.Current.CancellationToken);
+            Assert.Empty(officeProjectsAfterTrash.OfficeProjects!);
             book = await store.ReadTrashAsync(TestContext.Current.CancellationToken); Assert.Single(book.Orders, o => o.IsDeleted);
             await store.PurgeTrashedOrdersAsync([new(order.Id, order.Version)], actor, TestContext.Current.CancellationToken);
             Assert.Empty((await store.ReadAsync(TestContext.Current.CancellationToken)).Orders);
             Assert.Empty(Directory.EnumerateFiles(directory, ".JournalNext-create-*"));
             await Assert.ThrowsAsync<WorkflowValidationException>(() => new WorkflowMdbStore(path, client, Guid.NewGuid()).InspectAsync(TestContext.Current.CancellationToken));
+            var draftId = Guid.NewGuid();
+            var importedOrder = await ImportDraftAsync();
+            var afterImport = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOfficeOrders, path), TestContext.Current.CancellationToken);
+            Assert.Equal(draftId, importedOrder.Id);
+            Assert.Equal(actor, importedOrder.CreatedById);
+            Assert.Equal(importedOrder.ReferenceNumber, (await ImportDraftAsync()).ReferenceNumber);
+            var afterReplay = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOfficeOrders, path), TestContext.Current.CancellationToken);
+            Assert.Equal(afterImport.Revision, afterReplay.Revision);
+            Assert.Equal(draftId, Assert.Single(afterReplay.OfficeOrders!).Id);
+
+            Task<WorkflowOrder> ImportDraftAsync() => new WorkflowMdbStore(path, client, created.DatabaseId)
+                .ImportEmptyOrderAsync(draftId, "Менеджер native", "Тестовая заявка с Linux", "Технолог native test",
+                    at, TestContext.Current.CancellationToken);
+
+            async Task VerifyOfficeReadAsync(int schema, WorkflowOrder activeOrder, byte[] databaseBytes)
+            {
+                var token = TestContext.Current.CancellationToken;
+                var status = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOfficeRevision, path), token);
+                var page = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOfficeOrders, path), token);
+                Assert.Equal(schema, status.OfficeSchemaVersion);
+                Assert.Equal(schema, page.OfficeSchemaVersion);
+                Assert.Equal(status.Revision, page.Revision);
+                Assert.Equal(1, page.TotalCount);
+                Assert.Equal(new WorkflowOfficeOrder(activeOrder.Id, activeOrder.ReferenceNumber, "Заказчик native", activeOrder.Version, activeOrder.UpdatedAt),
+                    Assert.Single(page.OfficeOrders!));
+                var projects = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOfficeProjects, path,
+                    OrderIds: [activeOrder.Id]), token);
+                Assert.Equal(schema, projects.OfficeSchemaVersion);
+                Assert.Equal(status.Revision, projects.Revision);
+                Assert.Equal(activeOrder.Projects.Where(project => project.NativePath is not null && project.DeletedAt is null)
+                        .OrderBy(project => project.Id)
+                        .Select(project => new WorkflowOfficeProject(project.Id, project.Name, project.NativePath!)),
+                    projects.OfficeProjects!.OrderBy(project => project.Id));
+                var technologists = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOfficeTechnologists, path), token);
+                Assert.Equal(schema, technologists.OfficeSchemaVersion);
+                Assert.Empty(technologists.Orders!);
+                Assert.False(technologists.OfficeSchemaIsCurrent);
+                Assert.Contains(technologists.OfficeTechnologists!, person => person.Id == activeOrder.TechnologistId);
+                Assert.DoesNotContain(technologists.OfficeTechnologists!, person => person.Id == activeOrder.ManagerId);
+                Assert.Equal(databaseBytes, await File.ReadAllBytesAsync(path, token));
+                Assert.Empty(Directory.GetFiles(directory, $"*.schema-v{schema}-*.bak"));
+            }
         }
         finally { Directory.Delete(directory, true); }
     }
