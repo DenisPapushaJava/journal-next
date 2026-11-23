@@ -97,20 +97,27 @@ public sealed class WorkflowSettingsWindowTests
     [AvaloniaTheory]
     [InlineData(true)]
     [InlineData(false)]
-    public void OfficeConnectionOffersOfficialDownloadAndContinuesAfterInstallation(bool browserOpened)
+    public void OfficeConnectionOffersDownloadAndReportsConnectionFailureBeforeRetry(bool browserOpened)
     {
         const string address = "http://10.0.0.2:60913/";
         const string networkId = "0123456789abcdef";
         const string downloads = "https://www.zerotier.com/download/";
+        const string serviceError = "Нет локального доступа к ZeroTier.";
         var key = new string('A', 64);
         var draft = new WorkflowOfficeSetupDraft(address, networkId);
         var localAddress = IPAddress.Parse("10.0.0.3");
         var binding = new ZeroTierBinding(localAddress, "Office", 24);
         var route = new WorkflowOfficeRoute(localAddress, binding.InterfaceAlias, "office-adapter");
+        var serviceReady = false;
+        var serviceReads = 0;
         var setup = new WorkflowOfficeSetup((_, _, _) => Task.FromResult(new WorkflowOfficeProbe(WorkflowOfficeHealth.Reachable, route)),
-            (_, _) => Task.FromResult(new ZeroTierNetwork("OK", binding)), (_, _) => throw new InvalidOperationException(),
+            (_, _) =>
+            {
+                serviceReads++;
+                if (!serviceReady) throw new UnauthorizedAccessException(serviceError);
+                return Task.FromResult(new ZeroTierNetwork("OK", binding));
+            }, (_, _) => throw new InvalidOperationException(),
             _ => throw new InvalidOperationException(), TimeSpan.Zero);
-        var installed = false;
         Uri? openedPage = null;
         WorkflowOfficeSetupDraft? remembered = null;
         (string? Address, string? Key, WorkflowOfficeRoute? Route)? attempt = null;
@@ -120,20 +127,15 @@ public sealed class WorkflowSettingsWindowTests
             {
                 attempt = (server, adminKey, confirmed);
                 return Task.FromResult<string?>(null);
-            }, setup: setup, readZeroTierStatus: () => (true, installed),
+            }, setup: setup, windows: true,
             openDownloadPage: uri => { openedPage = uri; return Task.FromResult(browserOpened); });
         try
         {
             window.Show();
             window.FindControl<TextBox>("AdministratorKey")!.Text = key;
             var download = window.FindControl<JournalButton>("DownloadZeroTier")!;
-            Assert.False(download.IsVisible);
-
-            Click(window, "ConnectOffice");
-            Assert.Equal(draft, remembered);
             Assert.True(download.IsVisible);
-            Assert.Equal("Проверить установку", window.FindControl<JournalButton>("ConnectOffice")!.Label);
-            Assert.Null(attempt);
+            Assert.Equal("Подключиться", window.FindControl<JournalButton>("ConnectOffice")!.Label);
             Assert.Null(openedPage);
 
             Click(download);
@@ -147,11 +149,16 @@ public sealed class WorkflowSettingsWindowTests
             Assert.Equal(key, window.FindControl<TextBox>("AdministratorKey")!.Text);
 
             Click(window, "ConnectOffice");
+            Assert.Equal(draft, remembered);
+            Assert.Equal(1, serviceReads);
+            Assert.True(error.IsVisible);
+            Assert.Equal(serviceError, error.Text);
             Assert.True(download.IsVisible);
             Assert.Null(attempt);
 
-            installed = true;
+            serviceReady = true;
             Click(window, "ConnectOffice");
+            Assert.Equal(2, serviceReads);
             Assert.False(window.IsVisible);
             Assert.Equal((address, key, route), attempt);
         }

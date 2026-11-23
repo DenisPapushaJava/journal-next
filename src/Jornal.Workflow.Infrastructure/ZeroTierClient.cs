@@ -218,7 +218,7 @@ public sealed class ZeroTierClient
             }
             catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException) { }
         }
-        throw new UnauthorizedAccessException("Откройте ZeroTier One под этим пользователем Windows. Если ZeroTier ещё не установлен, нажмите «Установить ZeroTier».");
+        throw new UnauthorizedAccessException("Нет локального доступа к ZeroTier. Установите ZeroTier One или откройте его из меню «Пуск» под текущим пользователем Windows.");
     }
 
     private static string NetworkPath(string networkId) => IsNetworkId(networkId)
