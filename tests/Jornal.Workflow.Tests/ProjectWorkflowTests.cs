@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Jornal.Desktop.ViewModels;
@@ -66,6 +67,145 @@ internal sealed class ProjectFixture : IDisposable
 
 public sealed class ProjectWorkflowTests
 {
+    [Fact]
+    public async Task PlannedBendingDoesNotRestoreTheFolderWarningAfterSuccessfulReenable()
+    {
+        using var f = new ProjectFixture();
+        await f.InitializeAsync();
+        var model = f.Model;
+        string? blockedPath = null;
+        void BlockBendingFolder(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.NewItems?[0] is not WorkflowProjectRow row) return;
+            blockedPath = Path.Combine(Path.GetDirectoryName(row.Project.NativePath!)!, WorkflowBendingFiles.FolderName);
+            File.WriteAllText(blockedPath, "Препятствие");
+        }
+
+        model.Projects.CollectionChanged += BlockBendingFolder;
+        try
+        {
+            model.AddProjectCommand.Execute(null);
+            model.PlanThickness = "6";
+            model.PlanHasBending = true;
+            await model.CreateProjectCommand.ExecuteAsync(null);
+        }
+        finally { model.Projects.CollectionChanged -= BlockBendingFolder; }
+        Assert.Null(model.Error);
+        Assert.True(model.HasBendingFolderProblem);
+        var row = Assert.Single(model.Projects);
+
+        await model.SetPlannedProjectBendingAsync(row.Project.Id, false);
+        Assert.False(model.HasBendingFolderProblem);
+        File.Delete(Assert.IsType<string>(blockedPath));
+        await model.SetPlannedProjectBendingAsync(row.Project.Id, true);
+
+        Assert.Null(model.Error);
+        Assert.True(row.Project.HasPlannedBending);
+        Assert.True(Directory.Exists(blockedPath));
+        Assert.False(model.HasBendingFolderProblem);
+    }
+
+    [Fact]
+    public async Task PlannedBendingPreservesOtherCalculationsAndShopFolderAvailability()
+    {
+        using var f = new ProjectFixture();
+        var model = f.Model;
+        var token = TestContext.Current.CancellationToken;
+        await f.InitializeAsync();
+        var calculated = await f.AddAsync();
+        await ProjectFixture.WriteAsync(calculated);
+        await f.AcceptAsync();
+        var pending = await f.AddAsync();
+        model.Blcb = "005072";
+        await model.SaveHeaderCommand.ExecuteAsync(null);
+        Assert.Null(model.Error);
+        Assert.Null(await model.SaveShopRootAsync(null, Path.Combine(f.DirectoryPath, "shop"), token));
+        await model.RefreshShopFolderAvailabilityAsync((_, _, _, _) => Task.FromResult(true));
+        var calculatedRow = model.Projects.Single(row => row.Project.Id == calculated.Id);
+        var pendingRow = model.Projects.Single(row => row.Project.Id == pending.Id);
+        var draft = Assert.Single(model.Drafts);
+        Assert.True(calculatedRow.CanOpenShopFolder);
+
+        await model.SetPlannedProjectBendingAsync(pending.Id, true);
+
+        Assert.Null(model.Error);
+        Assert.Same(pendingRow, model.SelectedProject);
+        Assert.Equal("✓", pendingRow.BendingMark);
+        Assert.Same(draft, Assert.Single(model.Drafts));
+        Assert.Same(calculatedRow, model.Projects.Single(row => row.Project.Id == calculated.Id));
+        Assert.True(calculatedRow.CanOpenShopFolder);
+        Assert.Null(await model.ShopFolderToOpenAsync(calculatedRow, token));
+        Assert.False(calculatedRow.CanOpenShopFolder);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task PlannedBendingCreatesTheFolderAndCanBeRemovedAtEveryStage(bool removeBeforeCalculation, bool removeInReview)
+    {
+        using var f = new ProjectFixture();
+        await f.InitializeAsync();
+        f.Model.AddProjectCommand.Execute(null);
+        f.Model.PlanThickness = "6";
+        f.Model.PlanHasBending = true;
+        await f.Model.CreateProjectCommand.ExecuteAsync(null);
+        Assert.Null(f.Model.Error);
+        var project = Assert.Single(f.Model.Projects).Project;
+        var token = TestContext.Current.CancellationToken;
+        var file = Path.Combine(Path.GetDirectoryName(project.NativePath!)!, WorkflowBendingFiles.FolderName, "Эскиз.txt");
+        Assert.True(Directory.Exists(Path.GetDirectoryName(file)));
+        await File.WriteAllTextAsync(file, "Эскиз", token);
+        await f.Model.ReloadCommand.ExecuteAsync(null);
+        Assert.True(Assert.Single(f.Model.Projects).Project.HasPlannedBending);
+        Assert.Equal("✓", Assert.Single(f.Model.Projects).BendingMark);
+        Assert.Empty(f.Model.Drafts);
+
+        if (removeBeforeCalculation)
+        {
+            var orderRow = f.Model.SelectedOrder;
+            var projectRow = Assert.Single(f.Model.Projects);
+            await f.Model.SetPlannedProjectBendingAsync(project.Id, false);
+            Assert.Null(f.Model.Error);
+            Assert.Same(projectRow, Assert.Single(f.Model.Projects));
+            Assert.False(projectRow.Project.HasPlannedBending);
+            Assert.Equal("—", projectRow.BendingMark);
+            Assert.Same(orderRow, f.Model.SelectedOrder);
+            Assert.Same(projectRow, f.Model.SelectedProject);
+        }
+        await ProjectFixture.WriteAsync(project);
+        if (removeBeforeCalculation || removeInReview)
+        {
+            var review = await f.ReviewAsync();
+            Assert.Equal(!removeBeforeCalculation, review.Selected!.Draft!.HasBending);
+            if (removeInReview) review.Selected.Draft.HasBending = false;
+            await review.SaveCommand.ExecuteAsync(null);
+            Assert.Null(review.Error);
+        }
+        else
+        {
+            var calculated = Assert.IsType<WorkflowReportReviewViewModel>(await f.Model.CalculateOrderAsync(token));
+            Assert.Empty(calculated.GuidedCandidates);
+        }
+        Assert.False(Assert.Single(f.Model.Projects).CanChangePlannedBending);
+        Assert.False(Assert.Single(f.Model.Projects).Project.HasPlannedBending);
+        var bendingSaved = !removeBeforeCalculation && !removeInReview;
+        Assert.Equal(bendingSaved, Assert.Single(f.Model.Drafts).Saved!.Parameters.HasBending);
+        if (bendingSaved)
+        {
+            f.Model.SelectedDraft!.HasBending = false;
+            await f.Model.SaveSpecificationCommand.ExecuteAsync(null);
+            Assert.Null(f.Model.Error);
+        }
+        await ProjectFixture.WriteAsync(project, 20000);
+        var recalculation = await f.ReviewAsync();
+        Assert.False(recalculation.Selected!.Draft!.HasBending);
+        Assert.Equal("Эскиз", await File.ReadAllTextAsync(file, token));
+
+        f.Model.AddProjectCommand.Execute(null);
+        Assert.False(f.Model.PlanHasBending);
+    }
+
     [Fact]
     public async Task PreparedProjectHasNoFakeCalculationAndPartialAcceptanceKeepsItsIdentity()
     {

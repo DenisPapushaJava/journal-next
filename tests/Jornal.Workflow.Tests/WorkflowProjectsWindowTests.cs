@@ -76,6 +76,8 @@ public sealed class WorkflowProjectsWindowTests
             InWindow(window.FindControl<ComboBox>("WorkflowProjectMachine")!, window);
             var machineInput = window.FindControl<ComboBox>("WorkflowProjectMachine")!;
             var thicknessInput = window.FindControl<Control>("WorkflowProjectThickness")!;
+            var bending = window.FindControl<CheckBox>("WorkflowProjectPlanBending")!;
+            InWindow(bending, window);
             Assert.True(machineInput.Bounds.Width < window.FindControl<Border>("WorkflowProjectPlan")!.Bounds.Width / 2);
             Assert.True(thicknessInput.Bounds.Width < machineInput.Bounds.Width / 2);
             var create = window.FindControl<Button>("CreateWorkflowProject")!; var cancel = window.FindControl<Button>("CancelWorkflowProjectPlan")!;
@@ -83,7 +85,13 @@ public sealed class WorkflowProjectsWindowTests
             Assert.Equal(Bounds(machineInput, window).Top, Bounds(thicknessInput, window).Top);
             Assert.Equal(Bounds(machineInput, window).Top, Bounds(create, window).Top);
             Assert.True(Bounds(machineInput, window).Right < Bounds(thicknessInput, window).Left);
-            Assert.True(Bounds(thicknessInput, window).Right < Bounds(create, window).Left);
+            Assert.True(Bounds(thicknessInput, window).Right < Bounds(bending, window).Left);
+            Assert.True(Bounds(bending, window).Right < Bounds(create, window).Left);
+            Assert.InRange(Math.Abs(Bounds(bending, window).Center.Y - Bounds(thicknessInput, window).Center.Y), 0, 2);
+            Assert.False(f.Model.PlanHasBending);
+            var bendingPoint = Bounds(bending, window).Center;
+            window.MouseDown(bendingPoint, MouseButton.Left); window.MouseUp(bendingPoint, MouseButton.Left);
+            Dispatcher.UIThread.RunJobs(); Assert.True(f.Model.PlanHasBending);
             Assert.Null(window.FindControl<Control>("WorkflowProjectMaterial"));
             InWindow(window.FindControl<Button>("RefreshWorkflowReports")!, window);
             Assert.True(window.FindControl<DataGrid>("WorkflowOrdersGrid")!.IsEffectivelyVisible);

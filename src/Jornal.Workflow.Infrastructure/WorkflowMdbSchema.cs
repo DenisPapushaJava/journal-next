@@ -23,7 +23,9 @@ public sealed record WorkflowMdbForeignKey(string Name, string Table, string[] C
 public static class WorkflowMdbSchema
 {
     public const string ProductId = "DenisPapusha.JournalWorkflow";
-    public const int Version = 7;
+    public const int PlannedBendingVersion = 8;
+    public const int Version = PlannedBendingVersion;
+    internal static readonly WorkflowMdbColumn PlannedBending = new("planned_bending", "HasPlannedBending", WorkflowMdbType.Boolean, false);
     private static WorkflowMdbColumn C(string name, string? path, WorkflowMdbType type, bool required = true, int size = 255) => new(name, path, type, required, size);
     private static WorkflowMdbColumn Id() => C("id", "Id", WorkflowMdbType.Guid);
     private static WorkflowMdbColumn Owner(string name) => C(name, null, WorkflowMdbType.Guid);
@@ -61,7 +63,8 @@ public static class WorkflowMdbSchema
         new("cutting_projects", [Id(), Owner("order_id"), C("item_id","ItemId",WorkflowMdbType.Guid), C("variant_number","Variant",WorkflowMdbType.Int32),
             C("machine_id","MachineId",WorkflowMdbType.Guid), C("thickness_mm","ThicknessMm",WorkflowMdbType.Decimal), C("project_name","Name",WorkflowMdbType.Text),
             C("native_path","NativePath",WorkflowMdbType.Memo,false), C("import_profile","ImportProfile",WorkflowMdbType.Text,false,64),
-            C("created_at","CreatedAt",WorkflowMdbType.Utc), C("deleted_at","DeletedAt",WorkflowMdbType.Utc,false), C("deleted_by","DeletedBy",WorkflowMdbType.Guid,false)]),
+            C("created_at","CreatedAt",WorkflowMdbType.Utc), C("deleted_at","DeletedAt",WorkflowMdbType.Utc,false), C("deleted_by","DeletedBy",WorkflowMdbType.Guid,false),
+            PlannedBending]),
         new("project_shop_handoffs", [Id(), C("order_version", "OrderVersion", WorkflowMdbType.Int64),
             C("actor_id", "ActorId", WorkflowMdbType.Guid), C("transferred_at", "At", WorkflowMdbType.Utc),
             C("content_hash", "ContentHash", WorkflowMdbType.Text, true, 64)]),
@@ -90,7 +93,16 @@ public static class WorkflowMdbSchema
         if (from < 5)
             foreach (var sql in CreateSql().Where(sql => sql.Contains("[project_shop_handoff_inputs]", StringComparison.Ordinal))) yield return sql;
         if (from < 6) yield return "ALTER TABLE [machines] ADD COLUMN [shop_folder_name] TEXT(255)";
-        yield return "ALTER TABLE [specifications] ALTER COLUMN [comment] LONGTEXT";
+        if (from < 7) yield return "ALTER TABLE [specifications] ALTER COLUMN [comment] LONGTEXT";
+        if (from < PlannedBendingVersion) yield return "ALTER TABLE [cutting_projects] ADD COLUMN [planned_bending] BIT";
+    }
+
+    internal static WorkflowMdbColumn[] Columns(string table, int schemaVersion)
+    {
+        var columns = Tables.Single(t => t.Name == table).Columns;
+        return table == "cutting_projects" && schemaVersion < PlannedBendingVersion
+            ? columns.Where(c => c != PlannedBending).ToArray()
+            : columns;
     }
 
     private static WorkflowMdbColumn[] SpecificationColumns()

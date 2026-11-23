@@ -56,6 +56,7 @@ public sealed partial class WorkflowMdbDatabase
         var metadata = ReadMetadata(session, request.DatabaseId, allowEarlierSchema: request.OfficeSchema6);
         if (request.OfficeSchema6 && metadata.SchemaVersion < 6)
             throw new WorkflowValidationException("Для удалённого хранения нужна MDB схемы 6 или новее.");
+        session.SchemaVersion = metadata.SchemaVersion;
         return metadata;
     }
 

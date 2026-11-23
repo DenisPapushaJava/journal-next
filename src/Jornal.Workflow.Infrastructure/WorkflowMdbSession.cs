@@ -11,6 +11,7 @@ internal sealed class WorkflowMdbSession : IDisposable
 {
     internal OleDbConnection Connection { get; }
     internal OleDbTransaction? Transaction { get; private set; }
+    internal int SchemaVersion { get; set; } = WorkflowMdbSchema.Version;
     internal static string ConnectionString(string path, bool write)
     {
         var builder = new OleDbConnectionStringBuilder { Provider = "Microsoft.Jet.OLEDB.4.0", DataSource = path, PersistSecurityInfo = false };
@@ -53,7 +54,7 @@ internal sealed class WorkflowMdbSession : IDisposable
     { using var command = Command(sql, values); var value = command.ExecuteScalar(); return value is DBNull ? null : value; }
     internal Dictionary<Guid, WorkflowMdbRow> Read(string table, string? where = null, params (WorkflowMdbColumn, object?)[] values)
     {
-        var columns = WorkflowMdbSchema.Tables.Single(t => t.Name == table).Columns;
+        var columns = WorkflowMdbSchema.Columns(table, SchemaVersion);
         using var command = Command("SELECT " + string.Join(",", columns.Select(c => $"[{c.Name}]")) + $" FROM [{table}]" + (where is null ? "" : " WHERE " + where), values);
         using var reader = command.ExecuteReader(); var rows = new Dictionary<Guid, WorkflowMdbRow>();
         while (reader.Read())
@@ -79,12 +80,12 @@ internal sealed class WorkflowMdbSession : IDisposable
     }
     internal void Insert(WorkflowMdbRow row, bool shortComment = false)
     {
-        var statement = WorkflowMdbStatements.Insert(row);
+        var statement = WorkflowMdbStatements.Insert(row, SchemaVersion);
         Execute(statement.Sql, ParametersFor(row.Table, statement.Parameters, shortComment));
     }
     internal void Update(WorkflowMdbRow before, WorkflowMdbRow after, bool shortComment = false)
     {
-        if (WorkflowMdbStatements.Update(before, after) is { } statement)
+        if (WorkflowMdbStatements.Update(before, after, SchemaVersion) is { } statement)
             Execute(statement.Sql, ParametersFor(after.Table, statement.Parameters, shortComment));
     }
     private static (WorkflowMdbColumn Column, object? Value)[] ParametersFor(string table,

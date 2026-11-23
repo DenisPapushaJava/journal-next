@@ -21,15 +21,15 @@ public partial class WorkflowViewModel
             if (project.IsDeleted || project.NativePath is null || order.Specifications.Any(s => s.Id == project.Id))
                 throw new WorkflowValidationException("Изменение доступно только для пустой заготовки без принятой спецификации.");
             Error = null;
-            return new(_store, _workspace, order.Id, project.Id, ActorId(), ApplyProjectSnapshot);
+            return new(_store, _workspace, order.Id, project.Id, ActorId(), book => ApplyProjectSnapshot(book));
         }
         catch (WorkflowValidationException ex) { Error = ex.Message; return null; }
     }
 
-    private void ApplyProjectSnapshot(WorkflowWorkspace book)
+    private void ApplyProjectSnapshot(WorkflowWorkspace book, Guid? selectProject = null)
     {
-        var id = _openOrderId; _workspace = book; RefreshOrders();
-        if (id is { } orderId && book.Orders.SingleOrDefault(o => o.Id == orderId) is { } order) LoadOrder(order);
+        var id = _openOrderId; _workspace = book; RefreshOrders(preserveRows: true);
+        if (id is { } orderId && book.Orders.SingleOrDefault(o => o.Id == orderId) is { } order) LoadOrder(order, selectProject);
         OnPropertyChanged(nameof(HasPendingEdits));
     }
 
@@ -42,7 +42,7 @@ public partial class WorkflowViewModel
             var book = await _store.WriteOrderAsync(order.Id, expected, w =>
                 WorkflowProjects.SetTrash(w, order.Id, expected, projectId, deleted, actor, DateTimeOffset.UtcNow));
             if (!deleted) ShowTrashedProjects = false;
-            ApplyProjectSnapshot(book); RefreshProjects(deleted ? null : projectId); MarkResultStale();
+            ApplyProjectSnapshot(book, deleted ? null : projectId); MarkResultStale();
         });
     }
 

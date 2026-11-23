@@ -8,9 +8,15 @@ public sealed record WorkflowOfficeOrder(Guid Id, string Number, string? Custome
 public sealed record WorkflowOfficeProject(Guid Id, string Name, string NativePath);
 public sealed record WorkflowOfficeReportInput(string FileName, string Sha256, ReportValues Baseline);
 public sealed record WorkflowOfficeReportVersion(Guid ProjectId, string Sha256);
-public sealed record WorkflowOfficeCalculationPreparation(long OrderVersion, Guid ActorId, WorkflowOfficeReportInput? Report, bool EnsureBending);
+public sealed record WorkflowOfficeCalculationPreparation(long OrderVersion, Guid ActorId, WorkflowOfficeReportInput? Report, bool EnsureBending,
+    bool BeforeFirstCalculation = false)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool SupportsPlannedBending { get; init; }
+}
 public sealed record WorkflowOfficePreparedCalculation(string? SourcePath, AcceptedReport? Report);
-public sealed record WorkflowOfficeProjectPreparation(Guid ProjectId, long OrderVersion, Guid ActorId, Guid MachineId, decimal ThicknessMm, Guid? ItemId);
+public sealed record WorkflowOfficeProjectPreparation(Guid ProjectId, long OrderVersion, Guid ActorId, Guid MachineId, decimal ThicknessMm, Guid? ItemId,
+    bool HasPlannedBending = false);
 public sealed record WorkflowOfficeTechnologist(Guid Id, string Name);
 public sealed record WorkflowOfficeTechnologists(Guid DatabaseId, WorkflowOfficeTechnologist[] Technologists);
 public sealed record WorkflowOfficeSession(Guid DatabaseId, WorkflowOfficeTechnologist Technologist, bool CanWrite, string? Token = null,
@@ -31,6 +37,20 @@ public sealed record WorkflowAccessPatch(long? ExpectedVersion, long ExpectedCat
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public WorkflowOfficeReportVersion[]? OfficeReportVersions { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool SupportsPlannedBending { get; init; }
+
+    internal WorkflowOrder PreservePlannedBending(WorkflowOrder current, WorkflowOrder replacement)
+    {
+        if (SupportsPlannedBending || !current.Projects.Any(p => p.HasPlannedBending)) return replacement;
+        var planned = current.Projects.Where(p => p.HasPlannedBending).Select(p => p.Id).ToHashSet();
+        if (replacement.Specifications.Any(s => planned.Contains(s.Id)))
+            throw new WorkflowValidationException(WorkflowProjects.PlannedBendingRequiresUpdatedClient);
+        return replacement with
+        {
+            Projects = replacement.Projects.Select(p => planned.Contains(p.Id) ? p with { HasPlannedBending = true } : p).ToArray()
+        };
+    }
 }
 public sealed record WorkflowAccessRequest(int Protocol, WorkflowAccessOperation Operation, string Path,
     Guid? DatabaseId = null, WorkflowReadQuery? Query = null, Guid[]? OrderIds = null, WorkflowAccessPatch? Patch = null, long? KnownCatalogVersion = null,

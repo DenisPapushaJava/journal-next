@@ -19,34 +19,45 @@ internal sealed record WorkflowOfficeReportComparison(Guid OrderId, Guid Project
 
 internal sealed partial class WorkflowOfficeStorageClient
 {
-    private sealed record OfficeCapabilities(bool GuardedCalculation);
-    private volatile bool _guardedCalculation;
+    private sealed record OfficeCapabilities(bool GuardedCalculation, bool PlannedBending);
+    private volatile OfficeCapabilities? _capabilities;
     private WorkflowOfficeReportComparison? _authorizedReport;
 
     internal async Task<CuttingProject> PrepareProjectAsync(Guid orderId, WorkflowOfficeProjectPreparation preparation, CancellationToken token)
     {
-        await RequireCalculationSupportAsync(token);
+        if (preparation.HasPlannedBending) await RequirePlannedBendingSupportAsync(token);
+        else await RequireCalculationSupportAsync(token);
         using var request = Request(HttpMethod.Post, $"api/v1/storage/orders/{orderId:D}/projects/prepare");
         request.Content = JsonContent.Create(preparation, options: JsonOptions);
         var project = await SendProjectJsonAsync<CuttingProject>(request, token);
         if (project.Id != preparation.ProjectId || project.MachineId != preparation.MachineId ||
-            project.ThicknessMm != preparation.ThicknessMm || string.IsNullOrWhiteSpace(project.NativePath))
+            project.ThicknessMm != preparation.ThicknessMm || project.HasPlannedBending != preparation.HasPlannedBending ||
+            string.IsNullOrWhiteSpace(project.NativePath))
             throw new InvalidDataException("Сервер вернул другую заготовку проекта.");
         return project;
     }
 
-    internal async Task RequireCalculationSupportAsync(CancellationToken token)
+    internal async Task RequireCalculationSupportAsync(CancellationToken token) => _ = await RequireOfficeCapabilitiesAsync(token);
+
+    private async Task RequirePlannedBendingSupportAsync(CancellationToken token)
     {
-        if (_guardedCalculation) return;
+        if (!(await RequireOfficeCapabilitiesAsync(token, refresh: _capabilities is { PlannedBending: false })).PlannedBending)
+            throw new WorkflowValidationException("Для отметки гибки до расчёта обновите «Сервер заявок» на рабочем ПК.");
+    }
+
+    private async Task<OfficeCapabilities> RequireOfficeCapabilitiesAsync(CancellationToken token, bool refresh = false)
+    {
+        if (!refresh && _capabilities is { } cached) return cached;
         using var request = Request(HttpMethod.Get, "api/v1/storage/capabilities");
-        _guardedCalculation = await WithProjectDeadlineAsync(async deadline =>
+        var capabilities = await WithProjectDeadlineAsync(async deadline =>
         {
             using var response = await SendAsync(http, request, deadline);
-            if (response.StatusCode == HttpStatusCode.NotFound) return false;
+            if (response.StatusCode == HttpStatusCode.NotFound) return new OfficeCapabilities(false, false);
             await CheckAsync(response, deadline);
-            return (await ReadAsync<OfficeCapabilities>(response, deadline)).GuardedCalculation;
+            return await ReadAsync<OfficeCapabilities>(response, deadline);
         }, token, TimeSpan.FromSeconds(30));
-        if (!_guardedCalculation) throw new WorkflowValidationException("Для удалённого расчёта обновите «Сервер заявок» на рабочем ПК.");
+        if (!capabilities.GuardedCalculation) throw new WorkflowValidationException("Для удалённого расчёта обновите «Сервер заявок» на рабочем ПК.");
+        return _capabilities = capabilities;
     }
 
     internal async Task<(string Folder, HashSet<string> SkippedReports, string[] UnavailableReports)> OpenCalculationFolderAsync(
@@ -108,10 +119,11 @@ internal sealed partial class WorkflowOfficeStorageClient
     }
 
     internal async Task<WorkflowOfficePreparedCalculation> PrepareCalculationAsync(WorkflowOrder order, Guid projectId, Guid actor,
-        ReportFileSnapshot? snapshot, ReportValues? values, bool bending, CancellationToken token)
+        ReportFileSnapshot? snapshot, ReportValues? values, bool bending, CancellationToken token, bool beforeFirstCalculation = false)
     {
         var route = ProjectRoute(order.Id, projectId);
-        await RequireCalculationSupportAsync(token);
+        if (beforeFirstCalculation) await RequirePlannedBendingSupportAsync(token);
+        else await RequireCalculationSupportAsync(token);
         WorkflowOfficeReportInput? input = null;
         if (snapshot is not null)
         {
@@ -120,7 +132,8 @@ internal sealed partial class WorkflowOfficeStorageClient
             input = new(name, snapshot.Sha256, values);
         }
         using var request = Request(HttpMethod.Post, route + "/calculation");
-        request.Content = JsonContent.Create(new WorkflowOfficeCalculationPreparation(order.Version, actor, input, bending), options: JsonOptions);
+        request.Content = JsonContent.Create(new WorkflowOfficeCalculationPreparation(order.Version, actor, input, bending, beforeFirstCalculation)
+            { SupportsPlannedBending = true }, options: JsonOptions);
         var prepared = await SendProjectJsonAsync<WorkflowOfficePreparedCalculation>(request, token);
         if (input is not null && (string.IsNullOrEmpty(prepared.SourcePath) || prepared.Report?.Sha256 != input.Sha256))
             throw new InvalidDataException("Сервер вернул другой снимок спецификации.");

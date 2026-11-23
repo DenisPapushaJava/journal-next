@@ -120,7 +120,8 @@ public partial class WorkflowViewModel
                         if (history.Warning is not null) throw new WorkflowValidationException("Не удалось прочитать прежние ручные настройки проекта. Проверьте историю в папке проекта.");
                         if (history.Snapshots.Where(s => s.State is null && s.Draft is not null).OrderByDescending(s => s.CapturedAt).FirstOrDefault()?.Draft is { } pending)
                             localDrafts[project.Id] = new SpecificationDraft { Id = project.Id, Coefficient = pending.Coefficient,
-                                HasBending = pending.HasBending, HasChamfer = pending.HasChamfer, Comment = pending.Comment };
+                                HasBending = pending.HasBending, HasChamfer = pending.HasChamfer, Comment = pending.Comment,
+                                PlannedBendingBaseline = pending.PlannedBendingBaseline };
                     }
                     // A shared folder can contain projects with different specification formats.
                     if (!profiles.TryGetValue(project.ImportProfile ?? "", out var folders))

@@ -122,7 +122,7 @@ public static class OfficeServerApplication
             });
             storage.MapPost("/database", (WorkflowAccessRequest request, OfficeWorkspace workspace, CancellationToken token) =>
                 workspace.ExecuteAsync(request, token));
-            storage.MapGet("/capabilities", () => Results.Ok(new { calculation = true, guardedCalculation = true }));
+            storage.MapGet("/capabilities", () => Results.Ok(new { calculation = true, guardedCalculation = true, plannedBending = true }));
             storage.MapPost("/orders/{orderId:guid}/projects/prepare", (Guid orderId, WorkflowOfficeProjectPreparation request, OfficeWorkspace workspace, CancellationToken token) =>
                 workspace.PrepareProjectAsync(orderId, request, token));
             var files = storage.MapGroup("/orders/{orderId:guid}/projects/{projectId:guid}");

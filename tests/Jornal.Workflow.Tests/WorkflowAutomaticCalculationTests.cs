@@ -269,7 +269,10 @@ public sealed class WorkflowAutomaticCalculationTests
     public async Task PendingEditsInAnotherOrderAreAutomaticallyProtectedAndRecoveredWithoutBlockingNewWork()
     {
         using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync(); await ProjectFixture.WriteAsync(project);
-        var pending = await f.ReviewAsync(); pending.Candidates[0].Draft!.Coefficient = "1,3";
+        var pending = await f.ReviewAsync();
+        var draft = pending.Candidates[0].Draft!;
+        draft.Coefficient = "1,3";
+        draft.HasBending = true;
         var id = f.Model.SelectedOrder!.Order.Id;
         f.Model.NewOrderCommand.Execute(null); f.Model.NewManager = "Иванов"; f.Model.NewCustomer = "Второй заказчик";
         await f.Model.CreateOrderCommand.ExecuteAsync(null); Assert.Null(f.Model.Error);
@@ -277,9 +280,36 @@ public sealed class WorkflowAutomaticCalculationTests
         var calculated = Assert.IsType<WorkflowReportReviewViewModel>(await f.Model.CalculateOrderAsync(Token)); Assert.Empty(calculated.GuidedCandidates);
         var protectedHistory = await WorkflowCalculationHistory.ReadAsync(Path.GetDirectoryName(project.NativePath!)!, id, project.Id, Token);
         Assert.Equal("1,3", Assert.Single(protectedHistory.Snapshots).Draft!.Coefficient);
+        Assert.False(protectedHistory.Snapshots.Single().Draft!.PlannedBendingBaseline);
+        var first = (await f.Store.ReadAsync(Token)).Orders.Single(o => o.Id == id);
+        await f.Store.WriteOrderAsync(id, first.Version, w => WorkflowChanges.UpdateOrder(
+            w, id, first.Version, first.ManagerId, first.TechnologistId, "010001", first.TechnologistId, DateTimeOffset.UtcNow), Token);
         f.Model.SelectedOrder = f.Model.Orders.Single(r => r.Order.Id == id);
         var review = Assert.IsType<WorkflowReportReviewViewModel>(await f.Model.CalculateOrderAsync(Token)); Assert.Empty(review.GuidedCandidates);
-        Assert.Equal(1.3m, (await f.Store.ReadAsync(Token)).Orders.Single(o => o.Id == id).Specifications.Single().Current.Parameters.ManualCoefficient);
+        var saved = (await f.Store.ReadAsync(Token)).Orders.Single(o => o.Id == id).Specifications.Single().Current.Parameters;
+        Assert.Equal(1.3m, saved.ManualCoefficient);
+        Assert.True(saved.HasBending);
+    }
+
+    [Fact]
+    public async Task FirstCalculationUsesTheCurrentProjectBendingWhenACoworkerChangesIt()
+    {
+        using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync();
+        await f.Model.SetPlannedProjectBendingAsync(project.Id, true); Assert.Null(f.Model.Error);
+        await ProjectFixture.WriteAsync(project);
+        var review = await f.ReviewAsync();
+        Assert.True(review.Candidates[0].Draft!.HasBending);
+        review.Candidates[0].Draft!.Coefficient = "1,3";
+
+        var order = (await f.Store.ReadAsync(Token)).Orders.Single();
+        await f.Store.WriteOrderAsync(order.Id, order.Version, w => WorkflowProjects.SetPlannedBending(
+            w, order.Id, order.Version, project.Id, false, order.TechnologistId, DateTimeOffset.UtcNow), Token);
+
+        var calculated = Assert.IsType<WorkflowReportReviewViewModel>(await f.Model.CalculateOrderAsync(Token));
+        Assert.Empty(calculated.GuidedCandidates);
+        var saved = (await f.Store.ReadAsync(Token)).Orders.Single().Specifications.Single().Current.Parameters;
+        Assert.False(saved.HasBending);
+        Assert.Equal(1.3m, saved.ManualCoefficient);
     }
 
     [Theory]

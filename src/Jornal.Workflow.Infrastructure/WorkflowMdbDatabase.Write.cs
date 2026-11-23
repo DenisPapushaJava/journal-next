@@ -44,6 +44,8 @@ public sealed partial class WorkflowMdbDatabase
                     continue;
                 }
                 if (value.Id != replacement.Id) throw new WorkflowValidationException("Некорректный ID заявки.");
+                if (meta.SchemaVersion < WorkflowMdbSchema.PlannedBendingVersion && value.Projects.Any(p => p.HasPlannedBending))
+                    throw new WorkflowValidationException("Для отметки гибки до расчёта откройте MDB в обновлённых «Заявках» на рабочем ПК.");
                 if (current is null)
                 {
                     var at = value.CreatedAt; var lower = at.ToString("yyyy-MM-dd-HHmmss", CultureInfo.InvariantCulture);
@@ -58,6 +60,8 @@ public sealed partial class WorkflowMdbDatabase
                 else if (value.Version <= current.Version || value.Number != current.Number || value.ReferenceNumber != current.ReferenceNumber ||
                     value.CreatedAt != current.CreatedAt || value.CreatedById != current.CreatedById)
                     throw new WorkflowValidationException("Некорректная версия или неизменяемые реквизиты заявки.");
+                if (request.OfficeSchema6 && current is not null)
+                    value = patch.PreservePlannedBending(current, value);
                 changed.Add(WorkflowShopHandoff.PreserveRecorded(current, value));
             }
             var catalog = ReadCatalog(session, meta, patch.Catalog is not null);

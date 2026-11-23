@@ -77,6 +77,7 @@ internal sealed partial class WorkflowOfficeStorageClient(WorkflowOfficeStorageS
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         deadline.CancelAfter(TimeSpan.FromSeconds(55));
         using var message = Request(HttpMethod.Post, "api/v1/storage/database");
+        if (write && request.Patch is { } patch) request = request with { Patch = patch with { SupportsPlannedBending = true } };
         message.Content = JsonContent.Create(request with { Path = "", DatabaseId = settings.DatabaseId }, options: JsonOptions);
         try
         {

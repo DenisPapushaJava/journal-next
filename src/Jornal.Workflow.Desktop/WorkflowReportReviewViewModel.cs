@@ -133,7 +133,9 @@ public partial class WorkflowReportCandidate : ObservableObject
         if ((previous?.Draft ?? localDraft) is { } oldDraft)
         {
             _inputSourceHash = oldDraft.IncomingReport?.Sha256 ?? oldDraft.Saved?.Report?.Sha256;
-            Draft = latestReportWins ? WorkflowCalculationSnapshots.MergeLocal(_existing, project.NativePath, oldDraft) : _existing is null ? new SpecificationDraft { Id = project.Id } : new(_existing);
+            Draft = latestReportWins ? WorkflowCalculationSnapshots.MergeLocal(_existing, project, oldDraft)
+                : _existing is null ? new SpecificationDraft { Id = project.Id, PlannedBendingBaseline = oldDraft.PlannedBendingBaseline }
+                : new(_existing);
             var values = Parts(Values(oldDraft));
             if (!latestReportWins)
             {
@@ -174,6 +176,8 @@ public partial class WorkflowReportCandidate : ObservableObject
             Draft = previous; IsSelected = false; Changed(); return;
         }
         var machine = _workspace.Machines.Single(m => m.Id == Project.MachineId); source.UseMachine(machine);
+        source.HasBending = Project.HasPlannedBending;
+        source.PlannedBendingBaseline = Project.HasPlannedBending;
         var needsMaterialReview = source.MaterialNeedsReview;
         Baseline = Values(source);
         Draft = previous ?? (_existing is null ? source : new SpecificationDraft(_existing));

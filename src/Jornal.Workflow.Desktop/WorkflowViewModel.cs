@@ -429,7 +429,7 @@ public partial class WorkflowViewModel : ObservableObject
     private SpecificationDraft CreateDraft(WorkflowSpecification specification) =>
         new(specification, CurrentOrder?.Projects.SingleOrDefault(p => p.Id == specification.Id)?.NativePath);
 
-    private void LoadOrder(WorkflowOrder order)
+    private void LoadOrder(WorkflowOrder order, Guid? selectProject = null)
     {
         _cardClosedManually = false;
         var sameOrder = _openOrderId == order.Id;
@@ -442,7 +442,7 @@ public partial class WorkflowViewModel : ObservableObject
         try { SelectedOrder = Orders.SingleOrDefault(row => row.Order.Id == order.Id); }
         finally { _refreshing = false; }
         SelectedDraft = Drafts.FirstOrDefault(); ManagerName = EmployeeName(order.ManagerId); Technologist = Employees.Single(e => e.Id == order.TechnologistId);
-        Blcb = order.Blcb; Error = null; RefreshProjects(); NotifyOrder();
+        Blcb = order.Blcb; Error = null; RefreshProjects(selectProject); NotifyOrder();
     }
     private void RefreshOrders(bool preserveRows = false)
     {
@@ -556,7 +556,7 @@ public partial class WorkflowViewModel : ObservableObject
         SaveSpecificationCommand.NotifyCanExecuteChanged();
     }
     partial void OnIsBusyChanged(bool value)
-    { if (value) DismissPreviousMapSigningNotice(); OnPropertyChanged(nameof(CanUse)); OnPropertyChanged(nameof(CanBrowseWorkspace)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList(); NotifyCuttingTask(); NotifyResultState(); }
+    { if (value) DismissPreviousMapSigningNotice(); OnPropertyChanged(nameof(CanUse)); OnPropertyChanged(nameof(CanBrowseWorkspace)); OnPropertyChanged(nameof(CanEditPlan)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList(); NotifyCuttingTask(); NotifyResultState(); }
     private async Task RunAsync(Func<Task> action, string? fileError = null, bool projectInclusion = false)
     {
         if (IsBusy || _readingDatabase || _savingProjectInclusion && !projectInclusion) return; CancelBackgroundRefresh(); IsBusy = true; Error = null;

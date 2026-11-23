@@ -146,7 +146,10 @@ public static partial class WorkflowChanges
     {
         WorkflowSpecification[] specifications = isNew ? [.. order.Specifications, saved] :
             order.Specifications.Select(s => s.Id == saved.Id ? saved : s).ToArray();
-        var next = order with { Specifications = specifications, Version = order.Version + 1, UpdatedAt = at };
+        var projects = isNew && order.Projects.Any(p => p.Id == saved.Id && p.HasPlannedBending)
+            ? order.Projects.Select(p => p.Id == saved.Id ? p with { HasPlannedBending = false } : p).ToArray()
+            : order.Projects;
+        var next = order with { Specifications = specifications, Projects = projects, Version = order.Version + 1, UpdatedAt = at };
         return workspace with { Orders = workspace.Orders.Select(o => o.Id == next.Id ? next : o).ToArray() };
     }
 

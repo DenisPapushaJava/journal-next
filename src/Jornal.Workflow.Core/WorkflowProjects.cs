@@ -12,6 +12,7 @@ public sealed record CuttingProject(Guid Id, Guid ItemId, int Variant, Guid Mach
     decimal ThicknessMm, string Name, string? NativePath, string? ImportProfile,
     DateTimeOffset CreatedAt)
 {
+    public bool HasPlannedBending { get; init; }
     public DateTimeOffset? DeletedAt { get; init; }
     public Guid? DeletedBy { get; init; }
     public ProjectRename? Rename { get; init; }
@@ -74,6 +75,34 @@ public static class WorkflowProjectNames
 
 public static partial class WorkflowProjects
 {
+    public const string PlannedBendingRequiresUpdatedClient =
+        "В проекте отмечена гибка. Для первого расчёта обновите программу «Заявки» на этом компьютере.";
+
+    public static CuttingProject RequireBendingPlanProject(WorkflowOrder order, Guid projectId)
+    {
+        if (order.ActiveProjects.SingleOrDefault(p => p.Id == projectId) is not { NativePath: not null } project ||
+            order.HasProjectRename || order.Specifications.Any(s => s.Id == projectId))
+            throw new WorkflowValidationException("До первого расчёта гибку можно изменить только у действующего проекта. Для рассчитанного проекта используйте галочку в расчёте.");
+        return project;
+    }
+
+    public static WorkflowWorkspace SetPlannedBending(WorkflowWorkspace workspace, Guid orderId, long version,
+        Guid projectId, bool bending, Guid actor, DateTimeOffset at)
+    {
+        var order = WorkflowChanges.RequireActiveOrder(workspace, orderId, version);
+        var project = RequireBendingPlanProject(order, projectId);
+        if (!workspace.Employees.Any(e => e.Id == actor && e.CanWork))
+            throw new WorkflowValidationException("Выберите действующего технолога.");
+        if (project.HasPlannedBending == bending) return workspace;
+        var updated = order with
+        {
+            Projects = order.Projects.Select(p => p.Id == projectId ? p with { HasPlannedBending = bending } : p).ToArray(),
+            Version = order.Version + 1,
+            UpdatedAt = at
+        };
+        return workspace with { Orders = workspace.Orders.Select(o => o.Id == orderId ? updated : o).ToArray() };
+    }
+
     public static WorkflowWorkspace SetRoot(WorkflowWorkspace workspace, string? root)
     {
         root = string.IsNullOrWhiteSpace(root) ? null : root.Trim();

@@ -5,15 +5,19 @@ namespace Jornal.Workflow.Desktop;
 
 internal static class WorkflowCalculationSnapshots
 {
-    internal static SpecificationDraft MergeLocal(WorkflowSpecification? saved, string? native, SpecificationDraft local)
+    internal static SpecificationDraft MergeLocal(WorkflowSpecification? saved, CuttingProject project, SpecificationDraft local)
     {
-        var result = saved is null ? new SpecificationDraft { Id = local.Id } : new(saved, native);
+        var result = saved is null
+            ? new SpecificationDraft { Id = local.Id, PlannedBendingBaseline = project.HasPlannedBending }
+            : new(saved, project.NativePath);
         var before = local.Saved is null ? new SpecificationDraft() : new(new(local.Id, local.Saved));
         var values = WorkflowReportCandidate.Parts(WorkflowReportCandidate.Values(local));
         var baseline = WorkflowReportCandidate.Parts(WorkflowReportCandidate.Values(before));
         for (var i = 0; i < values.Length; i++) if (values[i] != baseline[i]) WorkflowReportCandidate.Set(result, i, values[i]);
         if (local.Coefficient != before.Coefficient) result.Coefficient = local.Coefficient;
-        if (local.HasBending != before.HasBending) result.HasBending = local.HasBending;
+        var previousBending = local.Saved?.Parameters.HasBending ?? local.PlannedBendingBaseline ?? false;
+        var currentBending = saved?.Current.Parameters.HasBending ?? project.HasPlannedBending;
+        result.HasBending = previousBending == currentBending ? local.HasBending : currentBending;
         if (local.HasChamfer != before.HasChamfer) result.HasChamfer = local.HasChamfer;
         if (local.Comment != before.Comment) result.Comment = local.Comment;
         result.IncomingReport = local.IncomingReport; result.SourcePath = local.SourcePath; result.ImportProfile = local.ImportProfile;
@@ -48,7 +52,8 @@ internal static class WorkflowCalculationSnapshots
                 report = report with { Id = new Guid(Convert.FromHexString(report.Sha256[..32])) };
             }
             raw = new(WorkflowReportCandidate.Values(draft), draft.Coefficient, draft.HasBending, draft.HasChamfer,
-                draft.Comment, draft.PricePerMeter, draft.PricePerPierce, draft.Quote, report);
+                draft.Comment, draft.PricePerMeter, draft.PricePerPierce, draft.Quote, report)
+            { PlannedBendingBaseline = draft.PlannedBendingBaseline };
         }
         try { await WorkflowCalculationHistory.SaveAsync(folder, new(1, orderId, projectId, DateTimeOffset.UtcNow, actor, state, raw) { OrderVersion = orderVersion }, token); }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)

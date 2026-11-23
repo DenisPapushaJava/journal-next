@@ -144,9 +144,14 @@ public sealed class WorkflowProjectMaintenance(IWorkflowWorkspaceStore store, Ac
         if ((File.GetAttributes(native) & FileAttributes.ReparsePoint) != 0) throw Unsafe("Ссылки вместо файла проекта не переименовываются.", folder);
         var entries = Directory.EnumerateFileSystemEntries(folder).Take(4).ToArray();
         if (entries.Any(path => !path.Equals(native, Comparison) &&
-            !(Path.GetFileName(path) == Receipt && HasReceipt(folder, id))))
+            !(Path.GetFileName(path) == Receipt && HasReceipt(folder, id)) && !IsEmptyBendingFolder(path)))
             throw Unsafe("В папке уже есть рабочие файлы или отчёты. Изменение пустой заготовки недоступно; используйте другой вариант проекта.", folder);
     }
+
+    private static bool IsEmptyBendingFolder(string path) =>
+        Path.GetFileName(path).Equals(WorkflowBendingFiles.FolderName, Comparison) &&
+        (File.GetAttributes(path) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) == FileAttributes.Directory &&
+        !Directory.EnumerateFileSystemEntries(path).Any();
 
     private static void RejectLinks(string folder)
     {
