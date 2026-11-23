@@ -16,9 +16,10 @@
     </StackPanel>
     <TextBlock x:Name="ConnectionStatus" TextWrapping="Wrap" IsVisible="False" AutomationProperties.LiveSetting="Polite" />
     <ui:JournalButton x:Name="CopyDeviceId" Label="Скопировать ID устройства" IsVisible="False" HorizontalAlignment="Left" Click="OnCopyDeviceId" />
-    <TextBlock x:Name="ConnectionError" TextWrapping="Wrap" IsVisible="False" AutomationProperties.LiveSetting="Polite"
-               Foreground="{DynamicResource JournalDangerForeground}" />
+    <SelectableTextBlock x:Name="ConnectionError" TextWrapping="Wrap" IsVisible="False" AutomationProperties.LiveSetting="Polite"
+                         Foreground="{DynamicResource JournalDangerForeground}" />
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <ui:JournalButton x:Name="DownloadZeroTier" Label="Скачать ZeroTier" IsVisible="False" Click="OnDownloadZeroTier" />
       <ui:JournalButton x:Name="CancelOfficeConnection" Label="Отмена" IsCancel="True" Click="OnCancel" />
       <ui:JournalButton x:Name="ConnectOffice" Label="Подключиться" Classes="primary" IsDefault="True" Click="OnConnect" />
     </StackPanel>

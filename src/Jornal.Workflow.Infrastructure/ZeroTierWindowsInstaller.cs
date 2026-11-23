@@ -20,11 +20,6 @@ public static class ZeroTierWindowsInstaller
         new[] { Environment.SpecialFolder.ProgramFilesX86, Environment.SpecialFolder.ProgramFiles }.Any(folder =>
             File.Exists(Path.Combine(Environment.GetFolderPath(folder), "ZeroTier", "One", "zerotier-one_x64.exe")));
 
-    public static bool IsInstalling
-    {
-        get { lock (InstallationGate) return _installation is { IsCompleted: false }; }
-    }
-
     // The caller can stop waiting. Once Windows has the MSI, the worker keeps its lease until setup exits.
     public static Task<bool> InstallAsync(CancellationToken token = default)
     {

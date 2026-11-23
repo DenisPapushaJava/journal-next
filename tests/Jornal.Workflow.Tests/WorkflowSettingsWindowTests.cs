@@ -5,7 +5,6 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Logging;
 using Avalonia.Media;
 using Avalonia.VisualTree;
@@ -95,43 +94,68 @@ public sealed class WorkflowSettingsWindowTests
         finally { window.Close(); }
     }
 
-    [AvaloniaFact]
-    public async Task InstallerDoesNotHoldTheApplicationOpen()
+    [AvaloniaTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void OfficeConnectionOffersOfficialDownloadAndContinuesAfterInstallation(bool browserOpened)
     {
-        var installed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var began = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var owner = new Window();
-        var window = new WorkflowOfficeConnectionWindow(null, null, () => null, (_, _) => Task.CompletedTask,
-            (_, _, _, _, _) => throw new InvalidOperationException(), token =>
+        const string address = "http://10.0.0.2:60913/";
+        const string networkId = "0123456789abcdef";
+        const string downloads = "https://www.zerotier.com/download/";
+        var key = new string('A', 64);
+        var draft = new WorkflowOfficeSetupDraft(address, networkId);
+        var localAddress = IPAddress.Parse("10.0.0.3");
+        var binding = new ZeroTierBinding(localAddress, "Office", 24);
+        var route = new WorkflowOfficeRoute(localAddress, binding.InterfaceAlias, "office-adapter");
+        var setup = new WorkflowOfficeSetup((_, _, _) => Task.FromResult(new WorkflowOfficeProbe(WorkflowOfficeHealth.Reachable, route)),
+            (_, _) => Task.FromResult(new ZeroTierNetwork("OK", binding)), (_, _) => throw new InvalidOperationException(),
+            _ => throw new InvalidOperationException(), TimeSpan.Zero);
+        var installed = false;
+        Uri? openedPage = null;
+        WorkflowOfficeSetupDraft? remembered = null;
+        (string? Address, string? Key, WorkflowOfficeRoute? Route)? attempt = null;
+        var window = new WorkflowOfficeConnectionWindow(null, draft, () => null,
+            (value, _) => { remembered = value; return Task.CompletedTask; },
+            (server, adminKey, confirmed, _, _) =>
             {
-                began.SetResult(token);
-                return installed.Task.WaitAsync(token);
-            });
+                attempt = (server, adminKey, confirmed);
+                return Task.FromResult<string?>(null);
+            }, setup: setup, readZeroTierStatus: () => (true, installed),
+            openDownloadPage: uri => { openedPage = uri; return Task.FromResult(browserOpened); });
         try
         {
-            owner.Show();
-            var modal = window.ShowDialog<bool>(owner);
-            window.FindControl<TextBox>("ServerAddress")!.Text = "http://10.0.0.2:60913/";
-            window.FindControl<TextBox>("AdministratorKey")!.Text = new('A', 64);
-            Dispatcher.UIThread.RunJobs();
-            typeof(WorkflowOfficeConnectionWindow).GetField("_next", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
-                .SetValue(window, WorkflowOfficeSetupStep.Install);
-            window.FindControl<Button>("ConnectOffice")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            var wait = await began.Task.WaitAsync(TestContext.Current.CancellationToken);
-            Assert.True(window.FindControl<Button>("CancelOfficeConnection")!.IsEnabled);
-            window.Close();
-            Assert.False(await modal.WaitAsync(TestContext.Current.CancellationToken));
-            Assert.True(wait.IsCancellationRequested);
-            Assert.False(installed.Task.IsCompleted);
-            owner.Close();
-            Assert.False(owner.IsVisible);
+            window.Show();
+            window.FindControl<TextBox>("AdministratorKey")!.Text = key;
+            var download = window.FindControl<JournalButton>("DownloadZeroTier")!;
+            Assert.False(download.IsVisible);
+
+            Click(window, "ConnectOffice");
+            Assert.Equal(draft, remembered);
+            Assert.True(download.IsVisible);
+            Assert.Equal("Проверить установку", window.FindControl<JournalButton>("ConnectOffice")!.Label);
+            Assert.Null(attempt);
+            Assert.Null(openedPage);
+
+            Click(download);
+            Assert.Equal(downloads, openedPage!.AbsoluteUri);
+            Assert.True(window.IsVisible);
+            var error = window.FindControl<TextBlock>("ConnectionError")!;
+            Assert.Equal(!browserOpened, error.IsVisible);
+            if (!browserOpened) Assert.Contains(downloads, error.Text);
+            Assert.Equal(address, window.FindControl<TextBox>("ServerAddress")!.Text);
+            Assert.Equal(networkId, window.FindControl<TextBox>("NetworkId")!.Text);
+            Assert.Equal(key, window.FindControl<TextBox>("AdministratorKey")!.Text);
+
+            Click(window, "ConnectOffice");
+            Assert.True(download.IsVisible);
+            Assert.Null(attempt);
+
+            installed = true;
+            Click(window, "ConnectOffice");
+            Assert.False(window.IsVisible);
+            Assert.Equal((address, key, route), attempt);
         }
-        finally
-        {
-            installed.TrySetResult(false);
-            if (window.IsVisible) window.Close();
-            if (owner.IsVisible) owner.Close();
-        }
+        finally { if (window.IsVisible) window.Close(); }
     }
 
     [AvaloniaTheory]
