@@ -29,7 +29,7 @@ public partial class WorkflowViewModel
     protected override void OnPropertyChanged(PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(ManagerName) or nameof(Technologist) or nameof(Blcb) or nameof(ResultText) or
-            nameof(NewCustomer) or nameof(NewManager) or nameof(IsCreating) or nameof(IsPlanning) or nameof(PlanMachine) or nameof(PlanThickness))
+            nameof(NewCustomer) or nameof(NewManager) or nameof(IsCreating) or nameof(IsPlanning) or nameof(PlanMachine) or nameof(PlanThickness) or nameof(PlanHasBending))
             ++_closeRevision;
         base.OnPropertyChanged(e);
         if (e.PropertyName == nameof(ResultText)) NotifyCurrentDraftIndicator();

@@ -104,8 +104,11 @@ internal static partial class WorkflowMapPdf
                 WorkflowShopDiscovery.Rule.Gas or WorkflowShopDiscovery.Rule.Plasma => ".nc",
                 _ => null
             };
-            var cnc = WorkflowShopDiscovery.Field(p, "CNC").Trim().Trim('"');
-            if (programExtension is null || !cnc.EndsWith(programExtension, StringComparison.OrdinalIgnoreCase))
+            var cnc = WorkflowShopDiscovery.Field(p, "CNC").Trim().Trim('"').Trim();
+            // BLOK can export a valid map before the programs are saved. Discovery
+            // still requires a confirmed file selection when the references are missing.
+            var hasProgramReference = cnc.Length > 0 && !cnc.Equals("*not saved*", StringComparison.OrdinalIgnoreCase);
+            if (programExtension is null || (hasProgramReference && !cnc.EndsWith(programExtension, StringComparison.OrdinalIgnoreCase)))
                 throw Problem(page.Number, "ссылка CNC не соответствует станку проекта");
             var cell = FindCell(page); cells.Add(new(page.Number, cell, ReadCell(page, cell)));
         }

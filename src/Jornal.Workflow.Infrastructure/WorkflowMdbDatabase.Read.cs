@@ -15,7 +15,8 @@ public sealed partial class WorkflowMdbDatabase
             return ReadOfficeSnapshot(session, request);
         var metadata = ReadWorkspaceMetadata(session, request);
         if (request.Operation == WorkflowAccessOperation.ReadRevision)
-            return new(1, metadata.DatabaseId, metadata.CatalogVersion, metadata.Revision, Orders: []);
+            return new(1, metadata.DatabaseId, metadata.CatalogVersion, metadata.Revision, Orders: [],
+                OfficeSchemaVersion: request.OfficeSchema6 ? metadata.SchemaVersion : null);
         if (request.Operation == WorkflowAccessOperation.Inspect) ValidateSchema(session);
         return ReadResponse(session, metadata, request);
     }
@@ -98,7 +99,8 @@ public sealed partial class WorkflowMdbDatabase
         // Separate table reads must describe the same committed revision, including the catalogue.
         var after = ReadWorkspaceMetadata(session, request with { DatabaseId = metadata.DatabaseId });
         if (after.Revision != metadata.Revision || after.CatalogVersion != metadata.CatalogVersion) throw new WorkflowConflictException();
-        return new(1, metadata.DatabaseId, metadata.CatalogVersion, metadata.Revision, catalog, orders, total, trashCount, hasMore, PageIds: pageIds);
+        return new(1, metadata.DatabaseId, metadata.CatalogVersion, metadata.Revision, catalog, orders, total, trashCount, hasMore, PageIds: pageIds,
+            OfficeSchemaVersion: request.OfficeSchema6 ? metadata.SchemaVersion : null);
     }
     private static Guid[] CheckedIds(Guid[]? ids)
     {

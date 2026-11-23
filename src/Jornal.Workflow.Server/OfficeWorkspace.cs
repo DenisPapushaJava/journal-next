@@ -111,6 +111,17 @@ internal sealed class OfficeWorkspace(string? databasePath, string? projectsRoot
             return Error("project-folder-unavailable", 404);
 
         var before = order.Specifications.SingleOrDefault(s => s.Id == projectId)?.Current;
+        if (before is null && project.HasPlannedBending && !request.SupportsPlannedBending)
+            throw new WorkflowValidationException(WorkflowProjects.PlannedBendingRequiresUpdatedClient);
+        if (request.BeforeFirstCalculation)
+        {
+            RequirePlannedBendingSchema(snapshot);
+            WorkflowProjects.RequireBendingPlanProject(order, projectId);
+            if (!request.EnsureBending || request.Report is not null)
+                return Error("Некорректный запрос на создание папки ГИБКА.", 400);
+            await WorkflowBendingFiles.EnsureAsync(project, token);
+            return Results.Ok(new WorkflowOfficePreparedCalculation(null, null));
+        }
         var source = before?.SourcePath;
         var report = before?.Report;
         if (request.Report is { } incoming)
@@ -149,10 +160,17 @@ internal sealed class OfficeWorkspace(string? databasePath, string? projectsRoot
             throw new WorkflowValidationException("Выберите действующего технолога в настройках.");
         var machine = catalog.Machines.SingleOrDefault(m => m.Id == request.MachineId)
             ?? throw new WorkflowValidationException("Станок не найден. Обновите журнал (F5).");
+        if (request.HasPlannedBending) RequirePlannedBendingSchema(snapshot);
         var customer = catalog.Customers.Single(c => c.Id == order.CustomerId).Name;
         return Results.Ok(await WorkflowProjectFiles.PrepareRemoteAsync(projectsRoot, order, customer, machine,
-            request.ThicknessMm, request.ItemId, request.ProjectId, DateTimeOffset.Now, token));
+            request.ThicknessMm, request.ItemId, request.ProjectId, DateTimeOffset.Now, token, request.HasPlannedBending));
     });
+
+    private static void RequirePlannedBendingSchema(WorkflowAccessResponse snapshot)
+    {
+        if (snapshot.OfficeSchemaVersion is null or < WorkflowMdbSchema.PlannedBendingVersion)
+            throw new WorkflowValidationException("Для отметки гибки до расчёта откройте MDB в обновлённых «Заявках» на рабочем ПК.");
+    }
 
     private bool OutsideProjectRoot(string? path) =>
         path is not null && WorkflowOfficeProjectPaths.InRoot(projectsRoot, path) is null;

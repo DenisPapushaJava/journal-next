@@ -99,6 +99,48 @@ public sealed class WorkflowSignedTransferTests
         finally { if (Directory.Exists(shop)) Directory.Delete(shop, true); }
     }
 
+    [Theory]
+    [InlineData("Лазер", "*not saved*", ".cnc")]
+    [InlineData("Плазма", "", ".nc")]
+    [InlineData("Газо-кислородная", "*NOT SAVED*", ".nc")]
+    public async Task MatchingBlockMapWithoutProgramReferencesCanBeSignedAfterManualSelection(
+        string machine, string cnc, string extension)
+    {
+        using var f = new MapSigningFixture(machine);
+        var map = f.Create(maps: 2, continuation: true, cnc: cnc);
+        await File.WriteAllTextAsync(Path.Combine(f.Root, "Лист1" + extension), "Лист 1", Token);
+        await File.WriteAllTextAsync(Path.Combine(f.Root, "Лист2" + extension), "Лист 2", Token);
+        var shop = f.Root + "-shop";
+        try
+        {
+            var model = new WorkflowShopTransferViewModel(shop, "db", f.Order, f.Book,
+                _ => Task.CompletedTask, _ => Task.CompletedTask);
+            await model.RefreshAsync();
+            Assert.Null(model.Error);
+            Assert.False(model.CanStartAutomatically);
+            var row = Assert.Single(model.Projects);
+            Assert.True(row.RequiresReview);
+            Assert.Equal(3, row.Files.Length);
+            Assert.All(row.Files, choice => Assert.False(choice.IsSelected));
+            foreach (var choice in row.Files) choice.IsSelected = true;
+            Assert.False(model.CanCopy);
+            row.Reviewed = true;
+            Assert.True(model.CanCopy);
+
+            await model.CopyAsync();
+            Assert.True(model.AllPrepared, model.Error);
+            Assert.True(model.TextCopied, model.Error);
+            var copies = Directory.GetFiles(row.Destination).Select(Path.GetFileName).ToArray();
+            Assert.Contains("Лист1" + extension, copies);
+            Assert.Contains("Лист2" + extension, copies);
+            using var pdf = UglyToad.PdfPig.PdfDocument.Open(Path.Combine(row.Destination, Path.GetFileName(map)));
+            Assert.Equal(3, pdf.NumberOfPages);
+            foreach (var page in pdf.GetPages().Take(2)) Assert.Contains("БЛЦБ-009337", page.Text);
+            Assert.DoesNotContain("БЛЦБ", pdf.GetPage(3).Text);
+        }
+        finally { if (Directory.Exists(shop)) Directory.Delete(shop, true); }
+    }
+
     [Fact]
     public async Task SelectedForeignMapStopsWholeTransferAndUnselectedDocumentIsNeverOpened()
     {

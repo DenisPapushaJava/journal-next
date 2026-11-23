@@ -193,8 +193,10 @@ public sealed class WorkflowOfficeStorageTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.RequireCalculationSupportAsync(new CancellationToken(true)));
     }
 
-    [Fact]
-    public async Task RetryingRemoteProjectPreparationReusesTheSameWorkingFile()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RetryingRemoteProjectPreparationReusesTheSameWorkingFile(bool bending)
     {
         using var fixture = new ProjectFixture();
         await fixture.InitializeAsync();
@@ -204,13 +206,78 @@ public sealed class WorkflowOfficeStorageTests
         var machine = book.Machines.Single(m => m.Name == "Лазер");
         var id = Guid.NewGuid();
         var time = order.CreatedAt.AddDays(1);
-        var first = await WorkflowProjectFiles.PrepareRemoteAsync(book.ProjectRoot!, order, "Заказчик", machine, 6, null, id, time, token);
+        var first = await WorkflowProjectFiles.PrepareRemoteAsync(book.ProjectRoot!, order, "Заказчик", machine, 6, null, id, time, token, bending);
+        var folder = Path.Combine(Path.GetDirectoryName(first.NativePath!)!, WorkflowBendingFiles.FolderName);
+        Assert.Equal(bending, first.HasPlannedBending);
+        Assert.Equal(bending, Directory.Exists(folder));
         await File.WriteAllTextAsync(first.NativePath!, "Правка после подготовки", token);
-        var retried = await WorkflowProjectFiles.PrepareRemoteAsync(book.ProjectRoot!, order, "Заказчик", machine, 6, null, id, time.AddSeconds(1), token);
+        var retried = await WorkflowProjectFiles.PrepareRemoteAsync(book.ProjectRoot!, order, "Заказчик", machine, 6, null, id, time.AddSeconds(1), token, bending);
         Assert.Equal(first, retried);
         Assert.Equal("Правка после подготовки", await File.ReadAllTextAsync(first.NativePath!, token));
         await Assert.ThrowsAsync<WorkflowValidationException>(() => WorkflowProjectFiles.PrepareRemoteAsync(book.ProjectRoot!, order,
             "Заказчик", machine, 8, null, id, time, token));
+        if (bending)
+        {
+            var withoutBending = await WorkflowProjectFiles.PrepareRemoteAsync(book.ProjectRoot!, order, "Заказчик", machine, 6, null, id, time, token);
+            Assert.Equal(first with { HasPlannedBending = false }, withoutBending);
+            Assert.True(Directory.Exists(folder));
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OlderOfficeServerStillCreatesOrdinaryProjectsButCannotLoseTheBendingChoice(bool supported)
+    {
+        using var fixture = new ProjectFixture();
+        var token = TestContext.Current.CancellationToken;
+        var projectId = Guid.NewGuid(); var orderId = Guid.NewGuid(); var actor = Guid.NewGuid(); var machine = Guid.NewGuid();
+        var request = new WorkflowOfficeProjectPreparation(projectId, 1, actor, machine, 6, null, true);
+        var posts = 0;
+        using var http = new HttpClient(new Handler(async (message, cancellation) =>
+        {
+            if (message.Method == HttpMethod.Get)
+                return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { guardedCalculation = true, plannedBending = supported }) };
+            ++posts;
+            var input = (await message.Content!.ReadFromJsonAsync<WorkflowOfficeProjectPreparation>(cancellation))!;
+            Assert.Equal(request with { HasPlannedBending = supported }, input);
+            var project = new CuttingProject(projectId, Guid.NewGuid(), 1, machine, 6, "Проект",
+                @"C:\Projects\project.rcam", "block-html/v1", DateTimeOffset.Now) { HasPlannedBending = input.HasPlannedBending };
+            return new(HttpStatusCode.OK) { Content = JsonContent.Create(project) };
+        }));
+        var client = new WorkflowOfficeStorageClient(new(Address, Guid.NewGuid(), Guid.NewGuid(), true), StorageToken, fixture.DirectoryPath, http, http);
+        if (!supported)
+        {
+            var error = await Assert.ThrowsAsync<WorkflowValidationException>(() => client.PrepareProjectAsync(orderId, request, token));
+            Assert.Contains("обновите", error.Message);
+            Assert.Equal(0, posts);
+            request = request with { HasPlannedBending = false };
+        }
+        var created = await client.PrepareProjectAsync(orderId, request, token);
+        Assert.Equal(supported, created.HasPlannedBending);
+        Assert.Equal(1, posts);
+    }
+
+    [Fact]
+    public async Task LegacyOfficeWritePreservesPlannedBendingAndRejectsTheFirstCalculation()
+    {
+        using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync();
+        var token = TestContext.Current.CancellationToken;
+        var order = (await f.Store.ReadAsync(token)).Orders.Single();
+        var marked = order with { Projects = [project with { HasPlannedBending = true }] };
+        var oldEdit = order with { Version = order.Version + 1, Blcb = "010001" };
+        var patch = new WorkflowAccessPatch(null, 0, null, [new(oldEdit.Id, order.Version, oldEdit)]);
+        var preserved = patch.PreservePlannedBending(marked, oldEdit);
+        Assert.Equal("010001", preserved.Blcb);
+        Assert.True(Assert.Single(preserved.Projects).HasPlannedBending);
+
+        await ProjectFixture.WriteAsync(project); await f.AcceptAsync();
+        var calculated = (await f.Store.ReadAsync(token)).Orders.Single();
+        var error = Assert.Throws<WorkflowValidationException>(() => patch.PreservePlannedBending(marked, calculated));
+        Assert.Contains("обновите программу", error.Message);
+        var updatedClient = patch with { SupportsPlannedBending = true };
+        Assert.Same(oldEdit, updatedClient.PreservePlannedBending(marked, oldEdit));
+        Assert.Same(calculated, updatedClient.PreservePlannedBending(marked, calculated));
     }
 
     [Theory]

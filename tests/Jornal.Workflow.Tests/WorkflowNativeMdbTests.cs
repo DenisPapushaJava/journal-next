@@ -70,23 +70,45 @@ public sealed class WorkflowNativeMdbTests
             Directory.CreateDirectory(folder); var native = Path.Combine(folder, name + WorkflowProjectNames.Extension(machine));
             await File.WriteAllBytesAsync(native, [], TestContext.Current.CancellationToken);
             var project = new CuttingProject(Guid.NewGuid(), Guid.NewGuid(), 1, machine.Id, 6,
-                name, native, machine.ImportProfile, at);
+                name, native, machine.ImportProfile, at) { HasPlannedBending = true };
+            await WorkflowBendingFiles.EnsureAsync(project, TestContext.Current.CancellationToken);
             book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowProjects.Add(w, order.Id, order.Version, project, actor, at), TestContext.Current.CancellationToken);
             order = book.Orders.Single();
+            Assert.True(order.Projects.Single().HasPlannedBending);
             book = await new WorkflowProjectMaintenance(store).RenameAsync(order.Id, order.Version, project.Id, machine.Id, 8,
                 actor, TestContext.Current.CancellationToken);
             order = book.Orders.Single(); var renamed = order.Projects.Single();
             Assert.Equal(WorkflowProjectNames.Name(machine, 8, at), renamed.Name);
             Assert.Null(renamed.Rename); Assert.True(File.Exists(renamed.NativePath)); Assert.False(Directory.Exists(folder));
+            Assert.True(renamed.HasPlannedBending);
+            Assert.True(Directory.Exists(Path.Combine(Path.GetDirectoryName(renamed.NativePath!)!, WorkflowBendingFiles.FolderName)));
             var legacyComment = "Первая строка.\r\n" + new string('Я', 230);
             var parameters = new CuttingParameters(machine.Name, "Ст3", "Базовая", 8, "1500×3000", 1, 12.3456789m, 3, null, null, 1.2m, true, legacyComment)
             { MachineId = machine.Id, HasChamfer = true };
             var rate = new CuttingRate(Guid.NewGuid(), machine.Name, "Базовая", 8, 111.25m, 1.5m) { MachineId = machine.Id };
             book = await store.WriteAsync(book.Version, w => WorkflowChanges.SetRate(w, rate), TestContext.Current.CancellationToken);
+            var legacyToken = TestContext.Current.CancellationToken;
+            var currentBeforeCalculation = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOrders, path, created.DatabaseId,
+                OrderIds: [order.Id], OfficeSchema6: true), legacyToken);
+            var legacyHeader = order with { Version = order.Version + 1, Blcb = "010001", Projects = [renamed with { HasPlannedBending = false }] };
+            var headerResult = await client.SendAsync(new(1, WorkflowAccessOperation.Apply, path, created.DatabaseId,
+                Patch: new(null, currentBeforeCalculation.CatalogVersion, null, [new(order.Id, order.Version, legacyHeader)]),
+                OfficeSchema6: true), legacyToken);
+            order = Assert.Single(headerResult.Orders!);
+            Assert.Equal("010001", order.Blcb);
+            Assert.True(Assert.Single(order.Projects).HasPlannedBending);
+            var legacyCalculation = WorkflowChanges.SaveSpecification(book with { Orders = [order] }, order.Id, order.Version, project.Id,
+                parameters with { HasBending = false }, "native-1", new(2026, 10, 25), actor, at, null, machine.ImportProfile, rate).Orders.Single();
+            var blockedCalculation = new WorkflowAccessRequest(1, WorkflowAccessOperation.Apply, path, created.DatabaseId,
+                Patch: new(null, headerResult.CatalogVersion, null, [new(order.Id, order.Version, legacyCalculation)]), OfficeSchema6: true);
+            var clientUpdate = await Assert.ThrowsAsync<WorkflowValidationException>(() => client.SendAsync(blockedCalculation, legacyToken));
+            Assert.Contains("обновите программу", clientUpdate.Message);
+            Assert.Equal(headerResult.Revision, (await client.SendAsync(new(1, WorkflowAccessOperation.ReadRevision, path, created.DatabaseId), legacyToken)).Revision);
             book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.SaveSpecification(w, order.Id, order.Version,
                 project.Id, parameters, "native-1", new(2026, 10, 25), actor, at, null, machine.ImportProfile, rate), TestContext.Current.CancellationToken);
             order = book.Orders.Single(); Assert.Equal(CuttingCalculation.Calculate(parameters, rate), order.Specifications.Single().Current.Calculation);
             Assert.True(order.Specifications.Single().Current.Parameters.HasChamfer);
+            Assert.False(order.Projects.Single().HasPlannedBending);
             book = await store.WriteOrderAsync(order.Id, order.Version, w => WorkflowChanges.UpdateOrder(w, order.Id, order.Version,
                 order.ManagerId, order.TechnologistId, "009337", actor, at), TestContext.Current.CancellationToken);
             order = book.Orders.Single();
@@ -182,6 +204,15 @@ public sealed class WorkflowNativeMdbTests
             Assert.Equal("Unimach&HL", v6.Machines.Single(m => m.Id == machine.Id).ShopFolderName);
             await store.InspectAsync(TestContext.Current.CancellationToken);
             Assert.Single(Directory.GetFiles(directory, "*.schema-v6-*.bak"));
+            await MakeEarlierSchemaFixture(path, 7);
+            var versionSevenBytes = await File.ReadAllBytesAsync(path, remoteToken);
+            await VerifyOfficeReadAsync(7, v6.Orders.Single(), versionSevenBytes);
+            var v7 = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOrders, path, created.DatabaseId,
+                OrderIds: [refreshed.Id], OfficeSchema6: true), remoteToken);
+            Assert.Equal(7, v7.OfficeSchemaVersion);
+            Assert.False(Assert.Single(Assert.Single(v7.Orders!).Projects).HasPlannedBending);
+            await store.InspectAsync(remoteToken);
+            Assert.Equal(versionSevenBytes, await File.ReadAllBytesAsync(Assert.Single(Directory.GetFiles(directory, "*.schema-v7-*.bak")), remoteToken));
             // A prepared calculation patch may cross a metadata-only transfer commit.
             var latest = await client.SendAsync(new(1, WorkflowAccessOperation.ReadOrders, path, created.DatabaseId, OrderIds: [refreshed.Id]), TestContext.Current.CancellationToken);
             var raced = await client.SendAsync(new(1, WorkflowAccessOperation.Apply, path, created.DatabaseId,
@@ -314,7 +345,8 @@ public sealed class WorkflowNativeMdbTests
         var start = new System.Diagnostics.ProcessStartInfo(powershell) { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true };
         start.Environment["WORKFLOW_SCHEMA_FIXTURE"] = path;
         start.ArgumentList.Add("-NoProfile"); start.ArgumentList.Add("-NonInteractive"); start.ArgumentList.Add("-Command");
-        var sql = new List<string> { "ALTER TABLE [specifications] ALTER COLUMN [comment] TEXT(255)" };
+        var sql = new List<string> { "ALTER TABLE [cutting_projects] DROP COLUMN [planned_bending]" };
+        if (schema < 7) sql.Add("ALTER TABLE [specifications] ALTER COLUMN [comment] TEXT(255)");
         if (schema < 6) sql.Add("ALTER TABLE [machines] DROP COLUMN [shop_folder_name]");
         if (schema < 5) sql.Add("DROP TABLE [project_shop_handoff_inputs]");
         if (schema < 4) sql.Add("DROP TABLE [project_shop_handoffs]");

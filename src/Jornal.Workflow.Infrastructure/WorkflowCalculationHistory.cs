@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text;
 using Jornal.Workflow.Core;
 
@@ -9,7 +10,11 @@ namespace Jornal.Workflow.Infrastructure;
 // snapshots keep calculation inputs and prices, without adding history to MDB reads.
 public sealed record CalculationDraftSnapshot(ReportValues Values, string Coefficient, bool HasBending,
     bool HasChamfer, string? Comment, string PricePerMeter, string PricePerPierce,
-    CuttingCalculation? Calculation, AcceptedReport? Report);
+    CuttingCalculation? Calculation, AcceptedReport? Report)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PlannedBendingBaseline { get; init; }
+}
 public sealed record CalculationHistorySnapshot(int Schema, Guid OrderId, Guid ProjectId,
     DateTimeOffset CapturedAt, Guid CapturedBy, SpecificationState? State, CalculationDraftSnapshot? Draft)
 {

@@ -12,6 +12,7 @@ public partial class SpecificationDraft : ObservableObject
     private static readonly CultureInfo Culture = CultureInfo.GetCultureInfo("ru-RU");
     public Guid Id { get; init; } = Guid.NewGuid();
     public SpecificationState? Saved { get; }
+    internal bool? PlannedBendingBaseline { get; set; }
     public string? SourcePath { get; set; }
     private readonly string? _nativeProjectPath;
     public string? FolderPath => Path.GetDirectoryName(_nativeProjectPath ?? SourcePath);

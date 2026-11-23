@@ -37,6 +37,7 @@ public sealed class ProjectMaintenanceTests
     public async Task EmptyProjectRenamesDirectoryAndNativeFileWhileKeepingIdentityAndTime(string machine, int thickness, string extension)
     {
         using var f = new ProjectFixture(); await f.InitializeAsync(); var original = await f.AddAsync();
+        await f.Model.SetPlannedProjectBendingAsync(original.Id, true); Assert.Null(f.Model.Error);
         var book = await f.Store.ReadAsync(Token); var order = book.Orders[0]; var target = book.Machines.Single(m => m.Name == machine);
         var changed = await new WorkflowProjectMaintenance(f.Store).RenameAsync(order.Id, order.Version, original.Id,
             target.Id, thickness, order.TechnologistId, Token);
@@ -47,6 +48,8 @@ public sealed class ProjectMaintenanceTests
         Assert.Equal(project.Name, Path.GetFileName(Path.GetDirectoryName(project.NativePath)));
         Assert.Equal(project.Name + extension, Path.GetFileName(project.NativePath));
         Assert.Equal(0, new FileInfo(project.NativePath!).Length);
+        Assert.True(project.HasPlannedBending);
+        Assert.True(Directory.Exists(Path.Combine(Path.GetDirectoryName(project.NativePath!)!, WorkflowBendingFiles.FolderName)));
         Assert.False(Directory.Exists(Path.GetDirectoryName(original.NativePath)));
         Assert.Single(Directory.GetFiles(Path.Combine(book.ProjectRoot!, ".workflow-names")));
         // The persistent ownership receipt permits a second correction, without fabricating another project.
@@ -59,6 +62,7 @@ public sealed class ProjectMaintenanceTests
     [InlineData("filled")]
     [InlineData("report")]
     [InlineData("directory")]
+    [InlineData("bending-file")]
     public async Task WorkingFilesCannotBeRenamedAndDoNotLeaveAnIntent(string kind)
     {
         using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync();
@@ -66,6 +70,8 @@ public sealed class ProjectMaintenanceTests
         if (kind == "filled") await File.WriteAllTextAsync(project.NativePath!, "Рабочий проект", Token);
         if (kind == "report") await ProjectFixture.WriteAsync(project);
         if (kind == "directory") Directory.CreateDirectory(Path.Combine(folder, "Чертежи"));
+        if (kind == "bending-file")
+            await File.WriteAllTextAsync(Path.Combine(await WorkflowBendingFiles.EnsureAsync(project, Token), "Эскиз.txt"), "Эскиз", Token);
         var before = await f.Store.ReadAsync(Token); var order = before.Orders[0];
         var error = await Assert.ThrowsAsync<ProjectFileFailure>(() => new WorkflowProjectMaintenance(f.Store).RenameAsync(
             order.Id, order.Version, project.Id, project.MachineId, 8, order.TechnologistId, Token));

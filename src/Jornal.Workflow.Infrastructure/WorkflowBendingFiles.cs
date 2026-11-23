@@ -4,6 +4,8 @@ namespace Jornal.Workflow.Infrastructure;
 
 public static class WorkflowBendingFiles
 {
+    public const string FolderName = "ГИБКА";
+
     public static Task<string> EnsureAsync(CuttingProject project, CancellationToken token = default) => Task.Run(() =>
     {
         token.ThrowIfCancellationRequested();
@@ -15,11 +17,15 @@ public static class WorkflowBendingFiles
         var attributes = File.GetAttributes(folder);
         if ((attributes & FileAttributes.Directory) == 0 || (attributes & FileAttributes.ReparsePoint) != 0 || !File.Exists(native))
             throw new WorkflowValidationException("Рабочая папка или файл проекта недоступны. Проверьте их расположение.");
-        var path = Path.Combine(folder, "ГИБКА");
+        var path = Path.Combine(folder, FolderName);
         if (Path.Exists(path) && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
             throw new WorkflowValidationException("Вместо папки ГИБКА обнаружена ссылка. Проверьте рабочую папку проекта.");
         token.ThrowIfCancellationRequested();
-        Directory.CreateDirectory(path);
+        try { Directory.CreateDirectory(path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new WorkflowValidationException("Не удалось создать папку «ГИБКА». Проверьте доступ к папке проекта и повторите действие.");
+        }
         return path;
     }, token);
 }

@@ -11,6 +11,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Jornal.Desktop.Controls;
 using Jornal.Workflow.Desktop;
+using Jornal.Workflow.Infrastructure;
 using Xunit;
 
 namespace Jornal.Workflow.Tests;
@@ -49,6 +50,15 @@ public sealed class ProjectMaintenanceWindowTests
             Click(editor.FindControl<Button>("SaveWorkflowProjectParameters")!); await Until(() => window.OwnedWindows.Count == 0);
             var updated = Assert.Single(f.Model.Projects).Project;
             Assert.Equal(project.Id, updated.Id); Assert.StartsWith("8 мм ", updated.Name); Assert.True(File.Exists(updated.NativePath));
+            actions = RowActions(window); Click(actions);
+            Click(((MenuFlyout)actions.Flyout!).Items.OfType<MenuItem>().Single(i => Equals(i.Header, "Отметить гибку")));
+            await Until(() => !f.Model.IsBusy && f.Model.Projects[0].Project.HasPlannedBending);
+            var bendingFolder = Path.Combine(Path.GetDirectoryName(updated.NativePath!)!, WorkflowBendingFiles.FolderName);
+            Assert.True(Directory.Exists(bendingFolder));
+            actions = RowActions(window); Click(actions);
+            Click(((MenuFlyout)actions.Flyout!).Items.OfType<MenuItem>().Single(i => Equals(i.Header, "Снять отметку гибки")));
+            await Until(() => !f.Model.IsBusy && !f.Model.Projects[0].Project.HasPlannedBending);
+            Assert.True(Directory.Exists(bendingFolder));
 
             // Files appeared since creation: the actual save is blocked, with a modal and preserved input.
             await ProjectFixture.WriteAsync(updated);

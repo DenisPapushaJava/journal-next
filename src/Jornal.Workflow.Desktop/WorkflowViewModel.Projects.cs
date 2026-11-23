@@ -118,9 +118,21 @@ public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, s
         !Included ? "Исключён из состава заявки" : HasLocalChanges ? "Изменения не сохранены" : Saved is null ? "Нет спецификации" : IsCurrent ? "Рассчитан" : "Другой вариант · вне итога";
     public string Total => Saved is null ? "—" : SpecificationDraft.Money(Saved.Calculation.TotalCost) + " ₽";
     public string ChamferMark => Saved is null ? "—" : Saved.Parameters.HasChamfer ? "✓" : "";
-    public string BendingMark => Saved is null ? "—" : Saved.Parameters.HasBending ? "✓" : "";
+    public bool CanChangePlannedBending => HasProjectActions && !IsDeleted && Saved is null && Project.Rename is null && Project.NativePath is not null;
+    public string PlannedBendingAction => Project.HasPlannedBending ? "Снять отметку гибки" : "Отметить гибку";
+    public string BendingMark => (Saved?.Parameters.HasBending ?? Project.HasPlannedBending) ? "✓" : Saved is null ? "—" : "";
     public string ChamferHint => Saved is null ? "Фаска: спецификация ещё не загружена" : Saved.Parameters.HasChamfer ? "Фаска отмечена" : "Фаска не отмечена";
-    public string BendingHint => Saved is null ? "Гибка: спецификация ещё не загружена" : Saved.Parameters.HasBending ? "Гибка отмечена" : "Гибка не отмечена";
+    public string BendingHint => Saved is null
+        ? Project.HasPlannedBending ? "Гибка отмечена до расчёта" : "Гибка: спецификация ещё не загружена"
+        : Saved.Parameters.HasBending ? "Гибка отмечена" : "Гибка не отмечена";
+    internal void ApplyPlannedBending(CuttingProject project)
+    {
+        Project = project;
+        OnPropertyChanged(nameof(Project));
+        OnPropertyChanged(nameof(PlannedBendingAction));
+        OnPropertyChanged(nameof(BendingMark));
+        OnPropertyChanged(nameof(BendingHint));
+    }
     public string? FolderPath => remoteStorage ? null : Path.GetDirectoryName(Project.NativePath ?? Saved?.SourcePath);
     public bool HasFolder => remoteStorage ? !IsDeleted && Project.NativePath is not null : !string.IsNullOrWhiteSpace(FolderPath);
     public bool CanPublishFiles => remoteStorage && HasFolder;
@@ -180,6 +192,7 @@ public partial class WorkflowViewModel
     [ObservableProperty] private bool _isPlanning;
     [ObservableProperty] private WorkflowMachine? _planMachine;
     [ObservableProperty] private string _planThickness = "";
+    [ObservableProperty] private bool _planHasBending;
     [ObservableProperty] private bool _resultIsStale;
     [ObservableProperty] private bool _isResultExpanded;
     [ObservableProperty] private int _orderTabIndex;
@@ -193,7 +206,7 @@ public partial class WorkflowViewModel
     private Guid? _redoItem;
     private CuttingProject? _preparedProject;
     private Guid? _remotePreparationId;
-    public bool CanEditPlan => _preparedProject is null;
+    public bool CanEditPlan => _preparedProject is null && !IsBusy;
     public string PlanTitle => _redoItem is null ? "Новый проект" : "Другой вариант позиции";
     public string PlannedName => PlanMachine is null ? "" : WorkflowProjectNames.Tag(PlanMachine) + " · " + WorkflowProjectNames.Extension(PlanMachine) + " · время ЧЧММСС";
     public string ProjectsStatus => CurrentOrder is not { } order ? "" :
@@ -211,6 +224,7 @@ public partial class WorkflowViewModel
         if (CurrentOrder?.HasProjectRename == true) { Error = "Сначала завершите изменение параметров проекта."; return; }
         if (HasCurrentCardEdits) { Error = "Сохраните или отмените текущие изменения."; return; }
         _redoItem = null; PlanMachine ??= _workspace.Machines.FirstOrDefault();
+        PlanHasBending = false;
         _remotePreparationId = null;
         IsPlanning = true; OnPropertyChanged(nameof(PlanTitle)); Error = null;
     }
@@ -222,6 +236,7 @@ public partial class WorkflowViewModel
         _redoItem = row.Project.ItemId; PlanMachine = _workspace.Machines.Single(m => m.Id == row.Project.MachineId);
         _remotePreparationId = null;
         PlanThickness = row.Thickness;
+        PlanHasBending = row.Saved?.Parameters.HasBending ?? row.Project.HasPlannedBending;
         IsPlanning = true; OnPropertyChanged(nameof(PlanTitle)); Error = null;
     }
     [RelayCommand(CanExecute = nameof(CanCancelPlanning))] private void CancelPlanning()
@@ -242,14 +257,15 @@ public partial class WorkflowViewModel
                 var machine = PlanMachine ?? throw new WorkflowValidationException("Выберите станок.");
                 var thickness = SpecificationDraft.Decimal(PlanThickness, "толщину");
                 var item = _redoItem;
+                var bending = PlanHasBending;
                 if (_connection.RemoteClient is { } remote)
                     _preparedProject = await remote.PrepareProjectAsync(order.Id,
-                        new(_remotePreparationId ??= Guid.NewGuid(), order.Version, actor, machine.Id, thickness, item), CancellationToken.None);
+                        new(_remotePreparationId ??= Guid.NewGuid(), order.Version, actor, machine.Id, thickness, item, bending), CancellationToken.None);
                 else
                 {
                     var root = _workspace.ProjectRoot ?? throw new WorkflowValidationException("Выберите общую папку проектов в настройках.");
                     _preparedProject = await Task.Run(() => WorkflowProjectFiles.PrepareAsync(root, order,
-                        CustomerName(order.CustomerId), machine, thickness, item, DateTimeOffset.Now));
+                        CustomerName(order.CustomerId), machine, thickness, item, DateTimeOffset.Now, hasPlannedBending: bending));
                 }
                 OnPropertyChanged(nameof(CanEditPlan));
             }
@@ -263,6 +279,7 @@ public partial class WorkflowViewModel
             if (target.Version == CardVersion) _loadedOrderVersion = CurrentOrder!.Version;
             _preparedProject = null; _remotePreparationId = null; IsPlanning = false; OnPropertyChanged(nameof(CanEditPlan));
             RefreshOrders(); RefreshProjects(project.Id); NotifyOrder();
+            if (project.HasPlannedBending && !IsRemoteStorage) await EnsureSavedBendingFoldersAsync(CurrentOrder!, [project.Id]);
         });
     }
     [RelayCommand] private async Task SelectProjectForTotalAsync()

@@ -7,18 +7,18 @@ internal sealed record WorkflowMdbStatement(string Sql, (WorkflowMdbColumn Colum
 
 internal static class WorkflowMdbStatements
 {
-    internal static WorkflowMdbStatement Insert(WorkflowMdbRow row)
+    internal static WorkflowMdbStatement Insert(WorkflowMdbRow row, int schemaVersion = WorkflowMdbSchema.Version)
     {
-        var columns = WorkflowMdbSchema.Tables.Single(t => t.Name == row.Table).Columns;
+        var columns = WorkflowMdbSchema.Columns(row.Table, schemaVersion);
         var parameters = new List<(WorkflowMdbColumn, object?)>();
         var operands = columns.Select(c => Operand(c, row.Values[c.Name], parameters)).ToArray();
         return new($"INSERT INTO [{row.Table}] (" + string.Join(",", columns.Select(c => $"[{c.Name}]")) +
             ") VALUES (" + string.Join(",", operands) + ")", parameters.ToArray());
     }
 
-    internal static WorkflowMdbStatement? Update(WorkflowMdbRow before, WorkflowMdbRow after)
+    internal static WorkflowMdbStatement? Update(WorkflowMdbRow before, WorkflowMdbRow after, int schemaVersion = WorkflowMdbSchema.Version)
     {
-        var columns = WorkflowMdbSchema.Tables.Single(t => t.Name == after.Table).Columns.Where(c => c.Name != "id" &&
+        var columns = WorkflowMdbSchema.Columns(after.Table, schemaVersion).Where(c => c.Name != "id" &&
             !Equals(before.Values[c.Name], after.Values[c.Name])).ToArray();
         if (columns.Length == 0) return null;
         var parameters = new List<(WorkflowMdbColumn, object?)>();

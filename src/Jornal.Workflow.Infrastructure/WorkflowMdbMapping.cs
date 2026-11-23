@@ -119,6 +119,7 @@ public static class WorkflowMdbMapping
         var definition = WorkflowMdbSchema.Tables.Single(t => t.Name == row.Table); var json = new JsonObject();
         foreach (var column in definition.Columns.Where(c => c.Path is not null))
         {
+            if (column == WorkflowMdbSchema.PlannedBending && row.Values.GetValueOrDefault(column.Name) is null) continue;
             var value = row.Values[column.Name];
             JsonNode? node = value is null ? null : column.Type switch
             {

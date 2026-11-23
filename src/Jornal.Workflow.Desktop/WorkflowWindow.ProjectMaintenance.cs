@@ -26,6 +26,13 @@ public partial class WorkflowWindow
         model.SelectedProject = row; model.RedoProjectCommand.Execute(null); OnFocusProject(sender, e);
     }
 
+    private async void OnTogglePlannedBending(object? sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (Model is { CanUse: true } model && sender is Control { DataContext: WorkflowProjectRow { CanChangePlannedBending: true } row })
+            await model.SetPlannedProjectBendingAsync(row.Project.Id, !row.Project.HasPlannedBending);
+    }
+
     private void OnSelectProjectForTotal(object? sender, RoutedEventArgs e)
     {
         e.Handled = true;

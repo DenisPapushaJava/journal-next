@@ -323,8 +323,8 @@
                 <ui:JournalButton Label="Выбрать папку хранения…" Click="OnProjectStorageSettings" IsVisible="{Binding NeedsProjectRoot}" Margin="8,0,0,4" />
               </WrapPanel>
               <Border x:Name="WorkflowProjectPlan" Grid.Row="2" Classes="panel" Padding="12" IsVisible="{Binding IsPlanning}">
-                <Grid RowDefinitions="Auto,8,Auto,4,Auto" ColumnDefinitions="280,12,100,16,Auto,8,Auto,*">
-                  <Grid Grid.ColumnSpan="7" ColumnDefinitions="Auto,12,*">
+                <Grid RowDefinitions="Auto,8,Auto,4,Auto" ColumnDefinitions="244,12,100,16,Auto,16,Auto,8,Auto,*">
+                  <Grid Grid.ColumnSpan="9" ColumnDefinitions="Auto,12,*">
                     <TextBlock Text="{Binding PlanTitle}" FontWeight="SemiBold" />
                     <TextBlock Grid.Column="2" Text="{Binding PlannedName}" Classes="muted" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding PlannedName}" />
                   </Grid>
@@ -333,8 +333,11 @@
                     <ComboBox.ItemTemplate><DataTemplate x:DataType="core:WorkflowMachine"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
                   </ComboBox>
                   <ui:EntrySuggestionComboBox Classes="tabular" x:Name="WorkflowProjectThickness" Grid.Row="4" Grid.Column="2" Value="{Binding PlanThickness}" Suggestions="{Binding PlanThicknessSuggestions}" HorizontalAlignment="Stretch" IsEnabled="{Binding CanEditPlan}" AutomationProperties.Name="Толщина проекта, мм" />
-                  <ui:JournalButton x:Name="CreateWorkflowProject" Grid.Row="4" Grid.Column="4" Label="Создать проект" Classes="primary" Command="{Binding CreateProjectCommand}" ToolTip.Tip="{Binding CreateProjectHint}" ToolTip.ShowOnDisabled="True" />
-                  <ui:JournalButton x:Name="CancelWorkflowProjectPlan" Grid.Row="4" Grid.Column="6" Label="Отмена" Command="{Binding CancelPlanningCommand}" ToolTip.Tip="{Binding CancelPlanningHint}" ToolTip.ShowOnDisabled="True" />
+                  <CheckBox x:Name="WorkflowProjectPlanBending" Grid.Row="4" Grid.Column="4" Content="Гибка"
+                            IsChecked="{Binding PlanHasBending, Mode=TwoWay}" IsEnabled="{Binding CanEditPlan}"
+                            VerticalAlignment="Center" ToolTip.Tip="Создать папку ГИБКА рядом с заготовкой" />
+                  <ui:JournalButton x:Name="CreateWorkflowProject" Grid.Row="4" Grid.Column="6" Label="Создать проект" Classes="primary" Command="{Binding CreateProjectCommand}" ToolTip.Tip="{Binding CreateProjectHint}" ToolTip.ShowOnDisabled="True" />
+                  <ui:JournalButton x:Name="CancelWorkflowProjectPlan" Grid.Row="4" Grid.Column="8" Label="Отмена" Command="{Binding CancelPlanningCommand}" ToolTip.Tip="{Binding CancelPlanningHint}" ToolTip.ShowOnDisabled="True" />
                 </Grid>
               </Border>
               <Grid x:Name="WorkflowProjectWorkspace" Grid.Row="4">
@@ -439,6 +442,7 @@
                         <Button.Flyout>
                           <MenuFlyout Opened="OnProjectActionsOpened">
                             <MenuItem Header="{Binding EditCaption}" IsEnabled="{Binding CanEdit}" IsVisible="{Binding IsActive}" Click="OnEditProject" />
+                            <MenuItem Header="{Binding PlannedBendingAction}" IsVisible="{Binding CanChangePlannedBending}" Click="OnTogglePlannedBending" />
                             <MenuItem Header="Создать другой вариант…" IsVisible="{Binding IsActive}" IsEnabled="{Binding CanCreateVariant}" Click="OnRedoProject" />
                             <MenuItem Header="Отправить изменённые файлы…" IsVisible="{Binding CanPublishFiles}" Click="OnPublishOfficeProject" />
                             <MenuItem Header="Использовать в итоге" IsVisible="{Binding CanChooseForTotal}" Click="OnSelectProjectForTotal" />

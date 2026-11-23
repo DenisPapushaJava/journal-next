@@ -11,11 +11,12 @@ public static class WorkflowProjectFiles
 
     public static Task<CuttingProject> PrepareAsync(string root, WorkflowOrder order, string customer,
         WorkflowMachine machine, decimal thickness, Guid? itemId,
-        DateTimeOffset now, CancellationToken token = default) =>
-        PrepareAsync(root, order, customer, machine, thickness, itemId, now, Guid.NewGuid(), null, token);
+        DateTimeOffset now, CancellationToken token = default, bool hasPlannedBending = false) =>
+        PrepareAsync(root, order, customer, machine, thickness, itemId, now, Guid.NewGuid(), null, hasPlannedBending, token);
 
     public static async Task<CuttingProject> PrepareRemoteAsync(string root, WorkflowOrder order, string customer,
-        WorkflowMachine machine, decimal thickness, Guid? itemId, Guid projectId, DateTimeOffset now, CancellationToken token)
+        WorkflowMachine machine, decimal thickness, Guid? itemId, Guid projectId, DateTimeOffset now, CancellationToken token,
+        bool hasPlannedBending = false)
     {
         if (projectId == Guid.Empty) throw new WorkflowValidationException("Сначала откройте добавление проекта.");
         await RemotePreparation.WaitAsync(token);
@@ -23,25 +24,31 @@ public static class WorkflowProjectFiles
         {
             var receipt = Path.Combine(root, ".workflow-names", "remote-" + projectId.ToString("N") + ".json");
             ShopFileSystem.RequireOrdinaryPath(receipt);
+            CuttingProject project;
             if (!File.Exists(receipt))
-                return await PrepareAsync(root, order, customer, machine, thickness, itemId, now, projectId, receipt, token);
-
-            RemotePreparationReceipt? previous;
-            await using (var input = File.OpenRead(receipt))
-                previous = await JsonSerializer.DeserializeAsync<RemotePreparationReceipt>(input, cancellationToken: token);
-            if (previous is not { Project: { NativePath: { } native } project } || previous.OrderId != order.Id ||
-                project.Id != projectId || project.MachineId != machine.Id || project.ThicknessMm != thickness ||
-                itemId is { } item && project.ItemId != item || WorkflowOfficeProjectPaths.InRoot(root, native) is null)
-                throw new WorkflowValidationException("Заготовка уже подготовлена с другими параметрами. Проверьте выбранный проект.");
-            ShopFileSystem.RequireOrdinaryPath(native);
-            if (!File.Exists(native)) CreateBlank(native);
+                project = await PrepareAsync(root, order, customer, machine, thickness, itemId, now, projectId, receipt, hasPlannedBending, token);
+            else
+            {
+                RemotePreparationReceipt? previous;
+                await using (var input = File.OpenRead(receipt))
+                    previous = await JsonSerializer.DeserializeAsync<RemotePreparationReceipt>(input, cancellationToken: token);
+                if (previous is not { Project: { NativePath: { } native } prepared } || previous.OrderId != order.Id ||
+                    prepared.Id != projectId || prepared.MachineId != machine.Id || prepared.ThicknessMm != thickness ||
+                    itemId is { } item && prepared.ItemId != item || WorkflowOfficeProjectPaths.InRoot(root, native) is null)
+                    throw new WorkflowValidationException("Заготовка уже подготовлена с другими параметрами. Проверьте выбранный проект.");
+                ShopFileSystem.RequireOrdinaryPath(native);
+                if (!File.Exists(native)) CreateBlank(native);
+                project = prepared with { HasPlannedBending = hasPlannedBending };
+            }
+            if (project.HasPlannedBending) await WorkflowBendingFiles.EnsureAsync(project, token);
             return project;
         }
         finally { RemotePreparation.Release(); }
     }
 
     private static async Task<CuttingProject> PrepareAsync(string root, WorkflowOrder order, string customer,
-        WorkflowMachine machine, decimal thickness, Guid? itemId, DateTimeOffset now, Guid id, string? remoteReceipt, CancellationToken token)
+        WorkflowMachine machine, decimal thickness, Guid? itemId, DateTimeOffset now, Guid id, string? remoteReceipt,
+        bool hasPlannedBending, CancellationToken token)
     {
         if (order.IsDeleted) throw new WorkflowValidationException("Заявка находится в корзине. Восстановите её перед подготовкой проекта.");
         if (order.HasProjectRename) throw new WorkflowValidationException("Сначала завершите изменение параметров проекта.");
@@ -76,7 +83,8 @@ public static class WorkflowProjectFiles
                 await using (var writer = new StreamWriter(lease, leaveOpen: true))
                 { await writer.WriteAsync((id + "\n" + native).AsMemory(), token); await writer.FlushAsync(token); }
                 lease.Flush(true);
-                var project = new CuttingProject(id, item, variant, machine.Id, thickness, name, native, machine.ImportProfile, allocated);
+                var project = new CuttingProject(id, item, variant, machine.Id, thickness, name, native, machine.ImportProfile, allocated)
+                { HasPlannedBending = hasPlannedBending };
                 if (remoteReceipt is not null)
                 {
                     ShopFileSystem.RequireOrdinaryPath(native);
