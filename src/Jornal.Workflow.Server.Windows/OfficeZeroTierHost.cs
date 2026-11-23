@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Text.Json;
+using Jornal.Workflow.Infrastructure;
 
 namespace Jornal.Workflow.Server.Windows;
 

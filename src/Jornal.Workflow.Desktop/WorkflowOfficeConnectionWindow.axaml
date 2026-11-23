@@ -3,18 +3,24 @@
         Title="Подключиться к серверу" Width="560" MinWidth="440" SizeToContent="Height" CanResize="False"
         Background="{DynamicResource JournalBackground}" WindowStartupLocation="CenterOwner">
   <StackPanel Margin="20" Spacing="8">
-    <TextBlock Text="MDB и папка проектов берутся из настроек сервера." TextWrapping="Wrap" />
+    <TextBlock Text="Возьмите данные из панели «Сервер заявок» на рабочем компьютере." TextWrapping="Wrap" Classes="muted" />
     <StackPanel x:Name="ConnectionFields" Spacing="5">
       <Label Content="Адрес сервера" Target="{Binding #ServerAddress}" Padding="0" />
-      <TextBox x:Name="ServerAddress" PlaceholderText="Адрес из панели сервера" MaxLength="160" />
+      <TextBox x:Name="ServerAddress" PlaceholderText="Кнопка «Копировать адрес»" MaxLength="160" />
+      <StackPanel x:Name="NetworkFields" Spacing="5">
+        <Label Content="ID офисной сети ZeroTier" Target="{Binding #NetworkId}" Padding="0" />
+        <TextBox x:Name="NetworkId" PlaceholderText="Поле Network ID в панели сервера" MaxLength="16" />
+      </StackPanel>
       <Label Content="Ключ администратора" Target="{Binding #AdministratorKey}" Padding="0" />
       <TextBox x:Name="AdministratorKey" PasswordChar="●" MaxLength="128" />
     </StackPanel>
+    <TextBlock x:Name="ConnectionStatus" TextWrapping="Wrap" IsVisible="False" AutomationProperties.LiveSetting="Polite" />
+    <ui:JournalButton x:Name="CopyDeviceId" Label="Скопировать ID устройства" IsVisible="False" HorizontalAlignment="Left" Click="OnCopyDeviceId" />
     <TextBlock x:Name="ConnectionError" TextWrapping="Wrap" IsVisible="False" AutomationProperties.LiveSetting="Polite"
                Foreground="{DynamicResource JournalDangerForeground}" />
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
       <ui:JournalButton x:Name="CancelOfficeConnection" Label="Отмена" IsCancel="True" Click="OnCancel" />
-      <ui:JournalButton x:Name="ConnectOffice" Label="Подключить и сохранить" Classes="primary" IsDefault="True" Click="OnConnect" />
+      <ui:JournalButton x:Name="ConnectOffice" Label="Подключиться" Classes="primary" IsDefault="True" Click="OnConnect" />
     </StackPanel>
   </StackPanel>
 </Window>

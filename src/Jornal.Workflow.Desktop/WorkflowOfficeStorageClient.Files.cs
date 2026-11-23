@@ -15,7 +15,7 @@ internal sealed partial class WorkflowOfficeStorageClient
 {
     private const string SnapshotName = ".office-copy.json";
     private const string CopyOwnerName = ".office-copy-owner";
-    private static readonly HttpClient FileTransport = WorkflowOfficePreviewClient.CreateTransport(TimeSpan.FromMinutes(5));
+    private static readonly HttpClient FileTransport = WorkflowOfficeTransport.CreateClient(TimeSpan.FromMinutes(5));
     private readonly SemaphoreSlim _files = new(1, 1);
     private sealed record ProjectFile(string Path, long Length, string Sha256);
     private sealed record ProjectManifest(string[] Directories, ProjectFile[] Files, string[]? UnavailableFiles = null);

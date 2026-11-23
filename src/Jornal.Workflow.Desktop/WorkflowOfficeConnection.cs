@@ -17,7 +17,7 @@ internal sealed record WorkflowOfficeConnection(string Address, string Token)
         var connection = stream.Length <= 2048 ? JsonSerializer.Deserialize<WorkflowOfficeConnection>(stream) : null;
         if (connection is null || !(IsSessionToken(connection.Token) || IsStorageToken(connection.Token)))
             throw new InvalidDataException("Локальный файл удалённого подключения повреждён.");
-        WorkflowOfficePreviewClient.RequireServer(connection.Address);
+        WorkflowOfficeTransport.RequireServer(connection.Address);
         return connection;
     }
 
