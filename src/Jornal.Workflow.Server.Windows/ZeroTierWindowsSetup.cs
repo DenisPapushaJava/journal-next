@@ -1,39 +1,18 @@
 using System.Globalization;
-using System.Net;
-using System.Security.Cryptography;
+using Jornal.Workflow.Infrastructure;
 
 namespace Jornal.Workflow.Server.Windows;
 
 internal static class ZeroTierWindowsSetup
 {
-    private const string InstallerUrl = "https://download.zerotier.com/RELEASES/1.16.2/dist/ZeroTierOne.msi";
-
-    // ZeroTier.ZeroTierOne 1.16.2 in the Windows Package Manager catalog.
-    internal const string InstallerSha256 = "42514072B0FE44B8F66E0395BCD23A0B1D1642C28ED00831F1527B2F41B14670";
     internal static string RuleMarker => Path.Combine(OfficeInstallation.DirectoryPath, "firewall-rule.managed");
 
-    public static bool ClientInstalled => File.Exists(Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "ZeroTier", "One", "zerotier-one_x64.exe"));
+    public static bool ClientInstalled => ZeroTierWindowsInstaller.IsInstalled;
 
     public static async Task InstallClientAsync()
     {
-        if (ClientInstalled) return;
-        using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(45) };
-        client.MaxResponseContentBufferSize = 20 * 1024 * 1024;
-        var bytes = await client.GetByteArrayAsync(InstallerUrl);
-        if (Convert.ToHexString(SHA256.HashData(bytes)) != InstallerSha256)
-            throw new InvalidDataException("Не удалось подтвердить целостность установщика ZeroTier. Скачайте его с сайта ZeroTier.");
-        var directory = Directory.CreateTempSubdirectory("journal-zerotier-");
-        var path = Path.Combine(directory.FullName, "ZeroTierOne.msi");
-        try
-        {
-            await File.WriteAllBytesAsync(path, bytes);
-            var result = await OfficeInstallation.RunElevatedAsync("msiexec.exe", "/i", path, "/passive", "/norestart");
-            if (result == 3010)
-                throw new InvalidOperationException("ZeroTier установлен. Перезагрузите Windows и снова откройте «Сервер заявок».");
-            if (result != 0) throw new InvalidOperationException($"Установка ZeroTier завершилась с кодом {result}.");
-        }
-        finally { directory.Delete(recursive: true); }
+        if (await ZeroTierWindowsInstaller.InstallAsync())
+            throw new InvalidOperationException("ZeroTier установлен. Перезагрузите Windows и снова откройте «Сервер заявок».");
     }
 
     public static async Task AllowApiAsync(ZeroTierBinding binding, int port)
@@ -73,13 +52,5 @@ internal static class ZeroTierWindowsSetup
         .Replace("*", "`*", StringComparison.Ordinal).Replace("?", "`?", StringComparison.Ordinal);
 
     internal static string Subnet(ZeroTierBinding binding) =>
-        new IPNetwork(IPNetworkMask(binding.Address, binding.PrefixLength), binding.PrefixLength).ToString();
-
-    private static IPAddress IPNetworkMask(IPAddress address, int prefixLength)
-    {
-        var bytes = address.GetAddressBytes();
-        for (var i = 0; i < bytes.Length; i++)
-            bytes[i] &= (byte)(0xff << (8 - Math.Clamp(prefixLength - i * 8, 0, 8)));
-        return new(bytes);
-    }
+        ZeroTierClient.GetSubnet(binding.Address, binding.PrefixLength).ToString();
 }

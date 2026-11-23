@@ -23,8 +23,9 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     private HsvColor _spectrum = new(Color.FromUInt32(0xFF628DB2));
     public string WorkspacePath => Journal.WorkspacePath;
     public bool IsRemoteStorage => Journal.IsRemoteStorage;
-    public bool CanUseSavedOfficeStorage => !IsRemoteStorage && Journal.SavedOfficeAddress is not null;
-    public string OfficeConnectionLabel => Journal.SavedOfficeAddress is null ? "Подключиться к серверу…" : "Настроить сервер…";
+    public bool CanUseSavedOfficeStorage => !IsRemoteStorage && Journal.HasVerifiedOfficeStorage;
+    public string OfficeConnectionLabel => Journal.SavedOfficeAddress is null ? "Подключиться к серверу…" : "Настроить подключение…";
+    public string StorageSourceTitle => IsRemoteStorage ? "Сервер заявок" : "База данных заявок";
     public string DatabaseDescription => Journal.DatabaseDescription;
     public bool CanChooseDatabase => CanEdit && Journal.CanConnectDatabase;
     public string DatabasePlatformHint => Journal.CanConnectDatabase ? "Создание новой базы не переносит тестовые заявки прототипа. Прежняя MDB подходит только для импорта цен." :
@@ -180,18 +181,21 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
         }
         finally { IsBusy = false; }
     }
-    internal Task<string?> ConnectOfficeStorageAsync(string? address, string? key, CancellationToken token) =>
-        SwitchOfficeStorageAsync(() => Journal.ConnectOfficeStorageAsync(address, key, token));
+    internal Task<string?> ConnectOfficeStorageAsync(string? address, string? key, WorkflowOfficeRoute? route,
+        CancellationToken token, Action? beginCommit = null) =>
+        SwitchOfficeStorageAsync(() => Journal.ConnectOfficeStorageAsync(address, key, route, token, beginCommit));
 
     internal Task<string?> UseSavedOfficeStorageAsync(CancellationToken token) => Journal.SavedOfficeAddress is { } address
-        ? ConnectOfficeStorageAsync(address, null, token) : Task.FromResult<string?>(null);
+        ? ConnectOfficeStorageAsync(address, null, null, token) : Task.FromResult<string?>(null);
 
     internal Task<string?> ReturnToLocalStorageAsync() => SwitchOfficeStorageAsync(() => Journal.ReturnToLocalStorageAsync(CancellationToken.None));
 
+    internal string? OfficeStorageSwitchProblem() => !CanEdit ? "Дождитесь завершения операции." :
+        HasChanges ? "Сохраните изменения настроек перед сменой базы." : Journal.StorageSwitchProblem();
+
     private async Task<string?> SwitchOfficeStorageAsync(Func<Task<string?>> change)
     {
-        if (!CanEdit) return "Дождитесь завершения операции.";
-        if (HasChanges) return Error = "Сохраните изменения настроек перед сменой базы.";
+        if (OfficeStorageSwitchProblem() is { } problem) return Error = problem;
         IsBusy = true; Error = null; Status = null;
         try
         {
@@ -210,6 +214,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     {
         ReloadRoot(); ReloadProfile(); ReloadOfficeCopiesRoot();
         OnPropertyChanged(nameof(WorkspacePath)); OnPropertyChanged(nameof(DatabaseDescription)); OnPropertyChanged(nameof(IsRemoteStorage));
+        OnPropertyChanged(nameof(StorageSourceTitle));
         OnPropertyChanged(nameof(CanUseSavedOfficeStorage)); OnPropertyChanged(nameof(OfficeConnectionLabel)); Changed();
     }
     private void OnUpdatesChanged(object? sender, PropertyChangedEventArgs e)

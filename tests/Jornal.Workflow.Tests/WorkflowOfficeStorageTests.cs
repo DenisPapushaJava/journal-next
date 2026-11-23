@@ -14,6 +14,116 @@ public sealed class WorkflowOfficeStorageTests
     private const string StorageToken = "storage.example";
 
     [Fact]
+    public async Task StoredConnectionRequiresTheVerifiedInterfaceAfterRestart()
+    {
+        using var fixture = new ProjectFixture();
+        var id = Guid.NewGuid();
+        var legacy = new WorkflowOfficeStorageSettings(Address, id, Guid.NewGuid(), true);
+        var route = new WorkflowOfficeRoute(IPAddress.Parse("10.0.0.3"), "Office", "office-adapter");
+        new WorkflowOfficeConnection(Address, StorageToken).Save(legacy.CredentialPath(fixture.DirectoryPath));
+        Assert.Throws<WorkflowValidationException>(() => WorkflowOfficeStorageClient.Open(legacy, fixture.DirectoryPath));
+        var verified = WorkflowOfficeStorageClient.Open(legacy, fixture.DirectoryPath, route).Settings;
+        var preferences = new WorkflowPreferencesStore(Path.Combine(fixture.DirectoryPath, "route-preferences.json"));
+        preferences.Save(new() { OfficeStorage = verified, UseOfficeStorage = true });
+        var restored = preferences.Load().ActiveOfficeStorage!;
+        Assert.Throws<WorkflowValidationException>(() => WorkflowOfficeStorageClient.Open(restored, fixture.DirectoryPath,
+            route with { InterfaceId = "other-adapter" }));
+        using var http = new HttpClient(new Handler((message, _) =>
+        {
+            Assert.Equal(StorageToken, message.Headers.Authorization?.Parameter);
+            Assert.True(message.Options.TryGetValue(WorkflowOfficeTransport.ExpectedRoute, out var pin));
+            Assert.True(pin.Matches(route with { Address = IPAddress.Parse("10.0.0.4") }));
+            Assert.False(pin.Matches(route with { InterfaceId = "other-adapter" }));
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = JsonContent.Create(new WorkflowAccessResponse(1, DatabaseId: id, Orders: [])) });
+        }));
+        var client = WorkflowOfficeStorageClient.Open(restored, fixture.DirectoryPath, storageClient: http);
+        await client.SendAsync(new(1, WorkflowAccessOperation.Read, ""), TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FailedConnectionRequiresRefreshOnlyIfAConnectionWasAlreadyOpened(bool opened)
+    {
+        using var fixture = new ProjectFixture();
+        var id = Guid.NewGuid();
+        var preferences = new WorkflowPreferencesStore(Path.Combine(fixture.DirectoryPath, "switch-preferences.json"));
+        var remote = new WorkflowOfficeStorageSettings(Address, id, Guid.NewGuid(), true) { ZeroTierInterfaceId = "office-adapter" };
+        var saved = new WorkflowPreferences { OfficeStorage = remote, UseOfficeStorage = true };
+        preferences.Save(saved);
+        using var http = new HttpClient(new Handler(async (message, token) =>
+        {
+            var request = (await message.Content!.ReadFromJsonAsync<WorkflowAccessRequest>(token))!;
+            if (request.Operation == WorkflowAccessOperation.Apply)
+            {
+                if (opened) message.Options.Set(WorkflowOfficeTransport.ConnectedRoute, new(null, null, "office-adapter"));
+                throw new HttpRequestException("Connection failed", new WorkflowOfficeConnectException("Проверьте адаптер", true));
+            }
+            return new(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new WorkflowAccessResponse(1, id, Catalog: WorkflowCatalog.From(WorkflowWorkspace.Empty),
+                    Orders: [], PageIds: []))
+            };
+        }));
+        var client = new WorkflowOfficeStorageClient(remote, StorageToken, fixture.DirectoryPath, http);
+        var store = client.CreateStore();
+        var cancellation = TestContext.Current.CancellationToken;
+        await store.ReadAsync(cancellation);
+        var model = new WorkflowViewModel(store, new(new WorkflowAppUpdater()), preferences: preferences, initialPreferences: saved,
+            remoteTransport: client);
+        try
+        {
+            Task SaveAsync() => store.SaveEmployeeProfileAsync(null, "Сотрудник", 0xFF123456, cancellation);
+            if (opened) await Assert.ThrowsAsync<WorkflowOutcomeUnknownException>(SaveAsync);
+            else Assert.Equal("Проверьте адаптер", (await Assert.ThrowsAsync<WorkflowValidationException>(SaveAsync)).Message);
+
+            Assert.Equal(opened, store.RequiresRefresh);
+            var error = await model.ReturnToLocalStorageAsync(cancellation);
+            if (opened) Assert.Contains("F5", error);
+            else Assert.Null(error);
+            Assert.Equal(opened, model.IsRemoteStorage);
+        }
+        finally { model.Detach(); }
+    }
+
+    [Fact]
+    public async Task CancellingTheInitialReadLeavesTheLocalSourceAndDoesNotCommit()
+    {
+        using var fixture = new ProjectFixture();
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var preferences = new WorkflowPreferencesStore(Path.Combine(fixture.DirectoryPath, "switch-preferences.json"));
+        var local = new MemoryMdb();
+        var localPath = Path.Combine(fixture.DirectoryPath, "local.mdb");
+        var saved = new WorkflowPreferences { DatabasePath = localPath, DatabaseId = local.Id };
+        preferences.Save(saved);
+        var model = new WorkflowViewModel(new WorkflowMdbStore(localPath, local, local.Id), new(new WorkflowAppUpdater()),
+            preferences: preferences, databases: local);
+        var read = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var http = new HttpClient(new Handler(async (_, token) =>
+        {
+            read.SetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            return new(HttpStatusCode.OK);
+        }));
+        var remote = new WorkflowOfficeStorageSettings(Address, Guid.NewGuid(), Guid.NewGuid(), true) { ZeroTierInterfaceId = "office-adapter" };
+        var client = new WorkflowOfficeStorageClient(remote, StorageToken, fixture.DirectoryPath, http);
+        try
+        {
+            var switching = model.SwitchStorageAsync(() => Task.FromResult(new WorkflowConnection(client.CreateStore(),
+                Office: remote, RemoteClient: client)), cancel.Token, () => throw new InvalidOperationException("Unexpected commit"));
+            await read.Task.WaitAsync(TestContext.Current.CancellationToken);
+            cancel.Cancel();
+            Assert.NotNull(await switching);
+            Assert.Equal(saved, preferences.Load());
+            Assert.Equal(local.Id, model.DatabaseId);
+            Assert.False(model.IsRemoteStorage);
+            Assert.False(File.Exists(remote.CredentialPath(fixture.DirectoryPath)));
+        }
+        finally { model.Detach(); }
+    }
+
+    [Fact]
     public async Task ReportManifestKeepsReadableReportsWhenNeighborIsLocked()
     {
         using var fixture = new ProjectFixture();
@@ -138,7 +248,7 @@ public sealed class WorkflowOfficeStorageTests
             Assert.Equal(remote.Id, request.DatabaseId);
             return new(HttpStatusCode.OK) { Content = JsonContent.Create(await remote.SendAsync(request, cancellation)) };
         }));
-        var settings = new WorkflowOfficeStorageSettings(Address, remote.Id, Guid.NewGuid(), true);
+        var settings = new WorkflowOfficeStorageSettings(Address, remote.Id, Guid.NewGuid(), true) { ZeroTierInterfaceId = "test-interface" };
         var office = new WorkflowOfficeStorageClient(settings, StorageToken, fixture.DirectoryPath, http);
         var token = TestContext.Current.CancellationToken;
         try
@@ -184,7 +294,7 @@ public sealed class WorkflowOfficeStorageTests
             Assert.Equal(copies, preferences.Load().OfficeCopiesRoot);
             using var localSettings = model.CreateGeneralSettings();
             Assert.True(localSettings.CanUseSavedOfficeStorage);
-            Assert.Equal("Настроить сервер…", localSettings.OfficeConnectionLabel);
+            Assert.Equal("Настроить подключение…", localSettings.OfficeConnectionLabel);
         }
         finally { model.Detach(); }
     }

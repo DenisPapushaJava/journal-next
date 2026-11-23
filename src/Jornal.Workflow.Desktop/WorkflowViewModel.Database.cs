@@ -15,12 +15,23 @@ public partial class WorkflowViewModel
     public string WorkspacePath => _connection.Office?.Address ?? _store.FilePath;
     public Guid? DatabaseId => _store.DatabaseId ?? _connection.Office?.DatabaseId;
     public bool IsRemoteStorage => _connection.Office is not null;
-    internal string? SavedOfficeAddress => _localPreferences.OfficeStorage?.Address;
+    internal WorkflowOfficeStorageSettings? SavedOfficeStorage => _localPreferences.OfficeStorage;
+    internal string? SavedOfficeAddress => SavedOfficeStorage?.Address;
+    internal bool HasVerifiedOfficeStorage => !string.IsNullOrWhiteSpace(SavedOfficeStorage?.ZeroTierInterfaceId);
+    internal WorkflowOfficeSetupDraft? SavedOfficeSetup => _localPreferences.OfficeSetup;
+
+    internal async Task RememberOfficeSetupAsync(WorkflowOfficeSetupDraft draft, CancellationToken token)
+    {
+        if (_localPreferences.OfficeSetup == draft) return;
+        var saved = await Task.Run(() => _preferences.Update(current => current.OfficeSetup == draft ? current :
+            current with { OfficeSetup = draft }), token);
+        _localPreferences = _localPreferences with { OfficeSetup = saved.OfficeSetup };
+    }
     internal string? OfficeCopiesRoot => _localPreferences.OfficeCopiesRoot;
     public bool IsMdb => _store is WorkflowMdbStore && !IsRemoteStorage;
     public bool CanConnectDatabase => _databases.IsAvailable && CanUse;
     public bool RequiresDatabaseRefresh => _store is WorkflowMdbStore { RequiresRefresh: true };
-    public string DatabaseDescription => IsRemoteStorage ? "MDB и папка проектов подключены через «Сервер заявок»." :
+    public string DatabaseDescription => IsRemoteStorage ? "База данных и общая папка проектов задаются на сервере." :
         IsMdb ? $"Общая база программы «{WorkflowIdentity.Name}». Другие компьютеры подключаются к этому же файлу MDB." :
         $"Локальные данные прототипа. На Windows можно создать общую MDB или подключить существующую базу программы «{WorkflowIdentity.Name}».";
     public bool HasMoreOrders => !RequiresDatabaseRefresh && _store is IWorkflowQueryStore { HasMore: true };
@@ -175,16 +186,22 @@ public partial class WorkflowViewModel
         return await SwitchStorageAsync(async () => new(await _databases.OpenAsync(path, create, token)), token);
     }
 
-    internal Task<string?> ConnectOfficeStorageAsync(string? address, string? key, CancellationToken token) =>
-        SwitchStorageAsync(async () =>
+    internal async Task<string?> ConnectOfficeStorageAsync(string? address, string? key, WorkflowOfficeRoute? route,
+        CancellationToken token, Action? beginCommit = null)
+    {
+        var error = await SwitchStorageAsync(async () =>
         {
             var existing = _preferences.Load().OfficeStorage;
             var office = string.IsNullOrWhiteSpace(key) && existing is not null &&
-                WorkflowOfficePreviewClient.RequireServer(address).AbsoluteUri == existing.Address
-                    ? WorkflowOfficeStorageClient.Open(existing, _preferences.DirectoryPath)
-                    : await WorkflowOfficeStorageClient.ConnectAsync(address, key, _preferences.DirectoryPath, token);
+                WorkflowOfficeTransport.RequireServer(address).AbsoluteUri == existing.Address
+                    ? WorkflowOfficeStorageClient.Open(existing, _preferences.DirectoryPath, route)
+                    : await WorkflowOfficeStorageClient.ConnectAsync(address, key, _preferences.DirectoryPath,
+                        route ?? throw new WorkflowValidationException("Проверьте подключение к серверу заново."), token);
             return new(office.CreateStore(), Office: office.Settings, RemoteClient: office);
-        }, token);
+        }, token, beginCommit);
+        if (error is not null) token.ThrowIfCancellationRequested();
+        return error;
+    }
 
     internal Task<string?> ReturnToLocalStorageAsync(CancellationToken token) => SwitchStorageAsync(() =>
     {
@@ -195,11 +212,14 @@ public partial class WorkflowViewModel
         return Task.FromResult(new WorkflowConnection(local));
     }, token);
 
-    internal async Task<string?> SwitchStorageAsync(Func<Task<WorkflowConnection>> open, CancellationToken token)
+    internal string? StorageSwitchProblem() => !CanUse ? "Дождитесь завершения текущей операции." :
+        HasPendingEdits ? "Сохраните или отмените черновики перед сменой базы данных." :
+        RequiresDatabaseRefresh ? "Сначала обновите журнал (F5) и проверьте исход предыдущей записи." : null;
+
+    internal async Task<string?> SwitchStorageAsync(Func<Task<WorkflowConnection>> open, CancellationToken token,
+        Action? beginCommit = null)
     {
-        if (!CanUse) return "Дождитесь завершения текущей операции.";
-        if (HasPendingEdits) return "Сохраните или отмените черновики перед сменой базы данных.";
-        if (RequiresDatabaseRefresh) return "Сначала обновите журнал (F5) и проверьте исход предыдущей записи.";
+        if (StorageSwitchProblem() is { } problem) return problem;
         CancelDatabaseSearch(); var switched = false;
         await RunAsync(async () =>
         {
@@ -214,6 +234,7 @@ public partial class WorkflowViewModel
             var workspace = await candidate.ReadAsync(token);
             key = candidate.DatabaseId?.ToString("N") ?? "local";
             token.ThrowIfCancellationRequested();
+            beginCommit?.Invoke();
             var saved = await Task.Run(() => _preferences.Update(current =>
             {
                 if (!previousConnection.Matches(current) && !candidateConnection.Matches(current))

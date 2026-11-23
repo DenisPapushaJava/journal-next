@@ -1,21 +1,230 @@
 using Avalonia;
+using System.Net;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Logging;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 using Jornal.Desktop.Controls;
 using Avalonia.Threading;
 using Jornal.Workflow.Desktop;
+using Jornal.Workflow.Infrastructure;
 using Xunit;
 
 namespace Jornal.Workflow.Tests;
 
 public sealed class WorkflowSettingsWindowTests
 {
+    [AvaloniaFact]
+    public void ConnectionChecksExistingEditsBeforeSavingOrPreparingTheNetwork()
+    {
+        const string problem = "Сохраните изменения настроек перед сменой базы.";
+        using var fixture = new ProjectFixture();
+        using var settings = fixture.Model.CreateGeneralSettings();
+        settings.ProjectRoot = Path.Combine(fixture.DirectoryPath, "unsaved");
+        var remembered = 0;
+        var window = new WorkflowOfficeConnectionWindow(null, null, settings.OfficeStorageSwitchProblem,
+            (_, _) => { remembered++; return Task.CompletedTask; }, (_, _, _, _, _) => throw new InvalidOperationException());
+        try
+        {
+            window.Show();
+            window.FindControl<TextBox>("ServerAddress")!.Text = "http://10.0.0.2:60913/";
+            window.FindControl<TextBox>("AdministratorKey")!.Text = new('A', 64);
+            Dispatcher.UIThread.RunJobs();
+            Click(window, "ConnectOffice");
+            Assert.Equal(problem, window.FindControl<TextBlock>("ConnectionError")!.Text);
+            Assert.Equal(0, remembered);
+            Assert.True(settings.HasChanges);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void OfficeConnectionShowsNetworkIdAndRestoresItFromAnOlderLinuxDraft()
+    {
+        const string id = "0123456789abcdef";
+        var draft = new WorkflowOfficeSetupDraft("http://10.0.0.2:60913/", null) { LinuxInterfaceName = id };
+        var window = new WorkflowOfficeConnectionWindow(null, draft, () => null, (_, _) => Task.CompletedTask,
+            (_, _, _, _, _) => throw new InvalidOperationException());
+        try
+        {
+            window.Show();
+            var network = window.FindControl<TextBox>("NetworkId")!;
+            Assert.True(network.IsEffectivelyVisible);
+            Assert.Equal(id, network.Text);
+            Assert.Contains("Network ID", network.PlaceholderText);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaTheory]
+    [InlineData("http://10.0.0.3:60913/", true)]
+    [InlineData("http://10.0.0.2:60914/", true)]
+    [InlineData("  http://10.0.0.2:60913  ", false)]
+    public void OfficeConnectionBindsEnteredKeyAndNetworkToTheServerAddress(string address, bool changed)
+    {
+        const string id = "0123456789abcdef";
+        var key = new string('A', 64);
+        var draft = new WorkflowOfficeSetupDraft("http://10.0.0.2:60913/", id);
+        var remembered = 0;
+        var attempted = 0;
+        var window = new WorkflowOfficeConnectionWindow(null, draft, () => null,
+            (_, _) => { remembered++; return Task.CompletedTask; },
+            (_, _, _, _, _) => { attempted++; return Task.FromResult<string?>("Simulated attempt"); });
+        try
+        {
+            window.Show();
+            var keyField = window.FindControl<TextBox>("AdministratorKey")!;
+            var networkField = window.FindControl<TextBox>("NetworkId")!;
+            keyField.Text = key;
+            window.FindControl<TextBox>("ServerAddress")!.Text = address;
+            Assert.Equal(changed ? "" : key, keyField.Text ?? "");
+            Assert.Equal(changed ? "" : id, networkField.Text ?? "");
+            if (changed)
+            {
+                Click(window, "ConnectOffice");
+                Assert.Equal(0, remembered);
+                Assert.Equal(0, attempted);
+                Assert.Contains("Ключ администратора", window.FindControl<TextBlock>("ConnectionError")!.Text);
+            }
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task InstallerDoesNotHoldTheApplicationOpen()
+    {
+        var installed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var began = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var owner = new Window();
+        var window = new WorkflowOfficeConnectionWindow(null, null, () => null, (_, _) => Task.CompletedTask,
+            (_, _, _, _, _) => throw new InvalidOperationException(), token =>
+            {
+                began.SetResult(token);
+                return installed.Task.WaitAsync(token);
+            });
+        try
+        {
+            owner.Show();
+            var modal = window.ShowDialog<bool>(owner);
+            window.FindControl<TextBox>("ServerAddress")!.Text = "http://10.0.0.2:60913/";
+            window.FindControl<TextBox>("AdministratorKey")!.Text = new('A', 64);
+            Dispatcher.UIThread.RunJobs();
+            typeof(WorkflowOfficeConnectionWindow).GetField("_next", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .SetValue(window, WorkflowOfficeSetupStep.Install);
+            window.FindControl<Button>("ConnectOffice")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var wait = await began.Task.WaitAsync(TestContext.Current.CancellationToken);
+            Assert.True(window.FindControl<Button>("CancelOfficeConnection")!.IsEnabled);
+            window.Close();
+            Assert.False(await modal.WaitAsync(TestContext.Current.CancellationToken));
+            Assert.True(wait.IsCancellationRequested);
+            Assert.False(installed.Task.IsCompleted);
+            owner.Close();
+            Assert.False(owner.IsVisible);
+        }
+        finally
+        {
+            installed.TrySetResult(false);
+            if (window.IsVisible) window.Close();
+            if (owner.IsVisible) owner.Close();
+        }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task OfficeConnectionCanBeCancelledUntilSettingsCommit(bool committing)
+    {
+        var ready = new WorkflowOfficeRoute(IPAddress.Parse("10.0.0.3"), "Office", "office-adapter");
+        var setup = new WorkflowOfficeSetup((_, _, _) => Task.FromResult(new WorkflowOfficeProbe(WorkflowOfficeHealth.Reachable, ready)),
+            (_, _) => throw new InvalidOperationException(), (_, _) => throw new InvalidOperationException(),
+            _ => throw new InvalidOperationException(), TimeSpan.Zero);
+        var pending = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var began = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var owner = new Window();
+        var saved = new WorkflowOfficeStorageSettings("http://10.0.0.2:60913/", Guid.NewGuid(), Guid.NewGuid(), true)
+            { ZeroTierInterfaceId = ready.InterfaceId };
+        var window = new WorkflowOfficeConnectionWindow(saved, null, () => null, (_, _) => Task.CompletedTask,
+            (_, _, _, token, commit) =>
+            {
+                if (committing) commit!.Invoke();
+                began.SetResult(token);
+                return pending.Task.WaitAsync(token);
+            }, setup: setup);
+        try
+        {
+            owner.Show();
+            var result = window.ShowDialog<bool>(owner);
+            Assert.False(window.FindControl<StackPanel>("NetworkFields")!.IsVisible);
+            Click(window, "ConnectOffice");
+            var cancellation = TestContext.Current.CancellationToken;
+            var read = await began.Task.WaitAsync(cancellation);
+            Assert.Equal(!committing, window.FindControl<Button>("CancelOfficeConnection")!.IsEnabled);
+            window.Close();
+            Assert.Equal(committing, window.IsVisible);
+            Assert.Equal(!committing, read.IsCancellationRequested);
+            pending.SetResult(null);
+            Assert.Equal(committing, await result.WaitAsync(cancellation));
+        }
+        finally
+        {
+            pending.TrySetResult(null);
+            if (window.IsVisible) window.Close();
+            if (owner.IsVisible) owner.Close();
+        }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task StorageShowsTheCurrentSourceAndOnlyItsFolderSettings(bool dark)
+    {
+        using var log = new BindingLog();
+        using var fixture = new ProjectFixture();
+        var remote = new WorkflowOfficeStorageSettings("http://10.0.0.2:60913/", Guid.NewGuid(), Guid.NewGuid(), true)
+            { ZeroTierInterfaceId = "office-adapter" };
+        var preferences = new WorkflowPreferencesStore(Path.Combine(fixture.DirectoryPath, "preferences.json"));
+        var saved = new WorkflowPreferences(dark) { OfficeStorage = remote, UseOfficeStorage = true };
+        preferences.Save(saved);
+        var store = new WorkflowMdbStore(Path.Combine(fixture.DirectoryPath, "office.mdb"), databaseId: remote.DatabaseId);
+        var journal = new WorkflowViewModel(store, new(new WorkflowAppUpdater()), preferences: preferences, initialPreferences: saved);
+        var model = journal.CreateGeneralSettings();
+        model.SelectedSectionIndex = 1;
+        var window = new WorkflowSettingsWindow { DataContext = model };
+        try
+        {
+            window.Show(); Dispatcher.UIThread.RunJobs();
+            Assert.Equal("Сервер заявок", window.FindControl<TextBlock>("StorageSourceTitle")!.Text);
+            Assert.Equal(remote.Address, window.FindControl<TextBox>("WorkflowWorkspacePath")!.Text);
+            Assert.Equal("Настроить подключение…", window.FindControl<JournalButton>("OpenOfficeConnection")!.Label);
+            Assert.True(Visible("ReturnToLocalStorage"));
+            Assert.True(Visible("WorkflowOfficeCopiesRoot"));
+            Assert.False(Visible("UseSavedOfficeConnection"));
+            Assert.False(Visible("ConnectWorkflowDatabase"));
+            Assert.False(Visible("CreateWorkflowDatabase"));
+            Assert.False(Visible("WorkflowProjectRoot"));
+            Assert.False(Visible("WorkflowShopRoot"));
+
+            Assert.Null(await model.ReturnToLocalStorageAsync());
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal("База данных заявок", window.FindControl<TextBlock>("StorageSourceTitle")!.Text);
+            Assert.True(Visible("UseSavedOfficeConnection"));
+            Assert.True(Visible("ConnectWorkflowDatabase"));
+            Assert.True(Visible("CreateWorkflowDatabase"));
+            Assert.True(Visible("WorkflowProjectRoot"));
+            Assert.True(Visible("WorkflowShopRoot"));
+            Assert.False(Visible("ReturnToLocalStorage"));
+            Assert.False(Visible("WorkflowOfficeCopiesRoot"));
+            Assert.True(log.Errors.Count == 0, string.Join("\n", log.Errors));
+        }
+        finally { window.Close(); journal.Detach(); }
+
+        bool Visible(string name) => window.FindControl<Control>(name)!.IsEffectivelyVisible;
+    }
+
     [AvaloniaTheory]
     [InlineData(false)] [InlineData(true)]
     public async Task EmptyEmployeeCatalogCanBeConfiguredThroughSettingsInBothThemes(bool dark)
@@ -129,18 +338,15 @@ public sealed class WorkflowSettingsWindowTests
             window.FindControl<ToggleButton>("ThemeSwitch")!.IsChecked = dark;
             model.SelectedSectionIndex = 1; Dispatcher.UIThread.RunJobs();
             var root = Path.Combine(f.DirectoryPath, "new-projects"); model.ProjectRoot = root;
-            Click(settings, "OpenOfficePreview");
-            var preview = Assert.IsType<WorkflowOfficePreviewWindow>(Assert.Single(settings.OwnedWindows));
-            Assert.Equal(settings.ActualThemeVariant, preview.ActualThemeVariant);
-            Assert.NotEqual('\0', preview.FindControl<TextBox>("OfficePreviewKey")!.PasswordChar);
-            Click(preview, "RunOfficePreview");
-            Assert.Contains("Вставьте приватный адрес", preview.FindControl<TextBlock>("OfficePreviewStatus")!.Text!);
-            preview.Close(); Dispatcher.UIThread.RunJobs();
-            Assert.True(settings.FindControl<Button>("OpenOfficePreview")!.IsFocused);
+            Assert.Null(settings.FindControl<Button>("OpenOfficePreview"));
             Click(settings, "OpenOfficeConnection");
             var remote = Assert.IsType<WorkflowOfficeConnectionWindow>(Assert.Single(settings.OwnedWindows));
             Assert.Equal(settings.ActualThemeVariant, remote.ActualThemeVariant);
             Assert.NotEqual('\0', remote.FindControl<TextBox>("AdministratorKey")!.PasswordChar);
+            Assert.True(remote.FindControl<StackPanel>("NetworkFields")!.IsVisible);
+            Assert.False(remote.FindControl<Button>("CopyDeviceId")!.IsVisible);
+            Click(remote, "ConnectOffice");
+            Assert.Contains("Вставьте приватный адрес", remote.FindControl<TextBlock>("ConnectionError")!.Text!);
             remote.Close(); Dispatcher.UIThread.RunJobs();
             Assert.True(settings.FindControl<Button>("OpenOfficeConnection")!.IsFocused);
             Assert.Equal(root, model.ProjectRoot);

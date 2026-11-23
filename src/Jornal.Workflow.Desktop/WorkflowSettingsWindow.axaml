@@ -142,14 +142,14 @@
           <StackPanel Spacing="20">
             <Border>
               <StackPanel Spacing="8">
-                <TextBlock Text="База данных заявок" FontWeight="SemiBold" FontSize="16" />
-                <TextBox x:Name="WorkflowWorkspacePath" Text="{Binding WorkspacePath}" IsReadOnly="True" AutomationProperties.Name="Текущий файл данных заявок" />
+                <TextBlock x:Name="StorageSourceTitle" Text="{Binding StorageSourceTitle}" FontWeight="SemiBold" FontSize="16" />
+                <TextBox x:Name="WorkflowWorkspacePath" Text="{Binding WorkspacePath}" IsReadOnly="True" AutomationProperties.Name="{Binding StorageSourceTitle}" />
                 <TextBlock Text="{Binding DatabaseDescription}" Classes="muted" TextWrapping="Wrap" />
-                <StackPanel Orientation="Horizontal" Spacing="8">
+                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding !IsRemoteStorage}">
                   <ui:JournalButton x:Name="ConnectWorkflowDatabase" Label="Подключить БД…" Click="OnConnectDatabase" IsEnabled="{Binding CanChooseDatabase}" />
                   <ui:JournalButton x:Name="CreateWorkflowDatabase" Label="Создать БД…" Click="OnCreateDatabase" IsEnabled="{Binding CanChooseDatabase}" />
                 </StackPanel>
-                <TextBlock Text="{Binding DatabasePlatformHint}" Classes="muted" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding DatabasePlatformHint}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding !IsRemoteStorage}" />
               </StackPanel>
             </Border>
             <Border Classes="workflow-settings-group">
@@ -159,7 +159,6 @@
                   <ui:JournalButton x:Name="UseSavedOfficeConnection" Label="Переключиться на сервер" IsVisible="{Binding CanUseSavedOfficeStorage}" Click="OnUseSavedOfficeConnection" Margin="0,0,8,0" />
                   <ui:JournalButton x:Name="ReturnToLocalStorage" Label="Вернуться к локальной базе" IsVisible="{Binding IsRemoteStorage}" Click="OnReturnToLocalStorage" Margin="0,0,8,0" />
                   <ui:JournalButton x:Name="OpenOfficeConnection" Label="{Binding OfficeConnectionLabel}" Click="OnOpenOfficeConnection" Margin="0,0,8,0" />
-                  <ui:JournalButton x:Name="OpenOfficePreview" Label="Проверить заявки…" Click="OnOpenOfficePreview" />
                 </WrapPanel>
                 <StackPanel Spacing="6" IsVisible="{Binding IsRemoteStorage}" Margin="0,4,0,0">
                   <TextBlock Text="Папка для локальных копий" FontWeight="SemiBold" />
@@ -172,19 +171,18 @@
                 </StackPanel>
               </StackPanel>
             </Border>
-            <Border Classes="workflow-settings-group">
+            <Border Classes="workflow-settings-group" IsVisible="{Binding !IsRemoteStorage}">
               <StackPanel Spacing="8">
                 <TextBlock Text="Общая папка проектов" FontWeight="SemiBold" FontSize="16" />
-                <Grid ColumnDefinitions="*,8,Auto" IsVisible="{Binding !IsRemoteStorage}">
+                <Grid ColumnDefinitions="*,8,Auto">
                   <TextBox x:Name="WorkflowProjectRoot" Text="{Binding ProjectRoot}" AutomationProperties.Name="Общая папка проектов" />
                   <ui:JournalButton Grid.Column="2" Label="Выбрать…" Click="OnBrowseProjects" />
                 </Grid>
-                <TextBlock Text="При удалённом подключении путь задаётся в панели сервера." Classes="muted" IsVisible="{Binding IsRemoteStorage}" TextWrapping="Wrap" />
-                <TextBlock Text="Используется для первого проекта заявки. Следующие проекты добавляются в её прежнюю папку." Classes="muted" TextWrapping="Wrap" IsVisible="{Binding !IsRemoteStorage}" />
-                <TextBlock Text="Принятые отчёты сохраняются в папке проекта." Classes="muted" TextWrapping="Wrap" IsVisible="{Binding !IsRemoteStorage}" />
+                <TextBlock Text="Используется для первого проекта заявки. Следующие проекты добавляются в её прежнюю папку." Classes="muted" TextWrapping="Wrap" />
+                <TextBlock Text="Принятые отчёты сохраняются в папке проекта." Classes="muted" TextWrapping="Wrap" />
               </StackPanel>
             </Border>
-            <Border Classes="workflow-settings-group">
+            <Border Classes="workflow-settings-group" IsVisible="{Binding !IsRemoteStorage}">
               <StackPanel Spacing="8">
                 <TextBlock Text="Папка заданий в цех" FontWeight="SemiBold" FontSize="16" />
                 <Grid ColumnDefinitions="*,8,Auto">

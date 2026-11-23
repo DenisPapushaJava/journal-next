@@ -21,6 +21,8 @@ public sealed record WorkflowPreferences(bool DarkTheme = false)
     public string? DatabasePath { get; init; }
     public Guid? DatabaseId { get; init; }
     public WorkflowOfficeStorageSettings? OfficeStorage { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public WorkflowOfficeSetupDraft? OfficeSetup { get; init; }
     public bool UseOfficeStorage { get; init; }
     public string? OfficeCopiesRoot { get; init; }
     public Dictionary<string, Guid?>? DatabaseEmployees { get; init; }

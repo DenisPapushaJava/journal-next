@@ -57,16 +57,11 @@ public partial class WorkflowSettingsWindow : Window
     private void OnResultMinimumLostFocus(object? sender, RoutedEventArgs e) => Model?.NormalizeResultPriceInput();
     private void OnClose(object? sender, RoutedEventArgs e)
     { if (OwnedWindows.Count == 0 && Model is { CanClose: true }) { _discard = true; Close(); } }
-    private async void OnOpenOfficePreview(object? sender, RoutedEventArgs e)
-    {
-        if (Model is not { CanEdit: true } || OwnedWindows.Count > 0) return;
-        await new WorkflowOfficePreviewWindow { RequestedThemeVariant = ActualThemeVariant }.ShowDialog(this);
-        if (IsVisible) OpenOfficePreview.Focus();
-    }
     private async void OnOpenOfficeConnection(object? sender, RoutedEventArgs e)
     {
         if (Model is not { CanEdit: true } model || OwnedWindows.Count > 0) return;
-        await new WorkflowOfficeConnectionWindow(model.Journal.SavedOfficeAddress, model.ConnectOfficeStorageAsync)
+        await new WorkflowOfficeConnectionWindow(model.Journal.SavedOfficeStorage, model.Journal.SavedOfficeSetup,
+            model.OfficeStorageSwitchProblem, model.Journal.RememberOfficeSetupAsync, model.ConnectOfficeStorageAsync)
             { RequestedThemeVariant = ActualThemeVariant }.ShowDialog<bool>(this);
         if (IsVisible) OpenOfficeConnection.Focus();
     }
