@@ -15,7 +15,8 @@ public sealed partial class WorkflowMdbDatabase
             return ReadOfficeSnapshot(session, request);
         var metadata = ReadWorkspaceMetadata(session, request);
         if (request.Operation == WorkflowAccessOperation.ReadRevision)
-            return new(1, metadata.DatabaseId, metadata.CatalogVersion, metadata.Revision, Orders: []);
+            return new(1, metadata.DatabaseId, metadata.CatalogVersion, metadata.Revision, Orders: [],
+                OfficeSchemaVersion: request.OfficeSchema6 ? metadata.SchemaVersion : null);
         if (request.Operation == WorkflowAccessOperation.Inspect) ValidateSchema(session);
         return ReadResponse(session, metadata, request);
     }
