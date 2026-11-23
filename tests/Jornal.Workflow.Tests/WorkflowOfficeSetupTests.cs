@@ -21,20 +21,17 @@ public sealed class WorkflowOfficeSetupTests
     public async Task PreviouslyVerifiedAdapterSkipsNetworkSetup()
     {
         var setup = NewSetup(WorkflowOfficeHealth.Reachable, ObservedRoute);
-        var result = await setup.PrepareAsync(Server, null, true, true, _ => throw new InvalidOperationException(), Token,
+        var result = await setup.PrepareAsync(Server, null, true, _ => throw new InvalidOperationException(), Token,
             expectedRoute: new(null, null, ObservedRoute.InterfaceId));
         Assert.Equal(WorkflowOfficeSetupStep.Ready, result.Step);
         Assert.Equal(ObservedRoute, result.Route);
     }
 
-    [Theory]
-    [InlineData(false, null, "Install")]
-    [InlineData(true, null, "NetworkId")]
-    [InlineData(true, "invalid", "NetworkId")]
-    public async Task MissingPrerequisiteDoesNotJoinAnyNetwork(bool installed, string? id, string expected)
+    [Fact]
+    public async Task InvalidNetworkIdDoesNotJoinAnyNetwork()
     {
-        var result = await NewSetup(WorkflowOfficeHealth.RouteMissing).PrepareAsync(Server, id, true, installed, _ => { }, Token);
-        Assert.Equal(expected, result.Step.ToString());
+        var result = await NewSetup(WorkflowOfficeHealth.RouteMissing).PrepareAsync(Server, "invalid", true, _ => { }, Token);
+        Assert.Equal(WorkflowOfficeSetupStep.NetworkId, result.Step);
     }
 
     [Theory]
@@ -45,7 +42,7 @@ public sealed class WorkflowOfficeSetupTests
         var setup = new WorkflowOfficeSetup((_, _, _) => throw new InvalidOperationException("No unconfirmed probe"),
             (_, _) => throw new InvalidOperationException(), (_, _) => throw new InvalidOperationException(),
             _ => throw new InvalidOperationException(), TimeSpan.Zero);
-        var result = await setup.PrepareAsync(Server, null, windows, true, _ => { }, Token);
+        var result = await setup.PrepareAsync(Server, null, windows, _ => { }, Token);
         Assert.Equal(WorkflowOfficeSetupStep.NetworkId, result.Step);
         Assert.Null(result.Route);
     }
@@ -56,7 +53,7 @@ public sealed class WorkflowOfficeSetupTests
     public async Task ConfirmedAdapterMustMatchTheHealthProbe(string name, bool matches)
     {
         var observed = new WorkflowOfficeRoute(IPAddress.Parse("10.0.0.3"), name, "observed");
-        var result = await NewSetup(WorkflowOfficeHealth.Reachable, observed).PrepareAsync(Server, null, false, true, _ => { }, Token,
+        var result = await NewSetup(WorkflowOfficeHealth.Reachable, observed).PrepareAsync(Server, null, false, _ => { }, Token,
             expectedRoute: new(null, "office-network"));
         Assert.Equal(matches ? WorkflowOfficeSetupStep.Ready : WorkflowOfficeSetupStep.NetworkId, result.Step);
         Assert.Equal(matches ? observed : null, result.Route);
@@ -97,7 +94,7 @@ public sealed class WorkflowOfficeSetupTests
                 Assert.Equal(NetworkId, id);
                 return Task.FromResult(joined ? ObservedRoute : null);
             });
-        var result = await setup.PrepareAsync(Server, NetworkId, false, false, _ => { }, Token);
+        var result = await setup.PrepareAsync(Server, NetworkId, false, _ => { }, Token);
         Assert.Equal(joined ? WorkflowOfficeSetupStep.Ready : WorkflowOfficeSetupStep.NetworkId, result.Step);
         Assert.Equal(joined ? 1 : 0, probes);
     }
@@ -125,7 +122,7 @@ public sealed class WorkflowOfficeSetupTests
             return Task.FromResult(true);
         }, _ => Task.FromResult("0123456789"), TimeSpan.Zero, 5);
 
-        var result = await setup.PrepareAsync(Server, NetworkId, true, true, published.Add, Token);
+        var result = await setup.PrepareAsync(Server, NetworkId, true, published.Add, Token);
 
         Assert.Equal(WorkflowOfficeSetupStep.Ready, result.Step);
         Assert.Equal(1, calls);
@@ -147,7 +144,7 @@ public sealed class WorkflowOfficeSetupTests
             return Task.FromResult(new ZeroTierNetwork("ACCESS_DENIED"));
         }, (_, _) => Task.FromResult(true), _ => Task.FromResult("0123456789"), TimeSpan.FromSeconds(20));
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => setup.PrepareAsync(Server, NetworkId, true, true,
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => setup.PrepareAsync(Server, NetworkId, true,
             state => { if (state.Step == WorkflowOfficeSetupStep.WaitingApproval) closing.Cancel(); }, closing.Token));
         Assert.Equal(1, reads);
     }
@@ -163,7 +160,7 @@ public sealed class WorkflowOfficeSetupTests
             return Task.FromResult(new WorkflowOfficeProbe(WorkflowOfficeHealth.Unavailable));
         }, (_, _) => Task.FromResult(new ZeroTierNetwork("OK", Binding)), (_, _) => Task.FromResult(true),
             _ => throw new InvalidOperationException(), TimeSpan.Zero);
-        var result = await setup.PrepareAsync(Server, NetworkId, true, true, _ => { }, Token);
+        var result = await setup.PrepareAsync(Server, NetworkId, true, _ => { }, Token);
         Assert.Equal(3, healthChecks);
         Assert.Equal(WorkflowOfficeSetupStep.Error, result.Step);
         Assert.Contains("Сервер не отвечает", result.Message);
@@ -181,7 +178,7 @@ public sealed class WorkflowOfficeSetupTests
             return Task.FromResult(new WorkflowOfficeProbe(WorkflowOfficeHealth.Reachable, other));
         }, (_, _) => Task.FromResult(new ZeroTierNetwork("OK", Binding)), (_, _) => throw new InvalidOperationException(),
             _ => throw new InvalidOperationException(), TimeSpan.Zero, 2);
-        var result = await setup.PrepareAsync(Server, NetworkId, true, true, _ => { }, Token);
+        var result = await setup.PrepareAsync(Server, NetworkId, true, _ => { }, Token);
         Assert.Equal(2, checks);
         Assert.Equal(WorkflowOfficeSetupStep.WaitingRoute, result.Step);
         Assert.Null(result.Route);
@@ -201,7 +198,7 @@ public sealed class WorkflowOfficeSetupTests
                 _ => Task.FromResult(new ZeroTierNetwork("OK", Binding))
             }, (_, _) => throw new InvalidOperationException(),
             _ => ++nodeReads == 1 ? throw new IOException() : Task.FromResult("0123456789"), TimeSpan.Zero, 5);
-        var result = await setup.PrepareAsync(Server, NetworkId, true, true, states.Add, Token);
+        var result = await setup.PrepareAsync(Server, NetworkId, true, states.Add, Token);
         Assert.Equal(Route, result.Route);
         Assert.Contains(states, state => state.Step == WorkflowOfficeSetupStep.WaitingService);
         Assert.Contains(states, state => state.Step == WorkflowOfficeSetupStep.WaitingApproval && state.NodeId == "0123456789");
@@ -250,7 +247,7 @@ public sealed class WorkflowOfficeSetupTests
             (id, token) => managed ? Task.FromResult(new ZeroTierNetwork("OK", Binding)) : zt.ReadAsync(id, token),
             zt.RequestRestrictedJoinAsync, _ => throw new InvalidOperationException(), TimeSpan.Zero, 5, zt.EnableManagedAddressesAsync);
 
-        var result = await setup.PrepareAsync(Server, NetworkId, true, true, states.Add, Token);
+        var result = await setup.PrepareAsync(Server, NetworkId, true, states.Add, Token);
 
         Assert.Contains(states, state => state.Step == WorkflowOfficeSetupStep.WaitingService);
         Assert.Equal(approved ? new[] { false, true } : new[] { false }, settingsWritten);
@@ -267,10 +264,10 @@ public sealed class WorkflowOfficeSetupTests
             (_, _) => throw new InvalidOperationException(), _ => throw new InvalidOperationException(), TimeSpan.Zero,
             enableManagedAddresses: (_, _) => { enabled = true; return Task.CompletedTask; });
 
-        var awaiting = await setup.PrepareAsync(Server, NetworkId, true, true, _ => { }, Token);
+        var awaiting = await setup.PrepareAsync(Server, NetworkId, true, _ => { }, Token);
         Assert.Equal(WorkflowOfficeSetupStep.EnableManagedAddresses, awaiting.Step);
         Assert.False(enabled);
-        var confirmed = await setup.PrepareAsync(Server, NetworkId, true, true, _ => { }, Token, confirmManagedAddresses: true);
+        var confirmed = await setup.PrepareAsync(Server, NetworkId, true, _ => { }, Token, confirmManagedAddresses: true);
         Assert.Equal(WorkflowOfficeSetupStep.Ready, confirmed.Step);
     }
 

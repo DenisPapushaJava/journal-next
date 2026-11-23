@@ -9,7 +9,7 @@ public sealed record WorkflowOfficeSetupDraft(string Address, string? NetworkId)
 
 internal enum WorkflowOfficeSetupStep
 {
-    Ready, Install, NetworkId, EnableManagedAddresses, WaitingService, WaitingApproval, WaitingConfiguration, WaitingRoute, CheckingServer, Error
+    Ready, NetworkId, EnableManagedAddresses, WaitingService, WaitingApproval, WaitingConfiguration, WaitingRoute, CheckingServer, Error
 }
 
 internal sealed record WorkflowOfficeSetupState(WorkflowOfficeSetupStep Step, string? Message = null, string? NodeId = null,
@@ -32,27 +32,26 @@ internal sealed class WorkflowOfficeSetup(
         enableManagedAddresses: client.EnableManagedAddressesAsync,
         findLinuxRoute: WorkflowOfficeLinuxNetwork.FindRouteAsync) { }
 
-    internal async Task<WorkflowOfficeSetupState> PrepareAsync(Uri server, string? networkId, bool windows, bool installed,
+    internal async Task<WorkflowOfficeSetupState> PrepareAsync(Uri server, string? networkId, bool windows,
         Action<WorkflowOfficeSetupState> show, CancellationToken token, bool confirmManagedAddresses = false,
         WorkflowOfficeRoute? expectedRoute = null)
     {
         if (string.IsNullOrEmpty(networkId))
         {
             if (expectedRoute is null)
-                return new(windows && !installed ? WorkflowOfficeSetupStep.Install : WorkflowOfficeSetupStep.NetworkId);
+                return new(WorkflowOfficeSetupStep.NetworkId);
 
-            return await CheckConfirmedRouteAsync(server, expectedRoute, windows && !installed, token);
+            return await CheckConfirmedRouteAsync(server, expectedRoute, token);
         }
         if (!ZeroTierClient.IsNetworkId(networkId))
             return new(WorkflowOfficeSetupStep.NetworkId, "ID сети состоит из 16 шестнадцатеричных символов.");
         if (!windows)
         {
             if (findLinuxRoute is not null && await findLinuxRoute(networkId, token) is { } linuxRoute)
-                return await CheckConfirmedRouteAsync(server, linuxRoute, false, token);
+                return await CheckConfirmedRouteAsync(server, linuxRoute, token);
             return new(WorkflowOfficeSetupStep.NetworkId,
                 "Сверьте ID в панели сервера. Подключите этот компьютер к сети в ZeroTier и подтвердите устройство в ZeroTier Central.");
         }
-        if (!installed) return new(WorkflowOfficeSetupStep.Install);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(95));
         var attemptToken = deadline.Token;
@@ -153,14 +152,13 @@ internal sealed class WorkflowOfficeSetup(
     }
 
     private async Task<WorkflowOfficeSetupState> CheckConfirmedRouteAsync(Uri server, WorkflowOfficeRoute expected,
-        bool canInstall, CancellationToken token)
+        CancellationToken token)
     {
         var probe = await checkHealth(server, expected, token);
         return probe switch
         {
             { Health: WorkflowOfficeHealth.Reachable, Route: { } route } when expected.Matches(route) =>
                 new(WorkflowOfficeSetupStep.Ready, Route: route),
-            _ when canInstall => new(WorkflowOfficeSetupStep.Install),
             { Health: WorkflowOfficeHealth.RouteMissing or WorkflowOfficeHealth.Reachable } => new(WorkflowOfficeSetupStep.NetworkId,
                 "Маршрут к серверу не проходит через указанную сеть. Сверьте адрес и ID сети в панели «Сервер заявок»."),
             _ => ServerError(probe.Health)
