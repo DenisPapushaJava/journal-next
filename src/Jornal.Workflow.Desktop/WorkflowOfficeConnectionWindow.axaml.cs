@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Net.NetworkInformation;
 using System.Text.Json;
 using Avalonia;
@@ -13,10 +12,13 @@ namespace Jornal.Workflow.Desktop;
 
 public partial class WorkflowOfficeConnectionWindow : Window
 {
+    private static readonly Uri ZeroTierDownloads = new("https://www.zerotier.com/download/");
     private readonly Func<string?, string?, WorkflowOfficeRoute?, CancellationToken, Action?, Task<string?>>? _connect;
     private readonly Func<string?>? _switchProblem;
     private readonly Func<WorkflowOfficeSetupDraft, CancellationToken, Task>? _remember;
-    private readonly Func<CancellationToken, Task<bool>> _installZeroTier = ZeroTierWindowsInstaller.InstallAsync;
+    private readonly Func<Uri, Task<bool>>? _openDownloadPage;
+    private readonly Func<(bool Windows, bool Installed)> _readZeroTierStatus =
+        static () => (OperatingSystem.IsWindows(), ZeroTierWindowsInstaller.IsInstalled);
     private readonly WorkflowOfficeStorageSettings? _saved;
     private readonly WorkflowOfficeSetup _setup = new();
     private CancellationTokenSource? _operation;
@@ -33,7 +35,8 @@ public partial class WorkflowOfficeConnectionWindow : Window
         Func<string?> switchProblem,
         Func<WorkflowOfficeSetupDraft, CancellationToken, Task> remember,
         Func<string?, string?, WorkflowOfficeRoute?, CancellationToken, Action?, Task<string?>> connect,
-        Func<CancellationToken, Task<bool>>? installZeroTier = null, WorkflowOfficeSetup? setup = null) : this()
+        WorkflowOfficeSetup? setup = null, Func<(bool Windows, bool Installed)>? readZeroTierStatus = null,
+        Func<Uri, Task<bool>>? openDownloadPage = null) : this()
     {
         _saved = saved;
         ServerAddress.Text = draft?.Address ?? saved?.Address;
@@ -47,8 +50,9 @@ public partial class WorkflowOfficeConnectionWindow : Window
         _connect = connect;
         _switchProblem = switchProblem;
         _remember = remember;
-        if (installZeroTier is not null) _installZeroTier = installZeroTier;
         if (setup is not null) _setup = setup;
+        if (readZeroTierStatus is not null) _readZeroTierStatus = readZeroTierStatus;
+        _openDownloadPage = openDownloadPage;
         ServerAddress.PropertyChanged += OnServerAddressChanged;
     }
 
@@ -115,13 +119,31 @@ public partial class WorkflowOfficeConnectionWindow : Window
         }
     }
 
+    private async void OnDownloadZeroTier(object? sender, RoutedEventArgs e)
+    {
+        if (_next != WorkflowOfficeSetupStep.Install || !DownloadZeroTier.IsEnabled) return;
+        DownloadZeroTier.IsEnabled = false;
+        ConnectionError.IsVisible = false;
+        try
+        {
+            if (await (_openDownloadPage?.Invoke(ZeroTierDownloads) ?? Launcher.LaunchUriAsync(ZeroTierDownloads))) return;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            AppDiagnostics.Capture(DiagnosticOperation.Unexpected, ex);
+        }
+        finally { if (!_closing) DownloadZeroTier.IsEnabled = true; }
+
+        if (!_closing && _next == WorkflowOfficeSetupStep.Install)
+            ShowError($"Не удалось открыть браузер. Страница загрузки — {ZeroTierDownloads}");
+    }
+
     private async void OnConnect(object? sender, RoutedEventArgs e)
     {
         if (_connect is null || _remember is null || _operation is not null) return;
         using var operation = new CancellationTokenSource();
         _operation = operation;
         var token = operation.Token;
-        var install = _next == WorkflowOfficeSetupStep.Install;
         var confirmManagedAddresses = _next == WorkflowOfficeSetupStep.EnableManagedAddresses &&
             string.Equals(NetworkId.Text?.Trim(), _managedNetworkId, StringComparison.OrdinalIgnoreCase);
         var networkInputVisible = NetworkFields.IsVisible;
@@ -134,7 +156,6 @@ public partial class WorkflowOfficeConnectionWindow : Window
         {
             var server = WorkflowOfficeTransport.RequireServer(ServerAddress.Text);
             var key = AdministratorKey.Text;
-            var windows = OperatingSystem.IsWindows();
             var saved = _saved?.Address == server.AbsoluteUri ? _saved : null;
             var savedInterface = saved?.ZeroTierInterfaceId;
             var useSavedInterface = !networkInputVisible && !string.IsNullOrWhiteSpace(savedInterface);
@@ -152,10 +173,9 @@ public partial class WorkflowOfficeConnectionWindow : Window
             await _remember(new(server.AbsoluteUri, networkId), token);
             token.ThrowIfCancellationRequested();
             NetworkId.Text = networkId;
-            if ((install || ZeroTierWindowsInstaller.IsInstalling) && !await InstallAsync(token)) return;
-            token.ThrowIfCancellationRequested();
 
-            var state = await _setup.PrepareAsync(server, useSavedInterface ? null : networkId, windows, ZeroTierWindowsInstaller.IsInstalled,
+            var (windows, installed) = _readZeroTierStatus();
+            var state = await _setup.PrepareAsync(server, useSavedInterface ? null : networkId, windows, installed,
                 ShowProgress, token, confirmManagedAddresses, expectedRoute);
             token.ThrowIfCancellationRequested();
             _managedNetworkId = state.Step == WorkflowOfficeSetupStep.EnableManagedAddresses ? networkId : null;
@@ -193,8 +213,7 @@ public partial class WorkflowOfficeConnectionWindow : Window
                 ConnectionFields.IsEnabled = ConnectOffice.IsEnabled = true;
                 ConnectOffice.Label = _next switch
                 {
-                    WorkflowOfficeSetupStep.Install when ZeroTierWindowsInstaller.IsInstalling => "Проверить установку",
-                    WorkflowOfficeSetupStep.Install => "Установить ZeroTier",
+                    WorkflowOfficeSetupStep.Install => "Проверить установку",
                     WorkflowOfficeSetupStep.EnableManagedAddresses => "Разрешить адреса",
                     WorkflowOfficeSetupStep.WaitingApproval or WorkflowOfficeSetupStep.WaitingConfiguration or WorkflowOfficeSetupStep.WaitingRoute => "Проверить снова",
                     _ => "Подключиться"
@@ -203,28 +222,6 @@ public partial class WorkflowOfficeConnectionWindow : Window
             }
         }
         if (connected && !_closing) Close(true);
-    }
-
-    private async Task<bool> InstallAsync(CancellationToken token)
-    {
-        ShowStatus("Устанавливаем ZeroTier. Подтвердите запрос Windows…");
-        try
-        {
-            if (!await _installZeroTier(token)) return true;
-            if (!_closing) ShowError("ZeroTier установлен. Перезагрузите Windows и снова откройте подключение к серверу.");
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-        catch (TimeoutException)
-        {
-            _next = WorkflowOfficeSetupStep.Install;
-            if (!_closing) ShowStatus("Установка продолжается в Windows. Можно закрыть окно и вернуться позже.");
-        }
-        catch (Exception ex) when (ex is IOException or HttpRequestException or InvalidDataException or InvalidOperationException or Win32Exception or OperationCanceledException)
-        {
-            _next = WorkflowOfficeSetupStep.Install;
-            if (!_closing) ShowError(ex is InvalidOperationException or InvalidDataException ? ex.Message : "Не удалось установить ZeroTier. Проверьте доступ к интернету и разрешение на установку в Windows.");
-        }
-        return false;
     }
 
     private void SetFinishing(bool value)
@@ -242,7 +239,7 @@ public partial class WorkflowOfficeConnectionWindow : Window
         switch (state.Step)
         {
             case WorkflowOfficeSetupStep.Install:
-                ShowStatus("Для удалённого доступа нужно установить ZeroTier.");
+                ShowStatus("Скачайте и установите ZeroTier для Windows. Затем нажмите «Проверить установку».");
                 break;
             case WorkflowOfficeSetupStep.NetworkId:
                 NetworkFields.IsVisible = true;
@@ -269,6 +266,7 @@ public partial class WorkflowOfficeConnectionWindow : Window
     {
         if (ConnectionStatus.Text != message) ConnectionStatus.Text = message;
         ConnectionStatus.IsVisible = message is not null;
+        DownloadZeroTier.IsVisible = _next == WorkflowOfficeSetupStep.Install;
         _nodeId = nodeId;
         CopyDeviceId.IsVisible = nodeId is not null;
     }
