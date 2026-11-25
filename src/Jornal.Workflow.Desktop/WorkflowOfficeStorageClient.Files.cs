@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -8,8 +9,14 @@ using Jornal.Workflow.Infrastructure;
 namespace Jornal.Workflow.Desktop;
 
 internal sealed record WorkflowOfficeFileConflict(string Path, string HomeHash, string? OfficeHash);
-internal sealed record WorkflowOfficeWorkingCopy(string Folder, IReadOnlyList<WorkflowOfficeFileConflict> Conflicts, bool? HasPendingFiles);
-internal sealed record WorkflowOfficeFileComparison(string Folder, string? OfficeFile, string HomeHash);
+internal sealed record WorkflowOfficeWorkingCopy(string Folder, IReadOnlyList<WorkflowOfficeFileConflict> Conflicts, bool? HasPendingFiles)
+{
+    internal bool IsOffline { get; init; }
+}
+internal sealed record WorkflowOfficeFileComparison(string Folder, string? OfficeFile, string HomeHash, string? OfficeHash);
+internal sealed record WorkflowOfficeFilePublication(int Sent, string[] Problems, string? StopReason = null);
+internal class WorkflowOfficeSyncUnavailableException(string message, Exception? inner = null) : IOException(message, inner);
+internal sealed class WorkflowOfficeConnectionLostException(string message, Exception? inner = null) : WorkflowOfficeSyncUnavailableException(message, inner);
 
 internal sealed partial class WorkflowOfficeStorageClient
 {
@@ -29,19 +36,28 @@ internal sealed partial class WorkflowOfficeStorageClient
     }
 
     internal async Task<WorkflowOfficeWorkingCopy> OpenWorkingCopyAsync(Guid order, Guid project, CancellationToken cancellation,
-        string? copiesRoot = null, string? nativePath = null)
+        string? copiesRoot = null, string? nativePath = null, bool allowOffline = false)
     {
         await _files.WaitAsync(cancellation);
         try
         {
             var originalFolder = DefaultCopyFolder(project);
             using var lease = LockCopy(originalFolder);
+            RecoverInterruptedCleanup(originalFolder);
             var (folder, location, hasCopy) = ResolveCopyFolder(originalFolder, copiesRoot, nativePath);
             var route = ProjectRoute(order, project);
             if (hasCopy)
             {
                 RecordCopyLocation(location, folder);
-                return await RefreshWorkingCopyAsync(folder, route, cancellation);
+                HideCopyMarkers(folder);
+                try { return await RefreshWorkingCopyAsync(folder, route, cancellation, allowOffline); }
+                catch (WorkflowOfficeConnectionLostException) when (allowOffline)
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    WorkflowOfficeProjectPaths.RequireOrdinaryCopyPath(folder);
+                    if (!OwnsCopy(folder, originalFolder)) throw;
+                    return new(folder, [], null) { IsOffline = true };
+                }
             }
             CheckNewCopyFolder(folder, copiesRoot);
             var manifest = await ManifestAsync(route, cancellation);
@@ -64,8 +80,10 @@ internal sealed partial class WorkflowOfficeStorageClient
     {
         var parent = Path.GetDirectoryName(folder)!;
         Directory.CreateDirectory(parent);
-        var stage = Path.Combine(parent, ".office-" + Guid.NewGuid().ToString("N") + ".tmp");
+        var staging = Path.Combine(parent, ".office-" + Guid.NewGuid().ToString("N") + ".tmp");
+        var stage = Path.Combine(staging, "copy");
         Directory.CreateDirectory(stage);
+        WorkflowServiceFiles.TryHide(staging);
         try
         {
             foreach (var directory in manifest.Directories)
@@ -78,19 +96,26 @@ internal sealed partial class WorkflowOfficeStorageClient
             }
             await SaveBaselineAsync(stage, manifest.Files.ToDictionary(file => file.Path, file => file.Sha256,
                 StringComparer.OrdinalIgnoreCase), token);
-            await File.WriteAllTextAsync(Path.Combine(stage, CopyOwnerName), CopyOwner(original), token);
+            var owner = Path.Combine(stage, CopyOwnerName);
+            await File.WriteAllTextAsync(owner, CopyOwner(original), token);
+            WorkflowServiceFiles.TryHide(owner);
             Directory.Move(stage, folder);
         }
-        finally { if (Directory.Exists(stage)) Directory.Delete(stage, recursive: true); }
+        finally
+        {
+            try { if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* A remaining staging folder is hidden. */ }
+        }
     }
 
-    private async Task<WorkflowOfficeWorkingCopy> RefreshWorkingCopyAsync(string folder, string route, CancellationToken token)
+    private async Task<WorkflowOfficeWorkingCopy> RefreshWorkingCopyAsync(string folder, string route, CancellationToken token, bool workingFiles)
     {
         var baseline = await ReadBaselineAsync(folder, token);
-        var manifest = await ManifestAsync(route, token);
+        var manifest = await ManifestAsync(route, token, workingFiles: workingFiles);
         var current = manifest.Files.ToDictionary(file => file.Path, StringComparer.OrdinalIgnoreCase);
         var local = IndexWorkingFiles(folder, token);
         var conflicts = new List<WorkflowOfficeFileConflict>();
+        string? staging = null;
         foreach (var directory in manifest.Directories)
             Directory.CreateDirectory(Child(folder, directory));
         foreach (var file in manifest.Files)
@@ -110,10 +135,11 @@ internal sealed partial class WorkflowOfficeStorageClient
             if (home != file.Sha256)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                var stage = Path.Combine(folder, ".office-" + Guid.NewGuid().ToString("N") + ".tmp");
+                staging ??= WorkflowOfficeProjectPaths.CreateStateFolder(folder);
+                var stage = Path.Combine(staging, Guid.NewGuid().ToString("N") + ".tmp");
                 try
                 {
-                    await DownloadFileAsync(route, file, stage, token);
+                    await DownloadFileAsync(route, file, stage, token, workingFiles);
                     if (home is null) File.Move(stage, destination, overwrite: false);
                     else if ((await WorkflowOfficeProjectPaths.FingerprintAsync(destination, token)).Hash == home)
                         await ReplaceLocalFileAsync(stage, destination, home);
@@ -143,23 +169,24 @@ internal sealed partial class WorkflowOfficeStorageClient
         return new(folder, conflicts, conflicts.Count > 0 ? true : await CheckPendingFilesAsync(folder, baseline, token));
     }
 
-    private static Dictionary<string, string> IndexWorkingFiles(string folder, CancellationToken token)
+    private static Dictionary<string, string> IndexWorkingFiles(string folder, CancellationToken token, Predicate<string>? includes = null)
     {
         var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var path in WorkflowOfficeProjectPaths.LocalWorkingFiles(folder, token))
-            if (!files.TryAdd(path, path))
+            if ((includes is null || includes(path)) && !files.TryAdd(path, path))
                 throw new WorkflowValidationException("В папке есть файлы с одинаковыми именами без учёта регистра.");
         return files;
     }
 
-    internal async Task<bool?> HasPendingFilesAsync(Guid project, string? copiesRoot, string? nativePath, CancellationToken token)
+    internal async Task<bool?> HasPendingFilesAsync(Guid project, string? copiesRoot, string? nativePath, CancellationToken token,
+        bool indexedCopy = false)
     {
         await _files.WaitAsync(token);
         try
         {
             var original = DefaultCopyFolder(project);
             var (folder, _, hasCopy) = ResolveCopyFolder(original, copiesRoot, nativePath);
-            if (!hasCopy) return false;
+            if (!hasCopy) return indexedCopy ? null : false;
             using var lease = LockCopy(original);
             return await CheckPendingFilesAsync(folder, await ReadBaselineAsync(folder, token), token);
         }
@@ -200,7 +227,7 @@ internal sealed partial class WorkflowOfficeStorageClient
     }
 
     internal async Task<WorkflowOfficeFileComparison> CompareWorkingFileAsync(Guid order, Guid project,
-        WorkflowOfficeFileConflict conflict, CancellationToken token)
+        WorkflowOfficeFileConflict conflict, CancellationToken token, bool refreshVersions = false)
     {
         await _files.WaitAsync(token);
         try
@@ -209,9 +236,9 @@ internal sealed partial class WorkflowOfficeStorageClient
             using var lease = LockCopy(original);
             var folder = RequireWorkingCopy(original);
             var route = ProjectRoute(order, project);
-            var office = await ReadConflictingOfficeFileAsync(route, conflict, token);
+            var office = await ReadConflictingOfficeFileAsync(route, conflict, token, refreshVersions);
             var comparison = await CaptureComparedFilesAsync(folder, Child(folder, conflict.Path), route, office, token);
-            if (comparison.HomeHash != conflict.HomeHash)
+            if (!refreshVersions && comparison.HomeHash != conflict.HomeHash)
             {
                 Directory.Delete(comparison.Folder, recursive: true);
                 throw LocalFileChanged(conflict.Path);
@@ -249,12 +276,13 @@ internal sealed partial class WorkflowOfficeStorageClient
         finally { _files.Release(); }
     }
 
-    private async Task<ProjectFile?> ReadConflictingOfficeFileAsync(string route, WorkflowOfficeFileConflict conflict, CancellationToken token)
+    private async Task<ProjectFile?> ReadConflictingOfficeFileAsync(string route, WorkflowOfficeFileConflict conflict, CancellationToken token,
+        bool refreshVersions = false)
     {
         var manifest = await ManifestAsync(route, token);
         var office = manifest.Files.SingleOrDefault(file => file.Path.Equals(conflict.Path, StringComparison.OrdinalIgnoreCase));
-        if (office?.Sha256 != conflict.OfficeHash)
-            throw new WorkflowValidationException($"Офисный файл «{conflict.Path}» снова изменился. Откройте папку проекта ещё раз.");
+        if (!refreshVersions && office?.Sha256 != conflict.OfficeHash)
+            throw new WorkflowValidationException($"Офисный файл «{conflict.Path}» снова изменился. Начните сравнение заново.");
         return office;
     }
 
@@ -279,7 +307,7 @@ internal sealed partial class WorkflowOfficeStorageClient
             var homeHash = (await WorkflowOfficeProjectPaths.FingerprintAsync(homeCopy, token)).Hash;
             var officeCopy = office is null ? null : Path.Combine(comparison, "Офисная" + extension);
             if (office is not null) await DownloadFileAsync(route, office, officeCopy!, token);
-            return new(comparison, officeCopy, homeHash);
+            return new(comparison, officeCopy, homeHash, office?.Sha256);
         }
         catch { Directory.Delete(comparison, recursive: true); throw; }
     }
@@ -287,7 +315,7 @@ internal sealed partial class WorkflowOfficeStorageClient
     private static async Task InstallComparedFileAsync(string folder, string home, string officeCopy, string officeHash,
         string homeHash, CancellationToken token)
     {
-        var stage = Path.Combine(folder, ".office-" + Guid.NewGuid().ToString("N") + ".tmp");
+        var stage = Path.Combine(WorkflowOfficeProjectPaths.CreateStateFolder(folder), Guid.NewGuid().ToString("N") + ".tmp");
         try
         {
             File.Copy(officeCopy, stage, overwrite: false);
@@ -299,9 +327,10 @@ internal sealed partial class WorkflowOfficeStorageClient
         finally { File.Delete(stage); }
     }
 
-    internal async Task<int> PublishCopyAsync(Guid order, Guid project, CancellationToken cancellation, string? copiesRoot = null, string? nativePath = null)
+    internal async Task<WorkflowOfficeFilePublication> PublishCopyAsync(Guid order, Guid project, CancellationToken token,
+        string? copiesRoot = null, string? nativePath = null, string? reportName = null, CuttingProject? verifyProject = null)
     {
-        await _files.WaitAsync(cancellation);
+        await _files.WaitAsync(token);
         try
         {
             var originalFolder = DefaultCopyFolder(project);
@@ -309,52 +338,127 @@ internal sealed partial class WorkflowOfficeStorageClient
             var (folder, location, hasCopy) = ResolveCopyFolder(originalFolder, copiesRoot, nativePath);
             if (!hasCopy)
                 throw new WorkflowValidationException("Сначала откройте папку проекта, чтобы скачать рабочие файлы.");
-            var baseline = await ReadBaselineAsync(folder, cancellation);
+            var baseline = await ReadBaselineAsync(folder, token);
             RecordCopyLocation(location, folder);
             var route = ProjectRoute(order, project);
-            var current = (await ManifestAsync(route, cancellation)).Files.ToDictionary(file => file.Path, StringComparer.OrdinalIgnoreCase);
-            var local = await WorkflowOfficeProjectPaths.ManifestAsync(folder, cancellation);
-            var pending = local.Files.Select(file => (Path: file.RelativePath.Replace(Path.DirectorySeparatorChar, '/'), File: file))
-                .Where(entry => baseline.GetValueOrDefault(entry.Path) != entry.File.Sha256).ToArray();
-            foreach (var entry in pending)
-                if ((current.GetValueOrDefault(entry.Path)?.Sha256 is { } existing && existing != entry.File.Sha256 &&
-                    existing != baseline.GetValueOrDefault(entry.Path)) ||
-                    (!current.ContainsKey(entry.Path) && baseline.ContainsKey(entry.Path)))
-                    throw new WorkflowValidationException($"Файл «{entry.Path}» изменился на сервере. Локальная копия сохранена.");
+            var names = baseline.Keys.ToDictionary(path => path, StringComparer.OrdinalIgnoreCase);
+            var files = WorkflowOfficeProjectPaths.LocalWorkingFiles(folder, token, requireUniqueNames: true)
+                .Order(StringComparer.OrdinalIgnoreCase).ToArray();
+            var problems = new List<string>();
             var sent = 0;
-            foreach (var entry in pending)
+            var refreshedReport = false;
+            foreach (var path in files)
             {
-                var remote = current.GetValueOrDefault(entry.Path);
-                var filePath = remote?.Path ?? entry.Path;
-                if (remote?.Sha256 != entry.File.Sha256)
+                token.ThrowIfCancellationRequested();
+                var target = names.GetValueOrDefault(path, path);
+                var expected = baseline.GetValueOrDefault(target);
+                string hash;
+                try
                 {
-                    using var request = Request(HttpMethod.Put, FileRoute(route, filePath));
-                    if (remote is null) request.Headers.IfNoneMatch.Add(EntityTagHeaderValue.Any);
-                    else request.Headers.IfMatch.Add(new EntityTagHeaderValue($"\"{remote.Sha256}\""));
-                    await using var file = File.OpenRead(Child(folder, entry.Path));
-                    if (Convert.ToHexString(await SHA256.HashDataAsync(file, cancellation)) != entry.File.Sha256)
-                        throw new WorkflowValidationException($"Файл «{entry.Path}» изменился во время отправки. Повторите попытку.");
-                    file.Position = 0;
-                    request.Content = new StreamContent(file);
-                    using var response = await SendAsync(fileHttp ?? FileTransport, request, cancellation);
-                    await CheckAsync(response, cancellation);
-                    sent++;
+                    var source = Child(folder, path);
+                    hash = (await WorkflowOfficeProjectPaths.FingerprintAsync(source, token)).Hash;
+                    if (expected == hash) continue;
+                    if (!refreshedReport && verifyProject is not null && !path.Contains('/') &&
+                        WorkflowReportFiles.IsReport(path, verifyProject.ImportProfile))
+                    {
+                        var current = await ReadActiveOrderForWorkingFilesAsync(order, token);
+                        if (!current.ActiveProjects.Any(candidate => candidate.Id == project))
+                            throw new WorkflowValidationException("Проект больше недоступен в активных заявках. Обновите журнал.");
+                        reportName = WorkflowOfficeProjectPaths.AcceptedReportName(current, project);
+                        refreshedReport = true;
+                    }
+                    if (path.Equals(reportName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        problems.Add($"Спецификация «{path}» изменена дома. Нажмите «Рассчитать», чтобы сохранить её в офисе.");
+                        continue;
+                    }
+                    // The file endpoint checks the baseline at replacement time. A sibling file is irrelevant.
+                    if (await TryPublishWorkingFileAsync(route, target, folder, source, hash, expected, token)) sent++;
+                    else if (!await OfficeFileMatchesAsync(route, target, hash, token))
+                    {
+                        problems.Add($"Файл «{path}» изменился в офисе. Откройте папку проекта из заявки, чтобы сравнить версии.");
+                        continue;
+                    }
                 }
-                baseline[filePath] = entry.File.Sha256;
-                await SaveBaselineAsync(folder, baseline, cancellation);
+                catch (WorkflowOfficeSyncUnavailableException ex) { return new(sent, problems.ToArray(), ex.Message); }
+                catch (Exception ex) when (IsCopyUnavailable(ex) || ex is WorkflowConflictException or HttpRequestException ||
+                    ex is OperationCanceledException && !token.IsCancellationRequested)
+                {
+                    problems.Add(ex is WorkflowValidationException validation ? $"«{path}» — {validation.Message}" :
+                        $"Файл «{path}» не удалось проверить или отправить. Закройте его и проверьте связь с офисом.");
+                    continue;
+                }
+                baseline[target] = hash;
+                await SaveBaselineAsync(folder, baseline, token);
             }
-            return sent;
+            return new(sent, problems.ToArray());
         }
         finally { _files.Release(); }
     }
 
-    private string DefaultCopyFolder(Guid project) =>
-        Path.Combine(profileDirectory, "office-projects", settings.DatabaseId.ToString("N"), project.ToString("N"));
+    private async Task<bool> TryPublishWorkingFileAsync(string route, string path, string folder, string source, string hash, string? expectedHash,
+        CancellationToken token)
+    {
+        var staging = WorkflowOfficeProjectPaths.CreateStateFolder(folder);
+        await using var stage = new FileStream(Path.Combine(staging, Guid.NewGuid().ToString("N") + ".tmp"),
+            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 65536, FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+        await using (var file = File.OpenRead(source))
+            await file.CopyToAsync(stage, token);
+        stage.Position = 0;
+        if (Convert.ToHexString(await SHA256.HashDataAsync(stage, token)) != hash)
+            throw new WorkflowValidationException("Файл изменился при подготовке к отправке. Завершите сохранение и повторите действие.");
+        stage.Position = 0;
+        using var request = Request(HttpMethod.Put, FileRoute(route, path));
+        request.Headers.Add(WorkflowOfficeProjectPaths.WorkingFileUploadHeader, "1");
+        if (expectedHash is null) request.Headers.IfNoneMatch.Add(EntityTagHeaderValue.Any);
+        else request.Headers.IfMatch.Add(new EntityTagHeaderValue($"\"{expectedHash}\""));
+        request.Content = new StreamContent(stage);
+        return await WithProjectDeadlineAsync(async deadline =>
+        {
+            using var response = await SendAsync(fileHttp ?? FileTransport, request, deadline);
+            if (response.StatusCode == HttpStatusCode.PreconditionFailed) return false;
+            await CheckWorkingFileResponseAsync(response, deadline);
+            FileConfirmation? confirmation = null;
+            try { confirmation = await ReadAsync<FileConfirmation>(response, deadline); }
+            catch (Exception ex) when (ex is JsonException or InvalidDataException) { }
+            if (confirmation?.Sha256 != hash || confirmation.Path != path)
+                throw new WorkflowValidationException("Сервер не подтвердил версию файла. Проверьте офисную копию перед повторной отправкой.");
+            return true;
+        }, token, TimeSpan.FromMinutes(5), workingFiles: true);
+    }
+
+    private Task<bool> OfficeFileMatchesAsync(string route, string path, string hash, CancellationToken token) =>
+        WithProjectDeadlineAsync(async deadline =>
+        {
+            using var request = Request(HttpMethod.Get, FileRoute(route, path));
+            using var response = await SendAsync(fileHttp ?? FileTransport, request, deadline);
+            if (response.StatusCode == HttpStatusCode.NotFound) return false;
+            await CheckWorkingFileResponseAsync(response, deadline);
+            await using var content = await response.Content.ReadAsStreamAsync(deadline);
+            return Convert.ToHexString(await SHA256.HashDataAsync(content, deadline)) == hash;
+        }, token, TimeSpan.FromMinutes(5), workingFiles: true);
+
+    private static Task CheckWorkingFileResponseAsync(HttpResponseMessage response, CancellationToken token) => response.StatusCode switch
+    {
+        HttpStatusCode.BadGateway or HttpStatusCode.GatewayTimeout =>
+            throw new WorkflowOfficeConnectionLostException("Офисный сервер временно недоступен. Повторите действие после восстановления связи."),
+        HttpStatusCode.Unauthorized => throw new WorkflowOfficeSyncUnavailableException(
+            "Срок подключения истёк. Откройте «Настройки → Хранилище» и подключитесь заново."),
+        HttpStatusCode.Forbidden => throw new WorkflowOfficeSyncUnavailableException(
+            "На сервере выключено удалённое сохранение. Проверьте настройки сервера."),
+        _ => CheckAsync(response, token)
+    };
+
+    private string CopyIndexFolder => Path.Combine(profileDirectory, "office-projects", settings.DatabaseId.ToString("N"));
+    private string DefaultCopyFolder(Guid project) => Path.Combine(CopyIndexFolder, project.ToString("N"));
 
     private static FileStream LockCopy(string originalFolder)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(originalFolder)!);
-        return File.Open(originalFolder + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        var path = originalFolder + ".lock";
+        var lease = File.Open(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        WorkflowServiceFiles.TryHide(path);
+        return lease;
     }
 
     private (string Folder, string? NewLocation, bool HasCopy) ResolveCopyFolder(string originalFolder, string? copiesRoot, string? nativePath)
@@ -362,11 +466,8 @@ internal sealed partial class WorkflowOfficeStorageClient
         var location = originalFolder + ".location";
         var project = Path.GetFileName(originalFolder);
         var database = settings.DatabaseId.ToString("N");
-        if (File.Exists(location))
+        if (ReadCopyLocation(location) is { } folder)
         {
-            var folder = File.ReadAllText(location);
-            if (!Path.IsPathFullyQualified(folder) || folder.Any(char.IsControl))
-                throw new InvalidDataException("Сохранённое расположение локальной копии повреждено.");
             if (!OwnsCopy(folder, originalFolder))
                 throw new WorkflowValidationException($"Локальная копия проекта недоступна. Проверьте папку «{folder}».");
             return (folder, null, true);
@@ -379,6 +480,15 @@ internal sealed partial class WorkflowOfficeStorageClient
         return (selected, string.Equals(selected, originalFolder,
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ? null : location,
             OwnsCopy(selected, originalFolder));
+    }
+
+    private static string? ReadCopyLocation(string location)
+    {
+        if (!File.Exists(location)) return null;
+        var folder = File.ReadAllText(location);
+        if (!Path.IsPathFullyQualified(folder) || folder.Any(char.IsControl))
+            throw new InvalidDataException("Сохранённое расположение локальной копии повреждено.");
+        return folder;
     }
 
     private static string? MirrorCopyFolder(string root, string? nativePath)
@@ -408,46 +518,63 @@ internal sealed partial class WorkflowOfficeStorageClient
         try
         {
             File.WriteAllText(temporary, folder);
+            WorkflowServiceFiles.TryHide(temporary);
             File.Move(temporary, location);
         }
         finally { File.Delete(temporary); }
     }
 
+    private static void HideCopyMarkers(string folder)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        try { WorkflowOfficeProjectPaths.RequireOrdinaryCopyPath(folder); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or WorkflowValidationException) { return; }
+        WorkflowServiceFiles.TryHide(Path.Combine(folder, SnapshotName));
+        WorkflowServiceFiles.TryHide(Path.Combine(folder, CopyOwnerName));
+    }
+
     private static string ProjectRoute(Guid order, Guid project) => $"api/v1/storage/orders/{order:D}/projects/{project:D}";
     private static string FileRoute(string route, string path) => $"{route}/file?path={Uri.EscapeDataString(path)}";
 
-    private async Task<ProjectManifest> ManifestAsync(string route, CancellationToken cancellation, string? reportProfile = null, string? reportName = null)
+    private async Task<ProjectManifest> ManifestAsync(string route, CancellationToken cancellation, string? reportProfile = null,
+        string? reportName = null, bool workingFiles = false)
     {
         var path = route + "/files";
         if (reportProfile is not null) path += "?reportProfile=" + Uri.EscapeDataString(reportProfile);
         if (reportName is not null) path += "&reportName=" + Uri.EscapeDataString(reportName);
         using var request = Request(HttpMethod.Get, path);
-        var manifest = await SendProjectJsonAsync<ProjectManifest>(request, cancellation);
+        var manifest = await SendProjectJsonAsync<ProjectManifest>(request, cancellation, workingFiles);
+        ValidateManifest(manifest);
+        return manifest;
+    }
+
+    private static void ValidateManifest(ProjectManifest manifest)
+    {
         if (manifest.Files is null || manifest.Directories is null || manifest.Files.Select(file => file.Path)
                 .Concat(manifest.UnavailableFiles ?? []).Distinct(StringComparer.OrdinalIgnoreCase).Count() !=
                 manifest.Files.Length + (manifest.UnavailableFiles?.Length ?? 0))
             throw new InvalidDataException("Получен неполный список файлов проекта.");
-        return manifest;
     }
 
     private static string Child(string folder, string relative) =>
         WorkflowOfficeProjectPaths.FileInProject(folder, relative) ??
         throw new InvalidDataException("Получено недопустимое имя файла проекта.");
 
-    private async Task DownloadFileAsync(string route, ProjectFile file, string destination, CancellationToken token)
+    private async Task DownloadFileAsync(string route, ProjectFile file, string destination, CancellationToken token, bool workingFiles = false)
     {
         using var request = Request(HttpMethod.Get, FileRoute(route, file.Path));
         await WithProjectDeadlineAsync(async deadline =>
         {
             using var response = await SendAsync(fileHttp ?? FileTransport, request, deadline);
-            await CheckAsync(response, deadline);
+            if (workingFiles) await CheckWorkingFileResponseAsync(response, deadline);
+            else await CheckAsync(response, deadline);
             await using (var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true))
                 await response.Content.CopyToAsync(output, deadline);
             var actual = await WorkflowOfficeProjectPaths.FingerprintAsync(destination, deadline);
             if (actual.Length != file.Length || !actual.Hash.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new WorkflowValidationException($"Файл «{file.Path}» изменился при скачивании. Повторите действие.");
             return true;
-        }, token, TimeSpan.FromMinutes(5));
+        }, token, TimeSpan.FromMinutes(5), workingFiles);
     }
 
     private static async Task<Dictionary<string, string>> ReadBaselineAsync(string folder, CancellationToken token)
@@ -465,7 +592,10 @@ internal sealed partial class WorkflowOfficeStorageClient
         try
         {
             await using (var output = File.Open(staging, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                WorkflowServiceFiles.TryHide(staging);
                 await JsonSerializer.SerializeAsync(output, baseline, cancellationToken: cancellation);
+            }
             File.Move(staging, target, overwrite: true);
         }
         finally { File.Delete(staging); }

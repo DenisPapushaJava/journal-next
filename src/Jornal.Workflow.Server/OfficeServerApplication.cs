@@ -77,8 +77,10 @@ public static class OfficeServerApplication
         {
             builder.Services.AddDataProtection().SetApplicationName("JournalWorkflowOfficeServer");
             builder.Services.AddSingleton(provider => new OfficeWorkSessions(provider.GetRequiredService<IDataProtectionProvider>(), tokenBytes));
+            builder.Services.AddSingleton<OfficeShopPublication>();
             builder.Services.AddScoped(provider => new OfficeWorkspace(databasePath, projectsRoot, workAccess.AllowWrites,
-                provider.GetRequiredService<OfficeWorkIdentity>(), provider.GetRequiredService<IWorkflowAccessTransport>()));
+                provider.GetRequiredService<OfficeWorkIdentity>(), provider.GetRequiredService<IWorkflowAccessTransport>(),
+                provider.GetRequiredService<OfficeShopPublication>()));
             builder.Services.AddScoped<OfficeWorkIdentity>();
             builder.Services.AddScoped(provider => new OfficeWorkOrders(databasePath,
                 provider.GetRequiredService<OfficeWorkIdentity>(), provider.GetRequiredService<OfficeJournal>(),
@@ -120,12 +122,18 @@ public static class OfficeServerApplication
                 identity.IsStorage = true;
                 return await next(invocation);
             });
-            storage.MapPost("/database", (WorkflowAccessRequest request, OfficeWorkspace workspace, CancellationToken token) =>
-                workspace.ExecuteAsync(request, token));
-            storage.MapGet("/capabilities", () => Results.Ok(new { calculation = true, guardedCalculation = true, plannedBending = true }));
+            storage.MapPost("/database", (WorkflowAccessRequest request, OfficeWorkspace workspace, HttpContext context, CancellationToken token) =>
+                workspace.ExecuteAsync(request, context.Request.Headers[WorkflowShopPublicationLock.LeaseHeader].FirstOrDefault(), token));
+            storage.MapGet("/capabilities", () => Results.Ok(new { calculation = true, guardedCalculation = true, plannedBending = true, shopTransfer = true, shopPublicationJournal = true }));
+            storage.MapPost("/orders/{orderId:guid}/shop-publication", (Guid orderId, long version, Guid owner, HttpContext context, OfficeWorkspace workspace, CancellationToken token) =>
+                workspace.OpenShopPublicationAsync(orderId, version, owner, context, token));
+            storage.MapPost("/orders/{orderId:guid}/shop-publication/project", (Guid orderId, ShopPublicationChange change, HttpContext context, OfficeWorkspace workspace, CancellationToken token) =>
+                workspace.UpdateShopPublicationAsync(orderId, change, context.Request.Headers[WorkflowShopPublicationLock.LeaseHeader].FirstOrDefault(), token));
             storage.MapPost("/orders/{orderId:guid}/projects/prepare", (Guid orderId, WorkflowOfficeProjectPreparation request, OfficeWorkspace workspace, CancellationToken token) =>
                 workspace.PrepareProjectAsync(orderId, request, token));
             var files = storage.MapGroup("/orders/{orderId:guid}/projects/{projectId:guid}");
+            files.MapGet("/shop-sources", (Guid orderId, Guid projectId, long version, HttpContext context, OfficeWorkspace workspace, CancellationToken token) =>
+                workspace.ReadShopSourcesAsync(orderId, projectId, version, context.Request.Headers[WorkflowShopPublicationLock.LeaseHeader].FirstOrDefault(), token));
             files.MapPost("/calculation", (Guid orderId, Guid projectId, WorkflowOfficeCalculationPreparation request, OfficeWorkspace workspace, CancellationToken token) =>
                 workspace.PrepareCalculationAsync(orderId, projectId, request, token));
             files.MapGet("/files", (Guid orderId, Guid projectId, string? reportProfile, string? reportName, OfficeWorkProjects projects, CancellationToken token) =>

@@ -1,6 +1,6 @@
 namespace Jornal.Workflow.Infrastructure;
 
-internal static class WorkflowServiceFiles
+public static class WorkflowServiceFiles
 {
     // Only explicitly known service paths, never all dotfiles or a recursive walk.
     public static void TryHide(string path)
@@ -9,7 +9,7 @@ internal static class WorkflowServiceFiles
         try
         {
             var attributes = File.GetAttributes(path);
-            if ((attributes & FileAttributes.Hidden) == 0)
+            if ((attributes & (FileAttributes.Hidden | FileAttributes.ReparsePoint)) == 0)
                 File.SetAttributes(path, (attributes & ~FileAttributes.Normal) | FileAttributes.Hidden);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

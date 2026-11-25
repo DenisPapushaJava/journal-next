@@ -1,0 +1,19 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="using:Jornal.Desktop.Controls" x:Class="Jornal.Workflow.Desktop.WorkflowOfficePendingWindow"
+        Width="560" SizeToContent="Height" CanResize="False" WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource JournalBackground}">
+  <StackPanel Margin="24" Spacing="14">
+    <TextBlock Text="Файлы для офиса" FontSize="20" FontWeight="SemiBold" />
+    <TextBlock x:Name="PendingSummary" TextWrapping="Wrap" />
+    <ProgressBar x:Name="PendingProgress" Height="5" IsVisible="False" />
+    <ScrollViewer x:Name="PendingDetails" MaxHeight="160" IsVisible="False"
+                  HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+      <TextBlock x:Name="PendingProblems" TextWrapping="Wrap" Foreground="{DynamicResource JournalDangerForeground}" />
+    </ScrollViewer>
+    <WrapPanel HorizontalAlignment="Right">
+      <ui:JournalButton x:Name="KeepWorking" Label="Продолжить работу" Click="OnContinue" Margin="0,0,8,0" />
+      <ui:JournalButton x:Name="ExitWithoutSending" Label="Закрыть без отправки" Click="OnExit" Margin="0,0,8,0" />
+      <ui:JournalButton x:Name="SendPendingFiles" Classes="primary" Click="OnSend" />
+    </WrapPanel>
+  </StackPanel>
+</Window>

@@ -23,6 +23,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     private HsvColor _spectrum = new(Color.FromUInt32(0xFF628DB2));
     public string WorkspacePath => Journal.WorkspacePath;
     public bool IsRemoteStorage => Journal.IsRemoteStorage;
+    public bool ShowOfficeCopyCleanup => Journal.SupportsOfficeCopyCleanup;
     public bool CanUseSavedOfficeStorage => !IsRemoteStorage && Journal.HasVerifiedOfficeStorage;
     public string OfficeConnectionLabel => Journal.SavedOfficeAddress is null ? "Подключиться к серверу…" : "Настроить подключение…";
     public string StorageSourceTitle => IsRemoteStorage ? "Сервер заявок" : "База данных заявок";
@@ -214,6 +215,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     {
         ReloadRoot(); ReloadProfile(); ReloadOfficeCopiesRoot();
         OnPropertyChanged(nameof(WorkspacePath)); OnPropertyChanged(nameof(DatabaseDescription)); OnPropertyChanged(nameof(IsRemoteStorage));
+        OnPropertyChanged(nameof(ShowOfficeCopyCleanup));
         OnPropertyChanged(nameof(StorageSourceTitle));
         OnPropertyChanged(nameof(CanUseSavedOfficeStorage)); OnPropertyChanged(nameof(OfficeConnectionLabel)); Changed();
     }

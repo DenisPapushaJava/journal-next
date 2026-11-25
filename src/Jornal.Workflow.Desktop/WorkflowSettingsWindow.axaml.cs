@@ -178,6 +178,19 @@ public partial class WorkflowSettingsWindow : Window
     private async void OnBrowseOfficeCopiesRoot(object? sender, RoutedEventArgs e) =>
         await BrowseStorageFolderAsync("Папка для локальных копий", (model, path) => model.OfficeCopiesRoot = path);
 
+    private async void OnFreeOfficeCopySpace(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { CanEdit: true, ShowOfficeCopyCleanup: true } model || OwnedWindows.Count > 0) return;
+        if (model.Journal.OfficeCleanupClient is not { } client)
+        {
+            model.Error = model.Journal.OfficeCleanupUnavailableReason;
+            return;
+        }
+        await new WorkflowOfficeCleanupWindow(model.Journal, client)
+            { RequestedThemeVariant = ActualThemeVariant }.ShowDialog(this);
+        if (IsVisible) FreeOfficeCopySpace.Focus();
+    }
+
     private async Task BrowseStorageFolderAsync(string title, Action<WorkflowSettingsViewModel, string> apply)
     {
         if (Model is not { CanEdit: true } model || !StorageProvider.CanPickFolder) return;

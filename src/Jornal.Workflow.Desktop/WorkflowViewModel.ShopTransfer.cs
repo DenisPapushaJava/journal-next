@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Jornal.Workflow.Core;
@@ -13,17 +15,22 @@ public partial class WorkflowViewModel
     public bool HasShopTransfer => ShopTransfer is not null && IsCuttingTaskVisible && CurrentOrder?.Version == _shopTransferVersion && TaskPreview.IsReady;
     public bool ShowShopTransferNotice => HasShopTransfer && ShopTransfer is { ShowNotice: true };
     partial void OnShopTransferChanging(WorkflowShopTransferViewModel? value)
-    { if (ShopTransfer is { } old) old.PropertyChanged -= OnShopTransferNoticeChanged; }
+    {
+        if (ShopTransfer is not { } old) return;
+        old.PropertyChanged -= OnShopTransferNoticeChanged;
+        old.Discard();
+    }
     partial void OnShopTransferChanged(WorkflowShopTransferViewModel? value)
     { if (value is { } current) current.PropertyChanged += OnShopTransferNoticeChanged; NotifyCuttingTask(); }
     private void OnShopTransferNoticeChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     { if (e.PropertyName == nameof(WorkflowShopTransferViewModel.ShowNotice)) OnPropertyChanged(nameof(ShowShopTransferNotice)); }
-    private void ResetShopTransfer() { ShopTransfer?.Cancel(); ShopTransfer = null; }
+    private void ResetShopTransfer() => ShopTransfer = null;
 
     public async Task<WorkflowShopTransferViewModel?> PrepareShopTransferAsync(Func<string, Task> clipboard, bool reviewOnly = false)
     {
         var preview = CreateShopTransfer(clipboard);
         if (preview is null) return null;
+        preview.ReviewOnly = reviewOnly;
         _shopTransferVersion = CurrentOrder!.Version;
         ShopTransfer = preview;
         await RunAsync(async () =>
@@ -40,14 +47,33 @@ public partial class WorkflowViewModel
         await RunAsync(() => preview.CopyTextCommand.ExecuteAsync(null));
     }
 
+    internal async Task<WorkflowShopTransferViewModel?> ContinueOfficeShopTransferAsync(WorkflowShopTransferViewModel preview,
+        WorkflowOfficeShopReview request, bool reviewOnly)
+    {
+        if (!CanUse || !ReferenceEquals(ShopTransfer, preview) || !ReferenceEquals(preview.OfficeReview, request)) return null;
+        CancelOfficeFileCheck();
+        await RunAsync(async () =>
+        {
+            await preview.ContinueOfficeReviewAsync(request);
+            if (!reviewOnly && preview.CanStartAutomatically && !preview.WasCancelled && ReferenceEquals(ShopTransfer, preview))
+                await preview.CopyAsync();
+        });
+        return ReferenceEquals(ShopTransfer, preview) ? preview : null;
+    }
+
     public WorkflowShopTransferViewModel? CreateShopTransfer(Func<string, Task> clipboard)
     {
         if (!CanCopyCuttingTask || CurrentOrder is not { } order) return null;
+        if (AuthorProblem is { } problem) { Error = problem; return null; }
+        if (IsRemoteStorage && _connection.RemoteClient is null) { Error = "Подключитесь к офисному серверу заново."; return null; }
         _cuttingTaskSource = _store; _cuttingTaskOrderId = order.Id; NotifyCuttingTask();
         if (!TaskPreview.IsReady || IsCuttingTaskTextStale || string.IsNullOrWhiteSpace(CuttingTaskText)) return null;
         if (ShopRoot is not { } root) { Error = "Укажите папку заданий в цех: Настройки → Хранилище."; return null; }
         Error = null;
         var source = _store; var snapshot = _workspace; var epoch = _cuttingTaskEpoch; var text = TaskPreview.Text;
+        var remote = _connection.RemoteClient;
+        var copiesRoot = OfficeCopiesRoot;
+        var expectedMarks = WorkflowHandoffClearExpected.From(order);
         var mapPreferences = HansMapPreferences;
         var mapBundle = !mapPreferences.Combine ? ShopMapBundle.Separate : mapPreferences.AsPdf ? ShopMapBundle.Pdf : ShopMapBundle.Doc;
         var actor = ActorId();
@@ -64,11 +90,22 @@ public partial class WorkflowViewModel
             });
             var fresh = await source.ReadOrderAsync(order.Id, token);
             var latest = fresh.Orders.SingleOrDefault(o => o.Id == order.Id);
-            if (latest?.Version != order.Version || latest.IsDeleted ||
+            if (!fresh.Employees.Any(e => e.Id == actor && e.CanWork))
+                throw new WorkflowValidationException("Выберите действующего технолога перед передачей в цех.");
+            if (latest?.Version != order.Version || latest.IsDeleted || !expectedMarks.Matches(latest) ||
                 WorkflowCuttingTask.Prepare(latest, fresh.Employees, fresh.Customers, fresh.Machines).Text != text ||
                 !WorkflowShopFolderPaths.Plan(root, latest, fresh.Employees, fresh.Customers, fresh.Machines).SequenceEqual(paths) ||
                 order.ActiveProjects.Any(p => fresh.Machines.SingleOrDefault(m => m.Id == p.MachineId) != snapshot.Machines.SingleOrDefault(m => m.Id == p.MachineId)))
                 throw new WorkflowValidationException("Заявка или справочники изменены другим пользователем. Закройте предпросмотр и обновите журнал (F5).");
+            if (remote is not null && await Task.Run(() => remote.ReadCalculationDraft(order.Id), token) is { } pending)
+            {
+                var included = CalculationProjectIds(latest);
+                if (pending.Entries.Any(entry => included.Contains(entry.ProjectId) &&
+                    !latest.Specifications.Any(saved => saved.Id == entry.ProjectId && entry.Matches(saved.Current))))
+                    throw new WorkflowValidationException("Есть незавершённый расчёт. Нажмите «Рассчитать», чтобы сверить его с офисом перед передачей в цех.");
+            }
+            if (remote is not null && !await Task.Run(() => Directory.Exists(root), token))
+                throw new WorkflowValidationException("Папка заданий в цех на этом компьютере недоступна. Проверьте локальную копию Яндекс Диска в настройках.");
         }
         void Transferred(ShopTransferResult[] results)
         {
@@ -86,6 +123,7 @@ public partial class WorkflowViewModel
             if (_cuttingTaskDetached || epoch != _cuttingTaskEpoch || !ReferenceEquals(source, _store) || CurrentOrder?.Id != order.Id ||
                 CurrentOrder.Version != order.Version || ShopRoot != root) throw new WorkflowValidationException("Заявка или настройки изменились. Обновите журнал (F5) и проверьте отметку передачи.");
             _workspace = saved;
+            expectedMarks = WorkflowHandoffClearExpected.From(saved.Orders.Single(o => o.Id == order.Id));
             RefreshOrders(preserveRows: true); NotifyOrder();
         }
         async Task RecordProjects(Guid[] projectIds, DateTimeOffset at, CancellationToken token)
@@ -93,7 +131,9 @@ public partial class WorkflowViewModel
             var saved = await source.RecordProjectHandoffsAsync(order.Id, order.Version, projectIds, actor, at, token);
             if (_cuttingTaskDetached || epoch != _cuttingTaskEpoch || !ReferenceEquals(source, _store) || CurrentOrder?.Id != order.Id ||
                 CurrentOrder.Version != order.Version || ShopRoot != root) throw new WorkflowValidationException("Отметки проектов сохранены. Обновите журнал и проверьте результат.");
-            _workspace = saved; RefreshOrders(preserveRows: true); NotifyOrder();
+            _workspace = saved;
+            expectedMarks = WorkflowHandoffClearExpected.From(saved.Orders.Single(o => o.Id == order.Id));
+            RefreshOrders(preserveRows: true); NotifyOrder();
         }
         async Task CopyText(string value)
         {
@@ -103,6 +143,20 @@ public partial class WorkflowViewModel
             await clipboard(text);
             RememberCuttingTaskCopy(source, order, epoch, value, text);
         }
-        return new(root, sourceId, order, snapshot, Validate, CopyText, Transferred, Record, _wordMapEditor, RecordProjects, mapBundle);
+        Task<IWorkflowShopPublication> OpenPublication(CancellationToken token) => Task.Run(async () =>
+        {
+            var profile = _preferences.Update(current => current.ShopPublicationId is not null ? current :
+                current with { ShopPublicationId = Guid.NewGuid() }).ShopPublicationId!.Value;
+            var folder = OperatingSystem.IsWindows() ? root.ToUpperInvariant() : root;
+            var owner = new Guid(SHA256.HashData(Encoding.UTF8.GetBytes(profile.ToString("N") + folder)).AsSpan(0, 16));
+            if (remote is not null) return await remote.OpenShopPublicationAsync(order, owner, token);
+            return WorkflowShopPublicationLock.Acquire(source.FilePath, source.DatabaseId!.Value, order.Id, owner);
+        }, token);
+        return new(root, sourceId, order, snapshot, Validate, CopyText, Transferred, Record, _wordMapEditor, RecordProjects, mapBundle)
+        {
+            PrepareOfficeSources = remote is null ? null :
+                (approved, progress, token) => remote.PrepareShopSourcesAsync(order, snapshot, copiesRoot, progress, token, approved),
+            OpenPublication = remote is not null || source.DatabaseId is not null ? OpenPublication : null
+        };
     }
 }

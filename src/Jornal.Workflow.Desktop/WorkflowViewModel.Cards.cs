@@ -5,7 +5,7 @@ namespace Jornal.Workflow.Desktop;
 public partial class WorkflowViewModel
 {
     private sealed record PlanState(bool IsOpen, Guid? MachineId, string Thickness,
-        Guid? RedoItem, CuttingProject? Prepared, bool HasBending = false, Guid? RemotePreparationId = null);
+        Guid? RedoItem, CuttingProject? Prepared, bool HasBending = false);
     private sealed record CardState(long Version, bool HasEdits, SpecificationDraft[] Drafts, Guid? SelectedDraftId,
         Guid? SelectedProjectId, string ManagerName, Guid? TechnologistId, string? Blcb,
         string Result, bool ResultExpanded, bool ResultStale, PlanState Plan, bool LetterOnly = false, int TabIndex = 0,
@@ -30,14 +30,14 @@ public partial class WorkflowViewModel
         _cards[order.Id] = new(CardVersion, HasCurrentCardEdits, Drafts.ToArray(), SelectedDraft?.Id,
             SelectedProject?.Project.Id, ManagerName, Technologist?.Id, Blcb,
             ResultText, IsResultExpanded, ResultIsStale, new(IsPlanning, PlanMachine?.Id,
-                PlanThickness, _redoItem, _preparedProject, PlanHasBending, _remotePreparationId), TabIndex: OrderTabIndex, SourceOrder: order, GeneratedResult: _generatedResultText,
+                PlanThickness, _redoItem, _preparedProject, PlanHasBending), TabIndex: OrderTabIndex, SourceOrder: order, GeneratedResult: _generatedResultText,
             TaskEdit: _cuttingTaskEdit);
     }
     private void SwitchCard(WorkflowOrder order)
     {
         if (_openOrderId == order.Id && !IsCreating) return;
         CaptureCard(); _cards.TryGetValue(order.Id, out var state);
-        IsPlanning = false; _preparedProject = null; _redoItem = null; _remotePreparationId = null;
+        IsPlanning = false; _preparedProject = null; _redoItem = null;
         LoadOrder(order);
         if (state is not null) RestoreCard(order, state);
         RefreshOrders(); OnPropertyChanged(nameof(HasPendingEdits));
@@ -54,7 +54,6 @@ public partial class WorkflowViewModel
             PlanMachine = _workspace.Machines.SingleOrDefault(m => m.Id == state.Plan.MachineId);
             PlanThickness = state.Plan.Thickness;
             PlanHasBending = state.Plan.HasBending;
-            _remotePreparationId = state.Plan.RemotePreparationId;
             _redoItem = state.Plan.RedoItem; _preparedProject = state.Plan.Prepared; IsPlanning = state.Plan.IsOpen;
             _loadedOrderVersion = state.Version;
         }
@@ -68,6 +67,7 @@ public partial class WorkflowViewModel
         OnPropertyChanged(nameof(CanEditPlan)); OnPropertyChanged(nameof(PlanTitle));
         if (state.HasEdits && state.Version != order.Version)
             Error = "Заявка изменена в другом окне. Ваш черновик сохранён; перед записью нужно проверить изменения.";
+        if (IsPlanning) TryRestoreOfficeCreation(() => RestoreOfficeProjectForm(order));
         NotifyOrder();
     }
     partial void OnSelectedOrderChanged(WorkflowOrderRow? oldValue, WorkflowOrderRow? newValue)

@@ -32,13 +32,16 @@ public partial class WorkflowViewModel
     public string AddProjectHint => CleanCardProblem ?? (!ProjectMachines.Any() ? "Добавьте станок: Станки и цены." : "Подготовить новый проект");
     private string? CreateProjectProblem =>
         // A created placeholder must remain recoverable after a failed database write.
+        _officeProjectToRecover is not null ? !CanUse ? "Дождитесь завершения операции." :
+            !IsCurrentOrderActive ? "Выберите активную заявку." : AuthorProblem :
         _preparedProject is not null ? !CanUse ? "Дождитесь завершения операции." : !IsCurrentOrderActive || RequiresDatabaseRefresh ?
             "Обновите журнал и проверьте сохранение проекта (F5)." : AuthorProblem :
         CardWriteProblem ?? (!IsPlanning ? "Откройте добавление проекта." : PlanMachine is null ? "Выберите станок." :
             NeedsProjectRoot ? "Укажите папку проектов: Настройки → Хранилище." :
             !PositiveNumber(PlanThickness, out _) ? "Укажите положительную толщину проекта." : null);
     public bool CanCreateProject => CreateProjectProblem is null;
-    public string CreateProjectHint => CreateProjectProblem ?? (_preparedProject is null ? "Создать папку и заготовку проекта" : "Повторить сохранение подготовленного проекта");
+    public string CreateProjectHint => CreateProjectProblem ?? (_preparedProject is not null ? "Повторить сохранение подготовленного проекта" :
+        _officeProjectToRecover is not null ? "Проверить сохранение проекта" : "Создать папку и заготовку проекта");
     public bool CanCancelPlanning => CanUse && _preparedProject is null;
     public string CancelPlanningHint => _preparedProject is not null ? "Заготовка уже создана — завершите сохранение проекта." : "Отменить ввод параметров";
     private string? LoadReportsProblem => CardWriteProblem ?? (HasCurrentCardEdits ? "Сохраните или отмените изменения карточки." :

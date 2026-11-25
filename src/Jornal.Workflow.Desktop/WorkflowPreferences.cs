@@ -14,6 +14,8 @@ public sealed record WorkflowPreferences(bool DarkTheme = false)
     public WorkflowResultPricing? ResultPricing { get; init; }
     public ResultTextStyle? ResultFormatting { get; init; }
     public string? ShopRoot { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? ShopPublicationId { get; init; }
     public bool CombineHansMaps { get; init; } = true;
     public bool HansMapsAsPdf { get; init; }
     public bool ManagerMapsAsPdf { get; init; }

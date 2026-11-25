@@ -9,12 +9,15 @@ public partial class WorkflowShopProgressWindow : Window
 {
     private bool _finished;
     public WorkflowShopProgressWindow() => InitializeComponent();
+    internal bool CalculationRequested { get; private set; }
     internal void Finish(bool forceClose = false)
     {
         _finished = true;
         if (forceClose || DataContext is not WorkflowShopTransferViewModel model ||
+            model.CanActOnOfficeReview && model.Error == model.OfficeReview?.Message ||
             !model.HasError && !model.WasCancelled && !model.IsProgressSuccessful) { Close(); return; }
-        ShopProgressClose.Content = "ОК";
+        ShopProgressCalculate.IsVisible = model.OfficeCalculationProjectId is not null;
+        ShopProgressClose.Content = ShopProgressCalculate.IsVisible ? "К заявке" : "ОК";
         ShopProgressCancel.IsVisible = false; ShopProgressClose.IsVisible = true; ShopProgressClose.Focus();
     }
     protected override void OnClosing(WindowClosingEventArgs e)
@@ -36,4 +39,9 @@ public partial class WorkflowShopProgressWindow : Window
         WindowSizing.FitToWorkingArea(this);
     }
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
+    private void OnCalculate(object? sender, RoutedEventArgs e)
+    {
+        CalculationRequested = true;
+        Close();
+    }
 }

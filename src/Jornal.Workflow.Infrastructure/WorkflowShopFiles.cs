@@ -26,6 +26,8 @@ public enum ShopMapBundle { Separate, Doc, Pdf }
 public sealed record ShopTransferSelection(ShopProjectFiles Project, ShopFile[] Files, bool Reviewed, string? DestinationRevision)
 {
     public ShopMapBundle MapBundle { get; init; }
+    public string? InputKey { get; init; }
+    public string? ArchivedFolder { get; init; }
 }
 
 // Explicit user operations only. No background scans, source markers or database writes.
@@ -75,22 +77,44 @@ internal static class ShopFileSystem
         }
     }
 
-    internal static async Task<(long Length, string Hash)> FingerprintAsync(string path, CancellationToken token)
+    internal static async Task<(long Length, string Hash)> FingerprintAsync(string path, CancellationToken token, List<FileStream>? held = null)
     {
         RequireOrdinaryPath(path);
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var length = stream.Length;
-        var hash = Convert.ToHexString(await SHA256.HashDataAsync(stream, token));
-        if (stream.Length != length) throw new WorkflowValidationException($"Файл изменился во время чтения: {Path.GetFileName(path)}. Повторите подбор.");
-        return (length, hash);
+        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, held is null ? 65536 : 1,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        held?.Add(stream);
+        try
+        {
+            var length = stream.Length;
+            var hash = Convert.ToHexString(await SHA256.HashDataAsync(stream, token));
+            if (stream.Length != length) throw new WorkflowValidationException($"Файл изменился во время чтения: {Path.GetFileName(path)}. Повторите подбор.");
+            return (length, hash);
+        }
+        finally { if (held is null) await stream.DisposeAsync(); }
     }
 
     internal static async Task<ShopTree> TreeAsync(string root, CancellationToken token, string? ignoreName = null,
-        Action<string>? onFile = null, Func<string, bool>? includeEntry = null)
+        Action<string>? onFile = null, Func<string, bool>? includeEntry = null, List<FileStream>? held = null)
+    {
+        var files = new List<ShopTreeFile>(); var directories = new List<string>();
+        foreach (var (path, relative, directory) in TreeEntries(root, token, ignoreName, includeEntry))
+        {
+            if (directory) { directories.Add(relative); continue; }
+            onFile?.Invoke(relative);
+            try { var f = await FingerprintAsync(path, token, held); files.Add(new(relative, f.Length, f.Hash)); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { throw new WorkflowValidationException($"Файл «{relative}» в папке «{Path.GetFileName(root)}» недоступен. Закройте его или проверьте доступ."); }
+        }
+        if (files.Select(f => f.RelativePath).Concat(directories).Distinct(PathComparer).Count() != files.Count + directories.Count)
+            throw new WorkflowValidationException("В папке совпадают имена без учёта регистра. Проверьте комплект перед переносом на Windows.");
+        return new(files.ToArray(), directories.ToArray());
+    }
+
+    internal static IEnumerable<(string Path, string Relative, bool Directory)> TreeEntries(string root, CancellationToken token,
+        string? ignoreName, Func<string, bool>? includeEntry = null)
     {
         RequireOrdinaryPath(root);
         if (!Directory.Exists(root)) throw new WorkflowValidationException($"Папка недоступна: {root}");
-        var files = new List<ShopTreeFile>(); var directories = new List<string>();
         var pending = new Stack<string>(); pending.Push(root);
         while (pending.TryPop(out var folder))
         {
@@ -100,19 +124,11 @@ internal static class ShopFileSystem
                 token.ThrowIfCancellationRequested(); RequireOrdinaryPath(path);
                 var relative = Path.GetRelativePath(root, path);
                 if (relative == ignoreName) continue;
-                if ((File.GetAttributes(path) & FileAttributes.Directory) != 0) { directories.Add(relative); pending.Push(path); }
-                else
-                {
-                    onFile?.Invoke(relative);
-                    try { var f = await FingerprintAsync(path, token); files.Add(new(relative, f.Length, f.Hash)); }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                    { throw new WorkflowValidationException($"Файл «{relative}» в папке «{Path.GetFileName(root)}» недоступен. Закройте его или проверьте доступ."); }
-                }
+                var directory = (File.GetAttributes(path) & FileAttributes.Directory) != 0;
+                if (directory) pending.Push(path);
+                yield return (path, relative, directory);
             }
         }
-        if (files.Select(f => f.RelativePath).Concat(directories).Distinct(PathComparer).Count() != files.Count + directories.Count)
-            throw new WorkflowValidationException("В папке совпадают имена без учёта регистра. Проверьте комплект перед переносом на Windows.");
-        return new(files.ToArray(), directories.ToArray());
     }
 
     internal static bool SameTree(ShopTree a, ShopTree b) =>

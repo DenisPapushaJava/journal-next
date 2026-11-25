@@ -50,8 +50,10 @@ public partial class WorkflowWindow
             var operation = model.PrepareShopTransferAsync(WriteCuttingTaskClipboardAsync, reviewOnly);
             var preview = reviewOnly ? await operation : await WithShopProgressAsync(operation);
             if (!IsVisible || preview is null || _lifetime.IsCancellationRequested) return;
-            if (reviewOnly || !preview.AllPrepared && !preview.WasCancelled && preview.Error is null)
-                await ShowShopTransferDetailsAsync(preview);
+            if (preview.CanActOnOfficeReview)
+                await ContinueOfficeShopAsync(model, preview, reviewOnly);
+            else
+                await ShowRemainingShopReviewAsync(preview, reviewOnly);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -59,6 +61,61 @@ public partial class WorkflowWindow
             Jornal.Infrastructure.Diagnostics.AppDiagnostics.Capture(Jornal.Infrastructure.Diagnostics.DiagnosticOperation.Unexpected, ex);
         }
     }
+
+    private Task ShowRemainingShopReviewAsync(WorkflowShopTransferViewModel preview, bool reviewOnly) =>
+        IsVisible && !_lifetime.IsCancellationRequested && !preview.CanActOnOfficeReview &&
+        (reviewOnly || !preview.AllPrepared && !preview.WasCancelled && preview.Error is null)
+            ? ShowShopTransferDetailsAsync(preview) : Task.CompletedTask;
+
+    private async void OnContinueOfficeShop(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { CanUse: true, ShopTransfer: { CanActOnOfficeReview: true } preview } model || OwnedWindows.Count > 0) return;
+        await ContinueOfficeShopAsync(model, preview, preview.ReviewOnly);
+    }
+
+    private async Task ContinueOfficeShopAsync(WorkflowViewModel model, WorkflowShopTransferViewModel preview, bool reviewOnly)
+    {
+        if (!IsVisible || !preview.CanActOnOfficeReview || preview.OfficeReview is not { } request) return;
+        bool Current() => IsVisible && !_lifetime.IsCancellationRequested && ReferenceEquals(Model, model) &&
+            ReferenceEquals(model.ShopTransfer, preview) && ReferenceEquals(preview.OfficeReview, request);
+        if (!Current()) return;
+        try
+        {
+            if (request.Conflict is { } conflict)
+            {
+                var row = model.Projects.SingleOrDefault(project => project.Project.Id == conflict.ProjectId);
+                if (row is null || !await ResolveOfficeWorkingConflictAsync(model, row, conflict.ToConflict(), Current, forShopTransfer: true)) return;
+            }
+            else
+            {
+                var files = string.Join("\n\n", request.Files.GroupBy(file => file.ProjectId)
+                    .Select(group => group.First().ProjectName + "\n" + string.Join("\n", group.Select(file => file.Path))));
+                var prompt = new WorkflowProjectActionWindow("Передача файлов в офис",
+                    "Эти файлы будут сохранены в офисных папках проектов перед подготовкой задания в цех.",
+                    files, "Отправить файлы и продолжить") { RequestedThemeVariant = ActualThemeVariant };
+                if (!await prompt.ShowDialog<bool>(this)) return;
+            }
+            if (!Current()) return;
+            var result = await WithShopProgressAsync(model.ContinueOfficeShopTransferAsync(preview, request, reviewOnly));
+            if (result is null || !IsVisible || _lifetime.IsCancellationRequested) return;
+            if (request.Conflict is not null && result.OfficeReview is { Conflict: null } && result.CanActOnOfficeReview)
+                await ContinueOfficeShopAsync(model, result, reviewOnly);
+            else
+                await ShowRemainingShopReviewAsync(result, reviewOnly);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            if (IsVisible && ReferenceEquals(model.ShopTransfer, preview))
+                preview.Error = ex is WorkflowValidationException ? ex.Message : "Не удалось продолжить передачу. Проверьте подключение и повторите действие.";
+            Jornal.Infrastructure.Diagnostics.AppDiagnostics.Capture(Jornal.Infrastructure.Diagnostics.DiagnosticOperation.Unexpected, ex);
+        }
+        finally
+        {
+            if (IsVisible && ReferenceEquals(Model, model) && !model.IsBusy && !_lifetime.IsCancellationRequested)
+                _ = model.RefreshOfficePendingFilesAsync(_lifetime.Token, recentlyOpenedOnly: true);
+        }
+    }
+
     private Task ShowShopTransferDetailsAsync(WorkflowShopTransferViewModel preview) =>
         new WorkflowShopTransferWindow(false) { DataContext = preview, RequestedThemeVariant = ActualThemeVariant }.ShowDialog(this);
     private async void OnShopTransferDetails(object? sender, RoutedEventArgs e)

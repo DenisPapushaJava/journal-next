@@ -14,6 +14,7 @@ public sealed record ShopTransferResult(Guid ProjectId, bool Success, bool Uncha
 public sealed record ShopDestinationInspection(string? Revision, ShopTree? Contents)
 {
     public string? BundleKey { get; init; }
+    public string? InputKey { get; init; }
     public int PdfExportVersion { get; init; }
 }
 
@@ -23,6 +24,8 @@ public static partial class WorkflowShopTransfer
     private sealed record Receipt(int Schema, string SourceId, Guid OrderId, Guid ProjectId, ShopTree Contents)
     {
         public string? BundleKey { get; init; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? InputKey { get; init; }
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public int PdfExportVersion { get; init; }
     }
@@ -31,6 +34,78 @@ public static partial class WorkflowShopTransfer
     public static async Task<string?> DestinationRevisionAsync(ShopProjectFiles project, string sourceId, Guid orderId, CancellationToken token = default) =>
         (await ReadTargetAsync(project, sourceId, orderId, token))?.Revision;
 
+    public sealed class DestinationVerification : IDisposable
+    {
+        private readonly ShopTransferSelection _selection;
+        private readonly string _sourceId;
+        private readonly Guid _orderId;
+        private readonly List<FileStream>? _held = OperatingSystem.IsWindows() ? [] : null;
+        private ShopTree? _tree;
+        internal DestinationVerification(ShopTransferSelection selection, string sourceId, Guid orderId)
+        {
+            _selection = selection;
+            _sourceId = sourceId;
+            _orderId = orderId;
+        }
+
+        internal async Task VerifyAsync(CancellationToken token)
+        {
+            var target = await ReadTargetAsync(_selection.Project, _sourceId, _orderId, token, held: _held);
+            if (target is null || target.Revision != _selection.DestinationRevision) throw DestinationChanged(_selection);
+            _tree = target.Receipt.Contents;
+        }
+
+        public async Task RecheckAsync(CancellationToken token)
+        {
+            if (_held is null)
+            {
+                // Unix file sharing is advisory. Check the bytes again after the round trips to the server.
+                await VerifyAsync(token);
+                return;
+            }
+            var entries = ShopFileSystem.TreeEntries(_selection.Project.Destination, token, ReceiptName)
+                .Select(entry => (entry.Relative, entry.Directory)).ToHashSet();
+            if (_tree is null || !entries.SetEquals(_tree.Files.Select(f => (f.RelativePath, false))
+                .Concat(_tree.Directories.Select(d => (d, true)))))
+                throw DestinationChanged(_selection);
+        }
+
+        public void Dispose()
+        {
+            if (_held is null) return;
+            foreach (var file in _held) file.Dispose();
+            _held.Clear();
+        }
+    }
+
+    public static async Task<DestinationVerification> VerifyDestinationForRecordingAsync(ShopTransferSelection selection, string sourceId,
+        Guid orderId, CancellationToken token)
+    {
+        var verification = new DestinationVerification(selection, sourceId, orderId);
+        try
+        {
+            await verification.VerifyAsync(token);
+            return verification;
+        }
+        catch { verification.Dispose(); throw; }
+    }
+
+    private static WorkflowValidationException DestinationChanged(ShopTransferSelection selection) =>
+        new($"Папка задания для «{selection.Project.Project.Name}» изменилась. Обновите подбор перед записью отметки.");
+
+    public static async Task<string?> PublicationRevisionAsync(ShopTransferSelection selection, string sourceId, Guid orderId, CancellationToken token)
+    {
+        if (selection.ArchivedFolder is not { } archive || selection.DestinationRevision is not null)
+            return selection.DestinationRevision;
+        var destination = selection.Project.Destination;
+        ShopFileSystem.RequireOrdinaryPath(destination);
+        if (Directory.Exists(destination) || File.Exists(destination) || ShopFileSystem.Under(archive, destination) ||
+            ShopFileSystem.Under(destination, archive))
+            throw new WorkflowValidationException("Укажите папку перенесённого комплекта. Путь нового задания должен быть свободен.");
+        return (await ReadTargetAsync(selection.Project with { Destination = archive }, sourceId, orderId, token))?.Revision
+            ?? throw new WorkflowValidationException("Архивная папка недоступна. Выберите папку прежнего задания со служебной записью.");
+    }
+
     public static async Task<ShopDestinationInspection> InspectDestinationAsync(ShopProjectFiles project, string sourceId, Guid orderId, CancellationToken token = default,
         IProgress<WorkflowShopProgress>? details = null)
     {
@@ -38,32 +113,51 @@ public static partial class WorkflowShopTransfer
         return new(target?.Revision, target?.Receipt.Contents)
         {
             BundleKey = target?.Receipt.BundleKey,
+            InputKey = target?.Receipt.InputKey,
             PdfExportVersion = target?.Receipt.PdfExportVersion ?? 0
         };
     }
-    public static bool MatchesDestination(ShopTransferSelection selection, ShopTree contents, string? receiptBundleKey = null, int pdfExportVersion = 0) =>
-        BundleKey(selection, out _) is { } key
+    public static bool MatchesDestination(ShopTransferSelection selection, ShopTree contents, string? receiptBundleKey = null,
+        int pdfExportVersion = 0, string? inputKey = null) =>
+        selection.InputKey is not null && selection.InputKey == inputKey ||
+        (BundleKey(selection, out _) is { } key
             ? key == receiptBundleKey && (selection.MapBundle != ShopMapBundle.Pdf || pdfExportVersion >= WorkflowMapBundlePdf.ExportVersion)
-            : receiptBundleKey is null && ShopFileSystem.SameTree(DesiredTree(selection), contents);
+            : receiptBundleKey is null && ShopFileSystem.SameTree(DesiredTree(selection), contents));
 
     private static bool MatchesDestination(ShopTransferSelection selection, Receipt receipt) =>
-        MatchesDestination(selection, receipt.Contents, receipt.BundleKey, receipt.PdfExportVersion);
+        MatchesDestination(selection, receipt.Contents, receipt.BundleKey, receipt.PdfExportVersion, receipt.InputKey);
+
+    public static string InputKey(ShopTransferSelection original, string caption)
+    {
+        var tree = WithSeparator(DesiredTree(original), '/');
+        return Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            Caption = caption,
+            original.MapBundle,
+            PdfExport = original.MapBundle == ShopMapBundle.Pdf ? WorkflowMapBundlePdf.ExportVersion : 0,
+            Files = tree.Files.OrderBy(f => f.RelativePath, StringComparer.Ordinal),
+            Directories = tree.Directories.Order(StringComparer.Ordinal)
+        })));
+    }
+
+    public static string PublicationPath(string root, string destination) => Path.GetRelativePath(root, destination).Replace('\\', '/');
     public static async Task<bool> HasOwnedDestinationAsync(ShopProjectFiles project, string sourceId, Guid orderId, CancellationToken token = default) =>
         await ReadReceiptAsync(project, sourceId, orderId, token) is not null;
 
     private static async Task<Target?> ReadTargetAsync(ShopProjectFiles project, string sourceId, Guid orderId, CancellationToken token,
-        IProgress<WorkflowShopProgress>? details = null, WorkflowShopStage stage = WorkflowShopStage.Checking)
+        IProgress<WorkflowShopProgress>? details = null, WorkflowShopStage stage = WorkflowShopStage.Checking, List<FileStream>? held = null)
     {
-        var target = await ReadReceiptAsync(project, sourceId, orderId, token);
+        var target = await ReadReceiptAsync(project, sourceId, orderId, token, held);
         if (target is null) return null;
         var actual = await ShopFileSystem.TreeAsync(project.Destination, token, ReceiptName,
-            name => details?.Report(new(stage, project.Project.Name, name, Activity: "Проверяем ранее переданные файлы")));
+            name => details?.Report(new(stage, project.Project.Name, name, Activity: "Проверяем ранее переданные файлы")), held: held);
         if (!ShopFileSystem.SameTree(target.Receipt.Contents, actual))
             throw new WorkflowValidationException("В готовой папке файлы добавлены или изменены вне программы. Разберите их вручную; автоматическая замена остановлена.");
         return target;
     }
 
-    private static async Task<Target?> ReadReceiptAsync(ShopProjectFiles project, string sourceId, Guid orderId, CancellationToken token)
+    private static async Task<Target?> ReadReceiptAsync(ShopProjectFiles project, string sourceId, Guid orderId, CancellationToken token,
+        List<FileStream>? held = null)
     {
         ShopFileSystem.RequireOrdinaryPath(project.Destination);
         if (File.Exists(project.Destination)) throw new WorkflowValidationException("По пути задания уже существует файл.");
@@ -74,24 +168,39 @@ public static partial class WorkflowShopTransfer
             throw new WorkflowValidationException("Папка задания уже существует без подтверждения программы «Заявки». Выберите другое расположение или разберите её вручную; файлы не заменены.");
         byte[] bytes;
         // Passive availability reads must not lock a folder against publication/cleanup on Windows.
-        await using (var stream = new FileStream(receiptPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 4096, FileOptions.Asynchronous))
+        var stream = new FileStream(receiptPath, FileMode.Open, FileAccess.Read, held is null ? FileShare.Read | FileShare.Delete : FileShare.Read,
+            held is null ? 4096 : 1, FileOptions.Asynchronous);
+        held?.Add(stream);
+        try
         {
             if (stream.Length > 8 * 1024 * 1024) throw new WorkflowValidationException("Служебная запись задания слишком велика. Существующие файлы не заменены.");
             bytes = new byte[checked((int)stream.Length)];
             await stream.ReadExactlyAsync(bytes, token);
         }
+        finally { if (held is null) await stream.DisposeAsync(); }
         Receipt receipt;
         try { receipt = JsonSerializer.Deserialize<Receipt>(bytes) ?? throw new JsonException(); }
         catch (JsonException) { throw new WorkflowValidationException("Служебная запись задания повреждена. Существующие файлы не заменены."); }
         if (receipt.Schema != 1 || receipt.SourceId != sourceId || receipt.OrderId != orderId || receipt.ProjectId != project.Project.Id ||
-            receipt.Contents?.Files is null || receipt.Contents.Directories is null || receipt.Contents.Files.Any(f => f is null) || receipt.Contents.Directories.Any(d => d is null))
+            receipt.Contents?.Files is null || receipt.Contents.Directories is null ||
+            receipt.Contents.Files.Any(f => string.IsNullOrEmpty(f?.RelativePath)) || receipt.Contents.Directories.Any(string.IsNullOrEmpty))
             throw new WorkflowValidationException("Эта папка относится к другому проекту или хранилищу. Существующие файлы не заменены.");
-        return new(Convert.ToHexString(SHA256.HashData(bytes)), receipt);
+        return new(Convert.ToHexString(SHA256.HashData(bytes)),
+            receipt with { Contents = WithSeparator(receipt.Contents, Path.DirectorySeparatorChar) });
+    }
+
+    private static ShopTree WithSeparator(ShopTree tree, char separator)
+    {
+        string Normalize(string path) => path.Replace('\\', separator).Replace('/', separator);
+        return new(tree.Files.Select(file => file with { RelativePath = Normalize(file.RelativePath) }).ToArray(),
+            tree.Directories.Select(Normalize).ToArray());
     }
 
     public static Task<ShopTransferResult[]> CopyAsync(string root, string sourceId, Guid orderId, ShopTransferSelection[] selections,
         bool allowReplacement, Func<CancellationToken, Task> validateOrder, IProgress<string>? progress = null, CancellationToken token = default,
-        IWorkflowWordMapEditor? word = null, IProgress<WorkflowShopProgress>? details = null) => Task.Run(async () =>
+        IWorkflowWordMapEditor? word = null, IProgress<WorkflowShopProgress>? details = null,
+        Func<ShopTransferSelection, CancellationToken, Task>? validateProjectSource = null,
+        IWorkflowShopPublication? publication = null) => Task.Run(async () =>
     {
         root = WorkflowShopFolderPaths.NormalizeRoot(root) ?? throw new WorkflowValidationException("Выберите папку заданий в цех.");
         var failures = await PreflightCoreAsync(root, sourceId, orderId, selections, allowReplacement, validateOrder, progress, token, word, details, WorkflowShopStage.Copying);
@@ -105,14 +214,15 @@ public static partial class WorkflowShopTransfer
             progress?.Report("Подготовка: " + selection.Project.Project.Name);
             try
             {
-                var result = await CopyProjectAsync(root, sourceId, orderId, selection, allowReplacement, validateOrder, token, word, details, completed, total);
+                var result = await CopyProjectAsync(root, sourceId, orderId, selection, allowReplacement, validateOrder, token, word, details,
+                    completed, total, validateProjectSource, publication);
                 results.Add(result);
                 if (result.Success) completed += selection.Files.Length + (selection.Project.Bending?.Files.Length ?? 0);
                 details?.Report(new(WorkflowShopStage.Copying, selection.Project.Project.Name, Completed: completed, Total: total,
                     Activity: result.Unchanged ? "Комплект уже актуален" : "Комплект проекта подготовлен"));
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or WorkflowValidationException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or WorkflowValidationException or WorkflowConflictException)
             {
                 results.Add(Failure(selection, ex));
                 // A failed project does not silently send the rest of the order.
@@ -155,7 +265,7 @@ public static partial class WorkflowShopTransfer
     }
 
     private static ShopTransferResult Failure(ShopTransferSelection selection, Exception ex) => new(selection.Project.Project.Id, false, false,
-        $"Проект «{selection.Project.Project.Name}»: " + (ex is WorkflowValidationException ? ex.Message :
+        $"Проект «{selection.Project.Project.Name}»: " + (ex is WorkflowValidationException or WorkflowConflictException ? ex.Message :
         "Не удалось подготовить файлы. Проверьте доступ к рабочей папке и папке цеха."), selection.DestinationRevision);
 
     private static void ValidateSelections(string root, ShopTransferSelection[] selections)
@@ -183,22 +293,26 @@ public static partial class WorkflowShopTransfer
 
     private static async Task<ShopTransferResult> CopyProjectAsync(string root, string sourceId, Guid orderId, ShopTransferSelection selection,
         bool allowReplacement, Func<CancellationToken, Task> validateOrder, CancellationToken token, IWorkflowWordMapEditor? word,
-        IProgress<WorkflowShopProgress>? details, int completed, int total)
+        IProgress<WorkflowShopProgress>? details, int completed, int total, Func<ShopTransferSelection, CancellationToken, Task>? validateProjectSource,
+        IWorkflowShopPublication? publication)
     {
         var project = selection.Project; var destination = project.Destination; var parent = Path.GetDirectoryName(destination)!;
         ShopFileSystem.RequireOrdinaryPath(destination);
         var locks = Path.Combine(root, ".journal-next-transfer-locks");
         ShopFileSystem.RequireOrdinaryPath(locks); Directory.CreateDirectory(locks); WorkflowServiceFiles.TryHide(locks);
-        var lockName = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetRelativePath(root, destination).Replace('\\', '/').ToUpperInvariant()))) + ".lock";
+        var relativePath = PublicationPath(root, destination);
+        var lockName = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(relativePath.ToUpperInvariant()))) + ".lock";
         var lockPath = Path.Combine(locks, lockName); ShopFileSystem.RequireOrdinaryPath(lockPath);
         // Keep the lock file: deleting it after release can split concurrent clients across different file handles.
         await using var lease = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var target = await ReadTargetAsync(project, sourceId, orderId, token, details, WorkflowShopStage.Copying);
+        if (target is not null) WorkflowServiceFiles.TryHide(Path.Combine(destination, ReceiptName));
         if (target?.Revision != selection.DestinationRevision) throw new WorkflowValidationException("Папка задания изменилась после предпросмотра. Обновите подбор.");
         var bundleKey = BundleKey(selection, out var bundleName);
         await VerifySourcesAsync(selection, token, word, details, WorkflowShopStage.Copying);
         if (target is not null && MatchesDestination(selection, target.Receipt))
         {
+            if (validateProjectSource is not null) await validateProjectSource(selection, token);
             if (bundleName is not null)
             {
                 var file = target.Receipt.Contents.Files.SingleOrDefault(f => f.RelativePath == bundleName)
@@ -212,9 +326,13 @@ public static partial class WorkflowShopTransfer
             throw new WorkflowValidationException("Комплект изменился. Разрешите замену ранее подготовленных комплектов и повторите.");
         details?.Report(new(WorkflowShopStage.Copying, project.Project.Name, Activity: "Создаём папки комплекта"));
         ShopFileSystem.RequireOrdinaryPath(parent); Directory.CreateDirectory(parent); ShopFileSystem.RequireOrdinaryPath(parent);
-        var stage = Path.Combine(parent, ".journal-next-new-" + Guid.NewGuid().ToString("N"));
-        var backup = Path.Combine(parent, ".journal-next-replaced-" + Guid.NewGuid().ToString("N"));
+        var staging = Path.Combine(parent, ".journal-next-new-" + Guid.NewGuid().ToString("N"));
+        var stage = Path.Combine(staging, "task");
+        var backup = Path.Combine(staging, "previous");
         Directory.CreateDirectory(stage);
+        WorkflowServiceFiles.TryHide(staging);
+        ShopPublicationChange? reservation = null;
+        var promotionStarted = false;
         try
         {
             var tree = DesiredTree(selection);
@@ -243,8 +361,9 @@ public static partial class WorkflowShopTransfer
                 details?.Report(new(WorkflowShopStage.Copying, project.Project.Name, file.RelativePath, completed, total, "Файл скопирован и проверен"));
             }
             var pdfExportVersion = bundle is not null && selection.MapBundle == ShopMapBundle.Pdf ? WorkflowMapBundlePdf.ExportVersion : 0;
-            var receipt = JsonSerializer.SerializeToUtf8Bytes(new Receipt(1, sourceId, orderId, project.Project.Id, tree)
-                { BundleKey = bundleKey, PdfExportVersion = pdfExportVersion });
+            var receipt = JsonSerializer.SerializeToUtf8Bytes(new Receipt(1, sourceId, orderId, project.Project.Id, WithSeparator(tree, '\\'))
+                { BundleKey = bundleKey, PdfExportVersion = pdfExportVersion, InputKey = selection.InputKey });
+            var revision = Convert.ToHexString(SHA256.HashData(receipt));
             if (receipt.Length > 8 * 1024 * 1024) throw new WorkflowValidationException("Состав комплекта слишком большой для служебной записи. Готовая папка не изменена.");
             await File.WriteAllBytesAsync(Path.Combine(stage, ReceiptName), receipt, token);
             WorkflowServiceFiles.TryHide(Path.Combine(stage, ReceiptName));
@@ -254,12 +373,22 @@ public static partial class WorkflowShopTransfer
                 name => details?.Report(new(WorkflowShopStage.Verifying, project.Project.Name, name, Activity: "Проверяем копию файла")))))
                 throw new WorkflowValidationException("Не удалось проверить скопированные файлы. Готовая папка не изменена.");
             await validateOrder(token);
+            if (validateProjectSource is not null) await validateProjectSource(selection, token);
             if ((await ReadTargetAsync(project, sourceId, orderId, token, details, WorkflowShopStage.Verifying))?.Revision != target?.Revision)
                 throw new WorkflowValidationException("Папка задания изменилась во время подготовки. Обновите подбор.");
             if (bundle is not null)
                 await SaveProjectBundleAsync(project.Project, Path.Combine(stage, bundle.RelativePath), bundle, token);
+            if (publication is not null)
+            {
+                var previousRevision = await PublicationRevisionAsync(selection, sourceId, orderId, token);
+                var change = new ShopPublicationChange(ShopPublicationStep.Reserve, project.Project.Id, relativePath, previousRevision, revision)
+                { ReservationId = publication.SupportsRollback ? Guid.NewGuid() : null };
+                await publication.UpdateAsync(change, token);
+                if (change.ReservationId is not null) reservation = change;
+            }
             ShopFileSystem.RequireOrdinaryPath(destination); token.ThrowIfCancellationRequested();
             // No cancellation between moves: finish promotion or restore the previous complete folder.
+            promotionStarted = true;
             if (target is not null) Directory.Move(destination, backup);
             try { Directory.Move(stage, destination); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -280,17 +409,33 @@ public static partial class WorkflowShopTransfer
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or WorkflowValidationException)
                 { warning = "Предыдущая копия сохранена: " + backup; }
-                if (warning is not null) WorkflowServiceFiles.TryHide(backup);
             }
             var message = bundle is null ? "Файлы подготовлены" : "Файлы подготовлены · " + bundle.RelativePath;
-            return new(project.Project.Id, true, false, warning is null ? message : message + ". " + warning, Convert.ToHexString(SHA256.HashData(receipt)))
+            return new(project.Project.Id, true, false, warning is null ? message : message + ". " + warning, revision)
                 { BundleKey = bundleKey, PdfExportVersion = pdfExportVersion };
+        }
+        catch (Exception ex) when (!promotionStarted && reservation is not null && publication is not null &&
+            ex is OperationCanceledException or IOException or UnauthorizedAccessException or WorkflowValidationException)
+        {
+            try
+            {
+                await publication.UpdateAsync(reservation with { Step = ShopPublicationStep.Rollback }, CancellationToken.None);
+            }
+            catch (Exception rollback) when (rollback is IOException or UnauthorizedAccessException or WorkflowValidationException or OperationCanceledException)
+            {
+                throw new WorkflowValidationException("Папка задания ещё не опубликована, но снять резерв не удалось. " +
+                    "Проверьте доступ к общей базе и повторите с этого компьютера. " + rollback.Message);
+            }
+            throw;
         }
         finally
         {
-            if (Directory.Exists(stage))
-                try { Directory.Delete(stage, true); }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* Own abandoned staging folder; never a completed destination. */ }
+            try
+            {
+                if (Directory.Exists(stage)) Directory.Delete(stage, true);
+                if (!Directory.Exists(backup)) Directory.Delete(staging);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* Keep the hidden staging or saved previous task. */ }
         }
     }
 

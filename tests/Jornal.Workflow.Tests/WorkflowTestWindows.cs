@@ -38,6 +38,9 @@ internal static class WorkflowTestWindows
             if (i % 10 == 0 && window.OwnedWindows.Count == 0) window.Close();
             foreach (var dialog in window.OwnedWindows.OfType<WorkflowCloseWindow>().ToArray())
                 dialog.FindControl<Button>("DiscardWorkflowClose")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            foreach (var dialog in window.OwnedWindows.OfType<WorkflowOfficePendingWindow>().ToArray())
+                if (dialog.FindControl<Button>("ExitWithoutSending") is { IsVisible: true } exit)
+                    exit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Dispatcher.UIThread.RunJobs();
             if (window.IsVisible) Thread.Sleep(1);
         }

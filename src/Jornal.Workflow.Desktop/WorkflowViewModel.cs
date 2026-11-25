@@ -147,6 +147,7 @@ public partial class WorkflowViewModel : ObservableObject
         CancelDatabaseSearch();
         await RunAsync(async () =>
         {
+            ClearOfflineOfficeFolders();
             CaptureCard(); var restore = RequiresDatabaseRefresh && _openOrderId is { } oldId ? _cards.GetValueOrDefault(oldId) : null;
             _loadedOrderSnapshot = CurrentOrder; ConfigureDatabaseQuery();
             try { if (!_startupPreferencesPrepared) LoadLocalPreferences(_preferences); }
@@ -156,6 +157,11 @@ public partial class WorkflowViewModel : ObservableObject
             _initialProfileReadFinished = false; NotifyProfile();
             WorkflowWorkspace workspace;
             try { workspace = await _store.ReadAsync(); }
+            catch (WorkflowOfficeConnectionLostException) when (!_hasLoadedOrders && _connection.RemoteClient is not null)
+            {
+                await ReadOfflineOfficeFoldersAsync(_connection.RemoteClient!, CancellationToken.None);
+                return;
+            }
             finally { _initialProfileReadFinished = true; NotifyProfile(); }
             _reportReview = null; _reportImportOrderId = null;
             ResetCuttingTask();
@@ -165,10 +171,13 @@ public partial class WorkflowViewModel : ObservableObject
             Technologist ??= CurrentEmployee;
             RefreshOrders();
             NotifyPriceCatalog();
-            if (_store is WorkflowMdbStore { RecoveredOrderId: { } recovered } mdb && _workspace.Orders.SingleOrDefault(o => o.Id == recovered) is { } created)
-            { IsCreating = false; LoadOrder(created); mdb.AcknowledgeRecovery(); }
-            else if (CurrentOrder is { } order) { LoadOrder(order); if (restore is not null) RestoreCard(order, restore); }
-            else if (SelectedOrder is { } selected) LoadOrder(selected.Order);
+            if (!await RecoverOfficeOrderAsync())
+            {
+                if (_store is WorkflowMdbStore { RecoveredOrderId: { } recovered } mdb && _workspace.Orders.SingleOrDefault(o => o.Id == recovered) is { } created)
+                { IsCreating = false; LoadOrder(created); mdb.AcknowledgeRecovery(); }
+                else if (CurrentOrder is { } order) { LoadOrder(order); if (restore is not null) RestoreCard(order, restore); }
+                else if (SelectedOrder is { } selected) LoadOrder(selected.Order);
+            }
             NotifyDatabase();
             await RememberStartupProfileAsync();
         });
@@ -181,6 +190,7 @@ public partial class WorkflowViewModel : ObservableObject
         if (IsCreating) return;
         CaptureCard();
         IsCreating = true; NewCustomer = ""; NewManager = ""; Error = null;
+        TryRestoreOfficeCreation(RestoreOfficeOrderForm);
     }
     [RelayCommand]
     private void CancelNewOrder()
@@ -195,12 +205,22 @@ public partial class WorkflowViewModel : ObservableObject
         await RunAsync(async () =>
         {
             var customer = NewCustomer; var manager = NewManager; var actorId = ActorId();
-            var created = await _store.CreateOrderFromNamesAsync(manager, customer, actorId, DateTimeOffset.Now);
-            _workspace = created.Workspace; var orderId = created.OrderId; RefreshEmployees(actorId);
-            IsCreating = false; IsPlanning = false; _preparedProject = null; Search = "";
-            if (!IsInPeriod(_workspace.Orders.Single(o => o.Id == orderId))) FilterDate = null;
-            RefreshOrders(); LoadOrder(_workspace.Orders.Single(o => o.Id == orderId)); RefreshOrders();
+            var created = _connection.RemoteClient is { } remote && _store is WorkflowMdbStore mdb
+                ? await CreateOfficeOrderAsync(remote, mdb, manager, customer, actorId)
+                : await _store.CreateOrderFromNamesAsync(manager, customer, actorId, DateTimeOffset.Now);
+            _workspace = created.Workspace;
+            ShowCreatedOrder(_workspace.Orders.Single(o => o.Id == created.OrderId), actorId);
         });
+    }
+    private void ShowCreatedOrder(WorkflowOrder created, Guid actor)
+    {
+        RefreshEmployees(actor);
+        IsCreating = false; IsPlanning = false; _preparedProject = null; Search = "";
+        if (!IsInPeriod(created)) FilterDate = null;
+        RefreshOrders();
+        LoadOrder(created);
+        RefreshOrders();
+        if (created.IsDeleted) Error = "Заявка была сохранена и сейчас находится в корзине.";
     }
     [RelayCommand]
     private void OpenOrder()
@@ -281,31 +301,28 @@ public partial class WorkflowViewModel : ObservableObject
             else
             {
                 var rate = draft.Rate(); var documentNumber = draft.Number;
-                AcceptedReport? report = null;
                 var sourcePath = draft.SourcePath;
                 var remote = _connection.RemoteClient;
                 var incoming = draft.IncomingReport;
                 if (incoming is not null) await WorkflowReportFiles.RevalidateAsync(incoming);
-                if (remote is not null)
+                if (remote is not null && source is WorkflowMdbStore mdb)
                 {
                     var values = incoming is null ? null : WorkflowReportCandidate.Values(FromReport(incoming.Parsed, incoming.SourcePath, _workspace.Machines));
-                    var prepared = await PrepareRemoteCalculationAsync(remote, order with { Version = expected }, draft.Id, actorId,
-                        incoming, values, parameters.HasBending, calculation: false, CancellationToken.None);
-                    report = prepared.Report; sourcePath = prepared.SourcePath;
+                    var input = new WorkflowOfficeCalculationInput(draft.Id, documentNumber, date, parameters, rate, draft.ImportProfile, incoming, values);
+                    _workspace = await SaveOfficeCalculationAsync(remote, mdb, order with { Version = expected }, actorId, [input], CancellationToken.None);
                 }
-                else if (incoming is not null)
+                else
                 {
-                    report = draft.Saved?.Report?.Sha256 == incoming.Sha256 ? draft.Saved.Report :
-                        await WorkflowReportFiles.ArchiveAsync(incoming, WorkflowReportCandidate.Values(FromReport(incoming.Parsed, incoming.SourcePath, _workspace.Machines)));
+                    AcceptedReport? report = null;
+                    if (incoming is not null)
+                        report = draft.Saved?.Report?.Sha256 == incoming.Sha256 ? draft.Saved.Report :
+                            await WorkflowReportFiles.ArchiveAsync(incoming, WorkflowReportCandidate.Values(FromReport(incoming.Parsed, incoming.SourcePath, _workspace.Machines)));
+                    if (before is not null && order.Projects.Any(p => p.Id == draft.Id && p.NativePath is not null) &&
+                        WorkflowCalculationSnapshots.ProjectFolder(order, draft.Id, draft.SourcePath) is not null)
+                        await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(order, draft.Id, actorId, before, null, draft.SourcePath, CancellationToken.None));
+                    _workspace = await source.WriteOrderAsync(order.Id, expected, book => WorkflowChanges.SaveSpecification(book,
+                        order.Id, expected, draft.Id, parameters, documentNumber, date, actorId, DateTimeOffset.UtcNow, sourcePath, draft.ImportProfile, rate, report));
                 }
-                if (remote is null && before is not null && order.Projects.Any(p => p.Id == draft.Id && p.NativePath is not null) &&
-                    WorkflowCalculationSnapshots.ProjectFolder(order, draft.Id, draft.SourcePath) is not null)
-                    await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(order, draft.Id, actorId, before, null, draft.SourcePath, CancellationToken.None));
-                WorkflowWorkspace Update(WorkflowWorkspace book) => WorkflowChanges.SaveSpecification(book, order.Id, expected,
-                    draft.Id, parameters, documentNumber, date, actorId, DateTimeOffset.UtcNow, sourcePath, draft.ImportProfile, rate, report);
-                _workspace = remote is not null && incoming is not null && source is WorkflowMdbStore mdb
-                    ? await mdb.WriteOfficeCalculationAsync(order.Id, expected, Update, [new(draft.Id, incoming.Sha256)])
-                    : await source.WriteOrderAsync(order.Id, expected, Update);
             }
             var savedOrder = CurrentOrder!;
             _loadedOrderVersion = savedOrder.Version;
@@ -443,6 +460,8 @@ public partial class WorkflowViewModel : ObservableObject
         finally { _refreshing = false; }
         SelectedDraft = Drafts.FirstOrDefault(); ManagerName = EmployeeName(order.ManagerId); Technologist = Employees.Single(e => e.Id == order.TechnologistId);
         Blcb = order.Blcb; Error = null; RefreshProjects(selectProject); NotifyOrder();
+        if (!sameOrder && !HasCalculationNotice && _connection.RemoteClient?.HasCalculationDraft(order.Id) == true)
+            SetCalculationNotice("Есть незавершённый расчёт. Нажмите «Рассчитать», чтобы сверить его с офисом.", CalculationTarget.Recalculate);
     }
     private void RefreshOrders(bool preserveRows = false)
     {
@@ -566,7 +585,7 @@ public partial class WorkflowViewModel : ObservableObject
         {
             Error = ex switch
             {
-                WorkflowValidationException or WorkflowConflictException or WorkflowOutcomeUnknownException => ex.Message,
+                WorkflowValidationException or WorkflowConflictException or WorkflowOutcomeUnknownException or WorkflowOfficeSyncUnavailableException => ex.Message,
                 IOException => fileError ?? (_store is WorkflowMdbStore ? "База данных недоступна или занята. Проверьте сеть и обновите журнал. Введённые параметры остались в форме." : "Локальные данные недоступны или заняты. Введённые параметры остались в форме."),
                 UnauthorizedAccessException when fileError is not null => fileError,
                 _ => "Не удалось выполнить действие. Введённые параметры остались в форме."
@@ -575,7 +594,7 @@ public partial class WorkflowViewModel : ObservableObject
         }
         finally { IsBusy = false; NotifyDatabase(); }
     }
-    public void Detach() { _cuttingTaskDetached = true; CancelOfficeFileCheck(); CancelManagerMapJobs(); StopShopFolderChecks(); ResetShopTransfer(); _copiedCuttingTask = null; _cuttingTaskPreview = null; _bendingFolderFailures = null; CancelDatabaseSearch(); _reportReview = null; if (SelectedDraft is { } draft) draft.PropertyChanged -= DraftChanged; NotifyMapSigning(); }
+    public void Detach() { _cuttingTaskDetached = true; CancelOfficeFileCheck(); ResetOfficePendingFiles(); CancelManagerMapJobs(); StopShopFolderChecks(); ResetShopTransfer(); _copiedCuttingTask = null; _cuttingTaskPreview = null; _bendingFolderFailures = null; CancelDatabaseSearch(); _reportReview = null; if (SelectedDraft is { } draft) draft.PropertyChanged -= DraftChanged; NotifyMapSigning(); }
     public WorkflowRestartDraft CreateRestartDraft()
     {
         CaptureCard();

@@ -80,7 +80,10 @@
       <Button x:Name="ShopMapDetailsToggle" Content="{Binding MapDetailsCaption}" Classes="command" HorizontalAlignment="Left"
               IsVisible="{Binding HasMapDetails}" Click="OnMapDetails" />
       <Button x:Name="ShopProgressCancel" Grid.Column="2" Content="Отменить" Classes="command" IsEnabled="{Binding CanCancel}" Click="OnCancel" />
-      <Button x:Name="ShopProgressClose" Grid.Column="2" Content="Вернуться к заявке" Classes="command" IsVisible="False" Click="OnClose" />
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+        <Button x:Name="ShopProgressCalculate" Content="Рассчитать" Classes="primary" IsVisible="False" Click="OnCalculate" />
+        <Button x:Name="ShopProgressClose" Content="Вернуться к заявке" Classes="command" IsVisible="False" Click="OnClose" />
+      </StackPanel>
     </Grid>
   </Grid>
 </Window>

@@ -34,7 +34,7 @@ public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, s
         if (current is not null) Project = current;
         if (_shopHandoff == stamp && _shopHandoffChanged == changed && _shopHandoffColor == color && _shopHandoffDescription == description) return;
         _shopHandoff = stamp; _shopHandoffChanged = changed; _shopHandoffColor = color; _shopHandoffDescription = description;
-        foreach (var name in new[] { nameof(Project), nameof(HasShopHandoff), nameof(HasShopHandoffChanges), nameof(ShopHandoffBrush), nameof(ShopHandoffHint) }) OnPropertyChanged(name);
+        foreach (var name in new[] { nameof(Project), nameof(HasShopHandoff), nameof(HasShopHandoffChanges), nameof(ShopHandoffBrush), nameof(ShopHandoffHint), nameof(ShopFolderHint) }) OnPropertyChanged(name);
     }
     private static string ChangedDescription(WorkflowShopHandoff stamp, WorkflowOrder order, Guid projectId)
     {
@@ -148,6 +148,8 @@ public sealed class WorkflowProjectRow(CuttingProject project, int itemNumber, s
         {
             ShopFolderAvailability.Available => "Открыть папку задания в цехе",
             ShopFolderAvailability.Checking => "Проверяем папку задания в цехе…",
+            ShopFolderAvailability.NotFound when remoteStorage && HasShopHandoff =>
+                "Задание передано. Папка пока недоступна на этом компьютере. Проверьте синхронизацию и обновите заявку (F5).",
             ShopFolderAvailability.NotFound => "Папка задания пока не найдена. Подготовьте задание или обновите заявку (F5).",
             _ => "Папка задания недоступна или её принадлежность не подтверждена. Обновите заявку (F5)."
         }) + "\n" + path;
@@ -205,7 +207,6 @@ public partial class WorkflowViewModel
     partial void OnResultTextChanged(string value) => ResultTextEdited(value);
     private Guid? _redoItem;
     private CuttingProject? _preparedProject;
-    private Guid? _remotePreparationId;
     public bool CanEditPlan => _preparedProject is null && !IsBusy;
     public string PlanTitle => _redoItem is null ? "Новый проект" : "Другой вариант позиции";
     public string PlannedName => PlanMachine is null ? "" : WorkflowProjectNames.Tag(PlanMachine) + " · " + WorkflowProjectNames.Extension(PlanMachine) + " · время ЧЧММСС";
@@ -225,8 +226,8 @@ public partial class WorkflowViewModel
         if (HasCurrentCardEdits) { Error = "Сохраните или отмените текущие изменения."; return; }
         _redoItem = null; PlanMachine ??= _workspace.Machines.FirstOrDefault();
         PlanHasBending = false;
-        _remotePreparationId = null;
         IsPlanning = true; OnPropertyChanged(nameof(PlanTitle)); Error = null;
+        TryRestoreOfficeCreation(() => RestoreOfficeProjectForm(CurrentOrder!));
     }
     [RelayCommand] private void RedoProject()
     {
@@ -234,10 +235,10 @@ public partial class WorkflowViewModel
         if (CurrentOrder?.HasProjectRename == true) { Error = "Сначала завершите изменение параметров проекта."; return; }
         if (HasCurrentCardEdits) { Error = "Сохраните или отмените текущие изменения."; return; }
         _redoItem = row.Project.ItemId; PlanMachine = _workspace.Machines.Single(m => m.Id == row.Project.MachineId);
-        _remotePreparationId = null;
         PlanThickness = row.Thickness;
         PlanHasBending = row.Saved?.Parameters.HasBending ?? row.Project.HasPlannedBending;
         IsPlanning = true; OnPropertyChanged(nameof(PlanTitle)); Error = null;
+        TryRestoreOfficeCreation(() => RestoreOfficeProjectForm(CurrentOrder!));
     }
     [RelayCommand(CanExecute = nameof(CanCancelPlanning))] private void CancelPlanning()
     {
@@ -252,21 +253,20 @@ public partial class WorkflowViewModel
         await RunAsync(async () =>
         {
             var actor = ActorId();
+            if (_connection.RemoteClient is { } remote)
+            {
+                await CreateOfficeProjectAsync(remote, order, actor);
+                return;
+            }
             if (_preparedProject is null)
             {
                 var machine = PlanMachine ?? throw new WorkflowValidationException("Выберите станок.");
                 var thickness = SpecificationDraft.Decimal(PlanThickness, "толщину");
                 var item = _redoItem;
                 var bending = PlanHasBending;
-                if (_connection.RemoteClient is { } remote)
-                    _preparedProject = await remote.PrepareProjectAsync(order.Id,
-                        new(_remotePreparationId ??= Guid.NewGuid(), order.Version, actor, machine.Id, thickness, item, bending), CancellationToken.None);
-                else
-                {
-                    var root = _workspace.ProjectRoot ?? throw new WorkflowValidationException("Выберите общую папку проектов в настройках.");
-                    _preparedProject = await Task.Run(() => WorkflowProjectFiles.PrepareAsync(root, order,
-                        CustomerName(order.CustomerId), machine, thickness, item, DateTimeOffset.Now, hasPlannedBending: bending));
-                }
+                var root = _workspace.ProjectRoot ?? throw new WorkflowValidationException("Выберите общую папку проектов в настройках.");
+                _preparedProject = await Task.Run(() => WorkflowProjectFiles.PrepareAsync(root, order,
+                    CustomerName(order.CustomerId), machine, thickness, item, DateTimeOffset.Now, hasPlannedBending: bending));
                 OnPropertyChanged(nameof(CanEditPlan));
             }
             var latest = await _store.ReadOrderAsync(order.Id);
@@ -277,7 +277,7 @@ public partial class WorkflowViewModel
             _workspace = await _store.WriteOrderAsync(order.Id, target.Version, book =>
                 WorkflowProjects.Add(book, order.Id, target.Version, project, actor, DateTimeOffset.UtcNow));
             if (target.Version == CardVersion) _loadedOrderVersion = CurrentOrder!.Version;
-            _preparedProject = null; _remotePreparationId = null; IsPlanning = false; OnPropertyChanged(nameof(CanEditPlan));
+            _preparedProject = null; IsPlanning = false; OnPropertyChanged(nameof(CanEditPlan));
             RefreshOrders(); RefreshProjects(project.Id); NotifyOrder();
             if (project.HasPlannedBending && !IsRemoteStorage) await EnsureSavedBendingFoldersAsync(CurrentOrder!, [project.Id]);
         });
@@ -308,7 +308,11 @@ public partial class WorkflowViewModel
         NotifyPlanActions();
     }
     partial void OnPlanThicknessChanged(string value) => NotifyPlanActions();
-    partial void OnIsPlanningChanged(bool value) { OnPropertyChanged(nameof(HasPendingEdits)); NotifyProjectCalculation(); NotifyCuttingTask(); }
+    partial void OnIsPlanningChanged(bool value)
+    {
+        if (!value) _officeProjectToRecover = null;
+        OnPropertyChanged(nameof(HasPendingEdits)); NotifyProjectCalculation(); NotifyCuttingTask();
+    }
     private void MarkResultStale() { if (!string.IsNullOrWhiteSpace(ResultText)) ResultIsStale = true; }
     private void NotifyProjectMachines()
     {

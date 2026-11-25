@@ -168,6 +168,8 @@
                     <ui:JournalButton Grid.Column="2" Label="Выбрать…" Click="OnBrowseOfficeCopiesRoot" />
                   </Grid>
                   <TextBlock Text="Сюда скачиваются новые копии. Уже скачанные проекты открываются из прежних папок." Classes="muted" TextWrapping="Wrap" />
+                  <ui:JournalButton x:Name="FreeOfficeCopySpace" Label="Освободить место…" IsVisible="{Binding ShowOfficeCopyCleanup}"
+                                    Click="OnFreeOfficeCopySpace" HorizontalAlignment="Left" />
                 </StackPanel>
               </StackPanel>
             </Border>
@@ -182,7 +184,7 @@
                 <TextBlock Text="Принятые отчёты сохраняются в папке проекта." Classes="muted" TextWrapping="Wrap" />
               </StackPanel>
             </Border>
-            <Border Classes="workflow-settings-group" IsVisible="{Binding !IsRemoteStorage}">
+            <Border Classes="workflow-settings-group">
               <StackPanel Spacing="8">
                 <TextBlock Text="Папка заданий в цех" FontWeight="SemiBold" FontSize="16" />
                 <Grid ColumnDefinitions="*,8,Auto">
@@ -192,6 +194,8 @@
                 </Grid>
                 <TextBlock Text="Путь на этом компьютере. Файлы копируются после проверки через «Отправить в работу…» в карточке заявки."
                            Classes="muted" TextWrapping="Wrap" />
+                <TextBlock Text="Выберите локальную копию той же папки Яндекс Диска, которую используют в офисе."
+                           Classes="muted" TextWrapping="Wrap" IsVisible="{Binding IsRemoteStorage}" />
                 <TextBlock Text="Папка станка → менеджер → БЛЦБ и заказчик → полное имя проекта + БЛЦБ" Classes="muted" FontSize="12" TextWrapping="Wrap" />
                 <TextBlock Text="Пример по сохранённой заявке" FontWeight="SemiBold" FontSize="12" />
                 <TextBox x:Name="WorkflowShopFolderPreview" Text="{Binding ShopFolderPreview, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"

@@ -25,6 +25,17 @@ internal sealed class OfficeWorkOrders(string? databasePath, OfficeWorkIdentity 
             ?? throw new OfficeWorkException("project-folder-unavailable", 404);
     }
 
+    internal async Task VerifyWorkingFileIsNotReportAsync(Guid orderId, Guid projectId, string name, CancellationToken token)
+    {
+        var snapshot = await transport.SendAsync(new(1, WorkflowAccessOperation.ReadOrders, databasePath!, identity.DatabaseId,
+            OrderIds: [orderId], OfficeSchema6: true), token);
+        var order = snapshot.Orders?.SingleOrDefault(candidate => candidate.Id == orderId && !candidate.IsDeleted);
+        if (order is null || !order.ActiveProjects.Any(project => project.Id == projectId))
+            throw new OfficeWorkException("project-folder-unavailable", 404);
+        if (name.Equals(WorkflowOfficeProjectPaths.AcceptedReportName(order, projectId), StringComparison.OrdinalIgnoreCase))
+            throw new OfficeWorkException("calculate-working-report", 409);
+    }
+
     public async Task<IResult> ListAsync(CancellationToken token)
     {
         var (snapshot, state) = await journal.ReadTechnologistsAsync(identity.DatabaseId, token);

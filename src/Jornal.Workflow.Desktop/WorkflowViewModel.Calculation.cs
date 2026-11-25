@@ -3,7 +3,7 @@ using Jornal.Workflow.Infrastructure;
 
 namespace Jornal.Workflow.Desktop;
 
-public enum CalculationTarget { None, Header, Project, Reports, Recalculate, Refresh, Settings, Folder, CompareOfficeReport }
+public enum CalculationTarget { None, Header, Project, Reports, Recalculate, Refresh, Settings, Folder, CompareOfficeReport, OfficeDraft }
 
 public partial class WorkflowViewModel
 {
@@ -24,17 +24,17 @@ public partial class WorkflowViewModel
         CalculationTarget.Header => "Открыть реквизиты", CalculationTarget.Project => "Перейти к проекту",
         CalculationTarget.Reports => "Уточнить расчёт", CalculationTarget.Recalculate => "Повторить расчёт", CalculationTarget.Refresh => "Обновить журнал",
         CalculationTarget.Settings => "Открыть настройки", CalculationTarget.Folder => "Открыть папку проекта",
-        CalculationTarget.CompareOfficeReport => "Сравнить версии", _ => ""
+        CalculationTarget.CompareOfficeReport => "Сравнить версии", CalculationTarget.OfficeDraft => "Проверить черновик", _ => ""
     } : "";
 
     private HashSet<Guid> CalculationProjectIds(WorkflowOrder order) => order.Items.Where(i => i.IsIncluded)
         .Select(i => i.CurrentProjectId).OfType<Guid>()
         .Concat(order.ActiveSpecifications.Where(s => !order.Projects.Any(p => p.Id == s.Id)).Select(s => s.Id)).ToHashSet();
 
-    private bool CheckCalculationInputs()
+    private bool CheckCalculationInputs(bool allowOfficeDraftRecovery = false)
     {
         if (CurrentOrder is not { } order) return false;
-        if (RequiresDatabaseRefresh) { SetCalculationNotice("Обновите журнал, чтобы проверить сохранение предыдущего расчёта.", CalculationTarget.Refresh); return false; }
+        if (RequiresDatabaseRefresh && !allowOfficeDraftRecovery) { SetCalculationNotice("Обновите журнал, чтобы проверить сохранение предыдущего расчёта.", CalculationTarget.Refresh); return false; }
         if (AuthorProblem is { } author) { SetCalculationNotice(author, CalculationTarget.Settings); return false; }
         if (HasHeaderChanges && (_loadedOrderSnapshot is not { } original ||
             ManagerName.Trim() != EmployeeName(original.ManagerId) || Technologist?.Id != original.TechnologistId ||
@@ -81,10 +81,9 @@ public partial class WorkflowViewModel
 
     private async Task<WorkflowOfficePreparedCalculation> PrepareRemoteCalculationAsync(WorkflowOfficeStorageClient remote,
         WorkflowOrder order, Guid projectId, Guid actor, ReportFileSnapshot? snapshot, ReportValues? values, bool bending,
-        bool calculation, CancellationToken token)
+        CancellationToken token)
     {
         try { return await remote.PrepareCalculationAsync(order, projectId, actor, snapshot, values, bending, token); }
-        catch (WorkflowConflictException) { if (calculation) CanRetryCalculation = true; throw; }
         catch (WorkflowOfficeReportConflictException conflict)
         {
             _officeReportConflict = (remote, conflict);
@@ -126,7 +125,9 @@ public partial class WorkflowViewModel
     {
         if (!CanCalculateOrder) return null;
         _acceptedReports = 0; _reportImportOrderId = null; NotifyCompleteness();
-        if (!CheckCalculationInputs()) return null;
+        var remote = _connection.RemoteClient;
+        var officeDraft = remote?.HasCalculationDraft(CurrentOrder!.Id) == true;
+        if (!CheckCalculationInputs(officeDraft)) return null;
         _officeReportConflict = null;
         CanRetryCalculation = false;
         _calculatingOrder = true; NotifyCalculationState();
@@ -135,6 +136,16 @@ public partial class WorkflowViewModel
         {
             SetCalculationNotice("Ищем спецификации и рассчитываем проекты…");
             token.ThrowIfCancellationRequested();
+            if (officeDraft && remote is not null && source is WorkflowMdbStore mdb)
+            {
+                if (!await ResumeOfficeCalculationAsync(remote, mdb, id, token))
+                {
+                    if (_officeCalculationDraftConflict is null && _officeReportConflict is null && Error is { } failure)
+                        SetCalculationNotice(failure, CalculationTarget.Recalculate);
+                    return null;
+                }
+                if (!CheckCalculationInputs()) return null;
+            }
             var review = CurrentOrder!.Projects.Length == 0 ? new WorkflowReportReviewViewModel((_, _) => Task.FromResult<string?>("У расчёта нет рабочего проекта."))
                 { PreviewOrderVersion = CurrentOrder.Version, IsContextCurrent = () => ReferenceEquals(source, _store) && CurrentOrder?.Id == id && !_cuttingTaskDetached }
                 : await CreateReportReviewAsync(token, calculation: true);
