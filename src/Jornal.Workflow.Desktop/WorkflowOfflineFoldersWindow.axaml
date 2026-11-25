@@ -1,0 +1,27 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="using:Jornal.Desktop.Controls" xmlns:vm="using:Jornal.Workflow.Desktop"
+        x:Class="Jornal.Workflow.Desktop.WorkflowOfflineFoldersWindow" Title="Скачанные папки"
+        Width="560" SizeToContent="Height" CanResize="False" WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource JournalBackground}">
+  <StackPanel Margin="24" Spacing="12">
+    <TextBlock Text="Изменения останутся на этом компьютере до отправки в офис." TextWrapping="Wrap" />
+    <ListBox x:Name="OfflineFoldersList" MaxHeight="260" DoubleTapped="OnFolderDoubleTapped"
+             AutomationProperties.Name="Скачанные проекты">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:WorkflowOfflineFolder">
+          <StackPanel Spacing="2" ToolTip.Tip="{Binding Path}">
+            <TextBlock Text="{Binding ProjectName}" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding OrderName}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding HasOrderName}" />
+          </StackPanel>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+    <TextBlock x:Name="OfflineFoldersPartial" Classes="muted" Text="Некоторые скачанные папки недоступны."
+               IsVisible="False" TextWrapping="Wrap" />
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <ui:JournalButton x:Name="CloseOfflineFolders" Label="Закрыть" Click="OnClose" />
+      <ui:JournalButton x:Name="OpenOfflineFolder" Label="Открыть папку" Classes="primary" Click="OnOpen"
+                        IsEnabled="{Binding #OfflineFoldersList.SelectedItem, Converter={x:Static ObjectConverters.IsNotNull}}" />
+    </StackPanel>
+  </StackPanel>
+</Window>

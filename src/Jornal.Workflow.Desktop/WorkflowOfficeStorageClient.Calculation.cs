@@ -17,18 +17,22 @@ internal sealed class WorkflowOfficeReportConflictException(Guid orderId, Guid p
 internal sealed record WorkflowOfficeReportComparison(Guid OrderId, Guid ProjectId, string FileName,
     string Folder, string OfficeFile, string HomeHash, string OfficeHash);
 
+internal sealed class WorkflowOfficeProjectNotStartedException(string message) : Exception(message);
+
 internal sealed partial class WorkflowOfficeStorageClient
 {
-    private sealed record OfficeCapabilities(bool GuardedCalculation, bool PlannedBending);
+    private sealed record OfficeCapabilities(bool GuardedCalculation, bool PlannedBending, bool ShopPublicationJournal = false);
     private volatile OfficeCapabilities? _capabilities;
     private WorkflowOfficeReportComparison? _authorizedReport;
 
-    internal async Task<CuttingProject> PrepareProjectAsync(Guid orderId, WorkflowOfficeProjectPreparation preparation, CancellationToken token)
+    internal async Task<CuttingProject> PrepareProjectAsync(Guid orderId, WorkflowOfficeProjectPreparation preparation,
+        CancellationToken token, Action? beforeSend = null)
     {
         if (preparation.HasPlannedBending) await RequirePlannedBendingSupportAsync(token);
         else await RequireCalculationSupportAsync(token);
         using var request = Request(HttpMethod.Post, $"api/v1/storage/orders/{orderId:D}/projects/prepare");
         request.Content = JsonContent.Create(preparation, options: JsonOptions);
+        beforeSend?.Invoke();
         var project = await SendProjectJsonAsync<CuttingProject>(request, token);
         if (project.Id != preparation.ProjectId || project.MachineId != preparation.MachineId ||
             project.ThicknessMm != preparation.ThicknessMm || project.HasPlannedBending != preparation.HasPlannedBending ||
@@ -69,6 +73,7 @@ internal sealed partial class WorkflowOfficeStorageClient
         try
         {
             using var lease = LockCopy(original);
+            RecoverInterruptedCleanup(original);
             var (folder, location, hasCopy) = ResolveCopyFolder(original, copiesRoot, project.NativePath);
             if (!hasCopy) CheckNewCopyFolder(folder, copiesRoot);
             var manifest = await ManifestAsync(route, token, project.ImportProfile ?? "");
@@ -83,7 +88,9 @@ internal sealed partial class WorkflowOfficeStorageClient
                 return (folder, skipped, unavailable);
             }
             RecordCopyLocation(location, folder);
+            HideCopyMarkers(folder);
             var baseline = await ReadBaselineAsync(folder, token);
+            string? staging = null;
             foreach (var entry in reports.Values)
             {
                 var target = Child(folder, entry.Path);
@@ -93,7 +100,8 @@ internal sealed partial class WorkflowOfficeStorageClient
                 if (local is not null && local != saved && local != entry.Sha256) continue;
                 if (local != entry.Sha256)
                 {
-                    var stage = Path.Combine(folder, ".office-" + Guid.NewGuid().ToString("N") + ".tmp");
+                    staging ??= WorkflowOfficeProjectPaths.CreateStateFolder(folder);
+                    var stage = Path.Combine(staging, Guid.NewGuid().ToString("N") + ".tmp");
                     try
                     {
                         await DownloadFileAsync(route, entry, stage, token);
@@ -134,7 +142,7 @@ internal sealed partial class WorkflowOfficeStorageClient
         using var request = Request(HttpMethod.Post, route + "/calculation");
         request.Content = JsonContent.Create(new WorkflowOfficeCalculationPreparation(order.Version, actor, input, bending, beforeFirstCalculation)
             { SupportsPlannedBending = true }, options: JsonOptions);
-        var prepared = await SendProjectJsonAsync<WorkflowOfficePreparedCalculation>(request, token);
+        var prepared = await SendProjectJsonAsync<WorkflowOfficePreparedCalculation>(request, token, workingFiles: true);
         if (input is not null && (string.IsNullOrEmpty(prepared.SourcePath) || prepared.Report?.Sha256 != input.Sha256))
             throw new InvalidDataException("Сервер вернул другой снимок спецификации.");
         prepared.Report?.Validate();
@@ -202,7 +210,7 @@ internal sealed partial class WorkflowOfficeStorageClient
 
     private async Task<ProjectFile?> FindOfficeReportAsync(string route, string? profile, string name, CancellationToken token)
     {
-        var manifest = await ManifestAsync(route, token, profile ?? "", name);
+        var manifest = await ManifestAsync(route, token, profile ?? "", name, workingFiles: true);
         if (manifest.UnavailableFiles?.Contains(name, StringComparer.OrdinalIgnoreCase) == true)
             throw new WorkflowValidationException($"Спецификация «{name}» недоступна в офисной папке. Повторите расчёт после сохранения файла.");
         return manifest.Files.SingleOrDefault(f => f.Path.Equals(name, StringComparison.OrdinalIgnoreCase));
@@ -242,9 +250,9 @@ internal sealed partial class WorkflowOfficeStorageClient
                 {
                     using var response = await SendAsync(fileHttp ?? FileTransport, upload, deadline);
                     if (response.StatusCode == HttpStatusCode.PreconditionFailed) throw new WorkflowConflictException();
-                    await CheckAsync(response, deadline);
+                    await CheckWorkingFileResponseAsync(response, deadline);
                     return await ReadAsync<FileConfirmation>(response, deadline);
-                }, token, TimeSpan.FromMinutes(5));
+                }, token, TimeSpan.FromMinutes(5), workingFiles: true);
                 if (confirmation.Sha256 != snapshot.Sha256 || confirmation.Path != (remote?.Path ?? name))
                     throw new WorkflowValidationException("Сервер не подтвердил версию спецификации. Проверьте файл перед повтором.");
             }
@@ -259,21 +267,33 @@ internal sealed partial class WorkflowOfficeStorageClient
         finally { _files.Release(); }
     }
 
-    private Task<T> SendProjectJsonAsync<T>(HttpRequestMessage request, CancellationToken token) => WithProjectDeadlineAsync(async deadline =>
+    private Task<T> SendProjectJsonAsync<T>(HttpRequestMessage request, CancellationToken token, bool workingFiles = false) => WithProjectDeadlineAsync(async deadline =>
     {
         using var response = await SendAsync(http, request, deadline);
-        await CheckAsync(response, deadline);
+        if (workingFiles) await CheckWorkingFileResponseAsync(response, deadline);
+        else await CheckAsync(response, deadline);
         return await ReadAsync<T>(response, deadline);
-    }, token, TimeSpan.FromSeconds(55));
+    }, token, TimeSpan.FromSeconds(55), workingFiles);
 
-    private static async Task<T> WithProjectDeadlineAsync<T>(Func<CancellationToken, Task<T>> request, CancellationToken token, TimeSpan timeout)
+    private static async Task<T> WithProjectDeadlineAsync<T>(Func<CancellationToken, Task<T>> request, CancellationToken token,
+        TimeSpan timeout, bool workingFiles = false)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(timeout);
         try { return await request(deadline.Token); }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
-        { throw new WorkflowValidationException("Сервер не ответил вовремя. Проверьте соединение и повторите действие."); }
+        {
+            if (workingFiles) throw new WorkflowOfficeConnectionLostException("Офисный сервер не ответил вовремя. Проверьте связь с офисом.");
+            throw new WorkflowValidationException("Сервер не ответил вовремя. Проверьте соединение и повторите действие.");
+        }
         catch (HttpRequestException)
-        { throw new WorkflowValidationException("Сервер недоступен. Проверьте подключение ZeroTier и повторите действие."); }
+        {
+            if (workingFiles)
+            {
+                token.ThrowIfCancellationRequested();
+                throw new WorkflowOfficeConnectionLostException("Офисный сервер недоступен. Проверьте подключение ZeroTier.");
+            }
+            throw new WorkflowValidationException("Сервер недоступен. Проверьте подключение ZeroTier и повторите действие.");
+        }
     }
 }

@@ -19,6 +19,9 @@ public partial class WorkflowViewModel
         var cleared = false;
         await RunAsync(async () =>
         {
+            if (_connection.RemoteClient is { } remote) await remote.RequireShopPublicationSupportAsync(token);
+            using var publication = !IsRemoteStorage && request.Source.DatabaseId is { } database ?
+                await Task.Run(() => WorkflowShopPublicationLock.Acquire(request.Source.FilePath, database, request.OrderId), token) : null;
             var next = await request.Source.ClearShopHandoffAsync(request.OrderId, request.Version, request.Expected, request.Actor, token);
             if (_cuttingTaskDetached || !ReferenceEquals(request.Source, _store) || CurrentOrder?.Id != request.OrderId) return;
             _workspace = next; ResetCuttingTask(); RefreshOrders(preserveRows: true); NotifyOrder(); cleared = true;

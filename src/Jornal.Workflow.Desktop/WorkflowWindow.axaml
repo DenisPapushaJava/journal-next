@@ -74,10 +74,27 @@
   <Grid RowDefinitions="56,Auto,*,Auto,24">
     <Border Background="{DynamicResource JournalSurface}" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="0,0,0,1" Padding="20,8">
       <Grid ColumnDefinitions="*,Auto,*">
-        <StackPanel Spacing="1" VerticalAlignment="Center">
-          <TextBlock Text="{x:Static vm:WorkflowIdentity.Name}" FontSize="18" FontWeight="SemiBold" />
-          <TextBlock Text="Локальная разработка" Classes="muted" FontSize="11" />
-        </StackPanel>
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+          <StackPanel Spacing="1" VerticalAlignment="Center">
+            <TextBlock Text="{x:Static vm:WorkflowIdentity.Name}" FontSize="18" FontWeight="SemiBold" />
+            <TextBlock Text="Локальная разработка" Classes="muted" FontSize="11" />
+          </StackPanel>
+          <Panel Grid.Column="1">
+            <Button x:Name="WorkflowOfficePendingNotice" Classes="progress-link" VerticalAlignment="Center" HorizontalAlignment="Left"
+                    IsEnabled="{Binding CanUse}" IsVisible="{Binding HasOfficePendingFilesNotice}"
+                    Click="OnOfficePendingFiles" ToolTip.Tip="Проверить и отправить файлы в офис"
+                    AutomationProperties.Name="{Binding OfficePendingFilesNotice}">
+              <TextBlock Text="{Binding OfficePendingFilesNotice}" TextTrimming="CharacterEllipsis" />
+            </Button>
+            <Border x:Name="WorkflowOfficeFilesChecking" IsVisible="False" Background="{DynamicResource JournalSurface}">
+              <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="Проверяем файлы…" Classes="muted" FontSize="12" VerticalAlignment="Center" Margin="0,0,12,0" />
+                <Button x:Name="SkipOfficeFilesCheck" Classes="progress-link" Content="Закрыть без отправки"
+                        Click="OnSkipOfficeFilesCheck" ToolTip.Tip="Файлы останутся на этом компьютере" />
+              </WrapPanel>
+            </Border>
+          </Panel>
+        </Grid>
         <ui:HeaderClock x:Name="WorkflowHeaderClock" Grid.Column="1" MinWidth="200" Margin="12,0" FontFeatures="tnum" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" />
         <Grid Grid.Column="2" ColumnDefinitions="Auto,8,Auto,8,Auto,8,Auto,8,Auto" HorizontalAlignment="Right">
           <ui:JournalButton x:Name="WorkflowCatalog" Label="Станки и цены" Click="OnCatalog" IsEnabled="{Binding CanUse}" />
@@ -98,7 +115,11 @@
         </Grid>
       </Grid>
     </Border>
-    <TextBlock Grid.Row="1" Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" Margin="20,8,20,0" Foreground="{DynamicResource JournalDangerForeground}" />
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" IsVisible="{Binding HasError}" Margin="20,8,20,0" HorizontalAlignment="Left">
+      <TextBlock Text="{Binding Error}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource JournalDangerForeground}" />
+      <ui:JournalButton x:Name="OfflineOfficeFoldersButton" Grid.Column="1" Margin="12,0,0,0" Label="Скачанные папки"
+                        IsVisible="{Binding HasOfflineOfficeFolders}" IsEnabled="{Binding CanUse}" Click="OnOfflineOfficeFolders" />
+    </Grid>
     <Grid x:Name="JournalWorkspace" Grid.Row="2" Margin="20,8" IsEnabled="{Binding CanBrowseWorkspace}">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="4*" MinWidth="368" />
@@ -713,7 +734,8 @@
           <ProgressBar x:Name="WorkflowShopTransferProgress" Grid.ColumnSpan="7" IsVisible="{Binding IsBusy}" IsIndeterminate="True" Height="3" VerticalAlignment="Bottom" />
           <Button x:Name="CancelWorkflowShopTransfer" Grid.Column="2" Content="Отменить" Click="OnCancelShopTransfer" IsVisible="{Binding CanCancel}" Classes="progress-link" />
           <Button x:Name="RetryWorkflowShopTransferText" Grid.Column="4" Content="Копировать текст" Click="OnRetryShopTransferText" IsVisible="{Binding NeedsClipboardRetry}" IsEnabled="{Binding CanEdit}" Classes="progress-link" />
-          <Button x:Name="WorkflowShopTransferDetails" Grid.Column="6" Content="Подробнее…" Click="OnShopTransferDetails" IsVisible="{Binding !IsBusy}" IsEnabled="{Binding CanEdit}" Classes="progress-link" />
+          <Button Grid.Column="6" Content="{Binding OfficeReviewCaption}" Click="OnContinueOfficeShop" IsVisible="{Binding CanActOnOfficeReview}" Classes="progress-link" />
+          <Button x:Name="WorkflowShopTransferDetails" Grid.Column="6" Content="Подробнее…" Click="OnShopTransferDetails" IsVisible="{Binding CanShowShopDetails}" Classes="progress-link" />
           <TextBlock x:Name="WorkflowShopTransferError" Grid.Row="1" Grid.ColumnSpan="7" Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" Foreground="{DynamicResource JournalDangerForeground}" FontSize="12" />
         </Grid>
       </Grid>

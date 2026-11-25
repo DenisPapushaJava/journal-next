@@ -21,8 +21,8 @@ public partial class WorkflowViewModel
     public bool CanOpenCuttingTaskText => CanUse && IsCardVisible && !IsCopyingCuttingTask && !_isCopyingResult &&
         (IsCurrentOrderActive || HasCuttingTaskTextEdits);
     public bool CanEditCuttingTaskText => CanCopyCuttingTask && TaskPreview.IsReady;
-    public bool CanSendToWork => !IsRemoteStorage && CanCopyCuttingTask && !IsCreating && AuthorProblem is null && TaskPreview.IsReady && !IsCuttingTaskTextStale && !string.IsNullOrWhiteSpace(CuttingTaskText);
-    public bool CanRequestSendToWork => !IsRemoteStorage && CanCopyCuttingTask && !IsCreating;
+    public bool CanSendToWork => CanRequestSendToWork && AuthorProblem is null && TaskPreview.IsReady && !IsCuttingTaskTextStale && !string.IsNullOrWhiteSpace(CuttingTaskText);
+    public bool CanRequestSendToWork => CanCopyCuttingTask && !IsCreating;
     public void ExplainSendToWork()
     {
         if (!CanRequestSendToWork || CurrentOrder is not { } order) return;

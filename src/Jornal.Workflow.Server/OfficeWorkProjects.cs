@@ -82,11 +82,14 @@ internal sealed class OfficeWorkProjects(string? projectsRoot, OfficeWorkOrders 
                     var (latest, _) = await ProjectAsync(store, orderId, projectId, true, token);
                     if (latest != folder) throw new OfficeWorkException("project-moved", 409);
                     var destination = Child(folder, path);
+                    var verifyReport = orders.IsStorage && request.Headers[WorkflowOfficeProjectPaths.WorkingFileUploadHeader] == "1" &&
+                        !path.Contains('/') && WorkflowReportFiles.IsReport(path);
                     if (newFile)
                     {
                         if (File.Exists(destination)) throw new OfficeWorkException("file-version-conflict", 412);
                         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
                         _ = Child(folder, path);
+                        if (verifyReport) await orders.VerifyWorkingFileIsNotReportAsync(orderId, projectId, path, token);
                         token.ThrowIfCancellationRequested();
                         try { File.Move(stage, destination, overwrite: false); }
                         catch (IOException) when (File.Exists(destination)) { throw new OfficeWorkException("file-version-conflict", 412); }
@@ -99,6 +102,7 @@ internal sealed class OfficeWorkProjects(string? projectsRoot, OfficeWorkOrders 
                         token.ThrowIfCancellationRequested();
                         if (uploadedHash != expected)
                         {
+                            if (verifyReport) await orders.VerifyWorkingFileIsNotReportAsync(orderId, projectId, path, token);
                             var backup = Path.Combine(state, stamp + ".previous");
                             try
                             {

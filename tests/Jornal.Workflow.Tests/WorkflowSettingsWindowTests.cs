@@ -210,7 +210,7 @@ public sealed class WorkflowSettingsWindowTests
 
     [AvaloniaTheory]
     [InlineData(false)] [InlineData(true)]
-    public async Task StorageShowsTheCurrentSourceAndOnlyItsFolderSettings(bool dark)
+    public async Task StorageShowsTheCurrentSourceAndSharesTheLocalShopFolderSetting(bool dark)
     {
         using var log = new BindingLog();
         using var fixture = new ProjectFixture();
@@ -232,11 +232,17 @@ public sealed class WorkflowSettingsWindowTests
             Assert.Equal("Настроить подключение…", window.FindControl<JournalButton>("OpenOfficeConnection")!.Label);
             Assert.True(Visible("ReturnToLocalStorage"));
             Assert.True(Visible("WorkflowOfficeCopiesRoot"));
+            Assert.Equal(OperatingSystem.IsWindows(), Visible("FreeOfficeCopySpace"));
             Assert.False(Visible("UseSavedOfficeConnection"));
             Assert.False(Visible("ConnectWorkflowDatabase"));
             Assert.False(Visible("CreateWorkflowDatabase"));
             Assert.False(Visible("WorkflowProjectRoot"));
-            Assert.False(Visible("WorkflowShopRoot"));
+            Assert.True(Visible("WorkflowShopRoot"));
+            var shop = Directory.CreateDirectory(Path.Combine(fixture.DirectoryPath, "Цех")).FullName;
+            model.ShopRoot = shop;
+            await model.SaveCommand.ExecuteAsync(null);
+            Assert.Null(model.Error);
+            Assert.Equal(shop, preferences.Load().ShopRoot);
 
             Assert.Null(await model.ReturnToLocalStorageAsync());
             Dispatcher.UIThread.RunJobs();
@@ -247,8 +253,10 @@ public sealed class WorkflowSettingsWindowTests
             Assert.True(Visible("CreateWorkflowDatabase"));
             Assert.True(Visible("WorkflowProjectRoot"));
             Assert.True(Visible("WorkflowShopRoot"));
+            Assert.Equal(shop, window.FindControl<TextBox>("WorkflowShopRoot")!.Text);
             Assert.False(Visible("ReturnToLocalStorage"));
             Assert.False(Visible("WorkflowOfficeCopiesRoot"));
+            Assert.False(Visible("FreeOfficeCopySpace"));
             Assert.True(log.Errors.Count == 0, string.Join("\n", log.Errors));
         }
         finally { window.Close(); journal.Detach(); }

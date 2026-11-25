@@ -14,6 +14,15 @@ public partial class WorkflowWindow
             }
             var result = await operation;
             if (progress is not null) { progress.Finish(); if (closed is not null) await closed; }
+            if (progress?.CalculationRequested == true && result?.OfficeCalculationProjectId is { } projectId &&
+                IsVisible && Model is { CanCalculateOrder: true } model && ReferenceEquals(model.ShopTransfer, result))
+            {
+                model.OrderTabIndex = 0;
+                model.ShowTrashedProjects = false;
+                model.SelectedProject = model.Projects.SingleOrDefault(row => row.Project.Id == projectId);
+                await CalculateFromWindowAsync(rebuildText: false);
+                return null;
+            }
             return result;
         }
         finally { progress?.Finish(forceClose: true); }

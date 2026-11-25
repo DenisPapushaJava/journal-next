@@ -57,7 +57,7 @@ public static partial class WorkflowShopTransfer
         fileName = BundleFileName(selection.MapBundle,
             selection.Files.Where(f => f.Kind == ShopFileKind.Map).Select(f => f.Name).ToArray());
         // The Word/PDF bytes can contain creation timestamps. Identify repeat transfers by the verified inputs.
-        var source = DesiredTree(selection);
+        var source = WithSeparator(DesiredTree(selection), '\\');
         return Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
         {
             Version = fileName == BundleFileName(selection.MapBundle) ? 1 : 2,
@@ -110,9 +110,12 @@ public static partial class WorkflowShopTransfer
         ShopFileSystem.RequireOrdinaryPath(output);
         Directory.CreateDirectory(folder);
         if (File.Exists(output) && await ShopFileSystem.FingerprintAsync(output, token) == (file.Length, file.Sha256)) return;
-        var temp = Path.Combine(folder, ".journal-next-" + Guid.NewGuid().ToString("N") + ".tmp");
+        var staging = Path.Combine(folder, ".journal-next-" + Guid.NewGuid().ToString("N") + ".tmp");
+        var temp = Path.Combine(staging, "bundle");
         try
         {
+            Directory.CreateDirectory(staging);
+            WorkflowServiceFiles.TryHide(staging);
             await CopyFileAsync(source, temp, file, token);
             token.ThrowIfCancellationRequested();
             File.Move(temp, output, overwrite: true);
@@ -123,7 +126,7 @@ public static partial class WorkflowShopTransfer
         }
         finally
         {
-            try { File.Delete(temp); }
+            try { if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
     }

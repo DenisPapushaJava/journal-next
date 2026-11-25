@@ -15,13 +15,13 @@ public sealed partial class WorkflowMdbDatabase
         var mark = clear is null && partial is null ? request.ShopHandoff ?? throw new WorkflowValidationException("Не передана отметка передачи в цех.") : null;
         var orderId = clear?.OrderId ?? partial?.OrderId ?? mark!.OrderId;
         using var session = new WorkflowMdbSession(path, true);
-        var original = ReadMetadata(session, request.DatabaseId);
+        var original = ReadWorkspaceMetadata(session, request);
         session.Begin(); var commitAttempted = false;
         try
         {
             if (session.Execute("UPDATE [app_metadata] SET [revision]=[revision]+1 WHERE [singleton]=1 AND [database_id]=?",
                 (WorkflowMdbSession.GuidColumn, original.DatabaseId)) != 1) throw new WorkflowConflictException();
-            var meta = ReadMetadata(session, original.DatabaseId);
+            var meta = ReadWorkspaceMetadata(session, request with { DatabaseId = original.DatabaseId });
             var data = ReadOrders(session, CheckedIds([orderId]));
             var order = WorkflowMdbMapping.Orders(data);
             var catalog = ReadCatalog(session, meta);

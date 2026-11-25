@@ -18,6 +18,14 @@ public static class WorkflowShopDiscovery
             "Плазма" => Rule.Plasma, _ => Rule.Unknown };
     }
 
+    internal static string[] TransferExtensions(WorkflowMachine machine) =>
+        MachineRule(machine) switch
+        {
+            Rule.Laser => [".cnc", ".pdf"],
+            Rule.Hans => [".gnc", ".doc"],
+            _ => [".nc", ".pdf"]
+        };
+
     public static Task<ShopProjectFiles[]> DiscoverAsync(string root, WorkflowOrder order, WorkflowWorkspace book, CancellationToken token = default,
         IWorkflowWordMapEditor? word = null, IProgress<WorkflowShopProgress>? progress = null) => Task.Run(async () =>
     {
@@ -51,9 +59,9 @@ public static class WorkflowShopDiscovery
             var folder = Path.GetDirectoryName(project.NativePath)!;
             if (destination.Length > 0 && (ShopFileSystem.Under(destination, folder) || ShopFileSystem.Under(folder, destination)))
                 throw new WorkflowValidationException("Рабочая папка и папка задания не должны находиться друг внутри друга.");
-            var programExtension = rule switch { Rule.Laser => ".cnc", Rule.Hans => ".gnc", _ => ".nc" };
-            var mapExtension = rule == Rule.Hans ? ".doc" : ".pdf";
-            var extensions = mapsOnly ? new[] { mapExtension } : new[] { programExtension, mapExtension };
+            var extensions = TransferExtensions(machine);
+            var programExtension = extensions[0];
+            if (mapsOnly) extensions = [extensions[1]];
             var files = new List<ShopFile>();
             var candidates = ShopFileSystem.CandidateFiles(folder, extensions).Take(2001).ToArray();
             if (candidates.Length > 2000) throw new WorkflowValidationException("Слишком много кандидатов в одной рабочей папке. Проверьте путь проекта.");
@@ -173,6 +181,27 @@ public static class WorkflowShopDiscovery
                 w.BoundingBox.Left, w.BoundingBox.Bottom, w.BoundingBox.Right, w.BoundingBox.Top)).ToArray()));
         }
         return new(DocumentKind.Pdf, null, [], pages);
+    }
+
+    public static bool IsUnrelatedBlockPdf(string path, ShopTransferSelection selection, CancellationToken token) =>
+        selection.Project.Machine is { } machine && IsUnrelatedBlockPdf(path, selection.Project.Project, machine,
+            selection.Files.Where(file => file.Kind == ShopFileKind.Program).Select(file => file.Name), token);
+
+    public static bool IsUnrelatedBlockPdf(string path, CuttingProject project, WorkflowMachine machine, IEnumerable<string> programs,
+        CancellationToken token)
+    {
+        if (MachineRule(machine) is not (Rule.Laser or Rule.Gas or Rule.Plasma))
+            return false;
+        try
+        {
+            var document = ReadMap(path, token);
+            if (IsBankDetails(document) || IsUnrelatedBlockDocument(document)) return true;
+            return ForeignReferences(document, project) is { } references && !references.Select(Key).Intersect(programs.Select(Key)).Any();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        {
+            return false;
+        }
     }
 
     internal static string[]? BlockReferences(SourceDocument document, CuttingProject project, Rule rule)

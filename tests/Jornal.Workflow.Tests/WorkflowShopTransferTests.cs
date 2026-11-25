@@ -136,7 +136,24 @@ public sealed class WorkflowShopTransferTests
         var before = await ShopFileSystem.TreeAsync(f.Source, Token);
         var plan = Assert.Single(await f.Discover()); Assert.Null(plan.Problem); Assert.Equal(2, plan.Files.Length);
         Assert.False(Directory.Exists(f.ShopRoot));
-        var result = Assert.Single(await f.Copy(ShopFixture.Choose(plan))); Assert.True(result.Success); Assert.False(result.Unchanged);
+        var validations = 0;
+        var result = Assert.Single(await f.Copy(ShopFixture.Choose(plan), validate: _ =>
+        {
+            if (++validations == 2)
+            {
+                var stage = Assert.Single(Directory.EnumerateDirectories(Path.GetDirectoryName(plan.Destination)!, ".journal-next-new-*"));
+                if (OperatingSystem.IsWindows()) Assert.True(File.GetAttributes(stage).HasFlag(FileAttributes.Hidden));
+            }
+            return Task.CompletedTask;
+        }));
+        Assert.True(result.Success); Assert.False(result.Unchanged); Assert.Equal(2, validations);
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.True(File.GetAttributes(Path.Combine(plan.Destination, ".journal-next-task.json")).HasFlag(FileAttributes.Hidden));
+            Assert.False(File.GetAttributes(plan.Destination).HasFlag(FileAttributes.Hidden));
+            Assert.False(File.GetAttributes(Path.Combine(plan.Destination, "ГИБКА")).HasFlag(FileAttributes.Hidden));
+            Assert.False(File.GetAttributes(Path.Combine(plan.Destination, "Лист.cnc")).HasFlag(FileAttributes.Hidden));
+        }
         Assert.True(ShopFileSystem.SameTree(before, await ShopFileSystem.TreeAsync(f.Source, Token)));
         Assert.Equal(new byte[] { 0, 255, 2, 0 }, await File.ReadAllBytesAsync(Path.Combine(plan.Destination, "ГИБКА", ".скрытый.dxf"), Token));
         Assert.True(Directory.Exists(Path.Combine(plan.Destination, "ГИБКА", "пустая")));

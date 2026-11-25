@@ -6,7 +6,7 @@ using System.Security.Cryptography;
 namespace Jornal.Workflow.Server;
 
 internal sealed class OfficeWorkspace(string? databasePath, string? projectsRoot, bool allowWrites,
-    OfficeWorkIdentity identity, IWorkflowAccessTransport transport)
+    OfficeWorkIdentity identity, IWorkflowAccessTransport transport, OfficeShopPublication publication)
 {
     public Task<IResult> ConnectAsync(OfficeWorkSessions sessions, CancellationToken token) => RunAsync(async path =>
     {
@@ -18,17 +18,23 @@ internal sealed class OfficeWorkspace(string? databasePath, string? projectsRoot
         return Results.Ok(new { state.DatabaseId, token = sessions.CreateStorage(state.DatabaseId), canWrite = allowWrites });
     });
 
-    public Task<IResult> ExecuteAsync(WorkflowAccessRequest request, CancellationToken token) => RunAsync(async path =>
+    public Task<IResult> ExecuteAsync(WorkflowAccessRequest request, string? shopLease, CancellationToken token) => RunAsync(async path =>
     {
         if (request.DatabaseId != identity.DatabaseId || request.Protocol != 1)
             return Error("Запрос относится к другой MDB.", 409);
         var operation = request.Operation;
-        if (operation is not (WorkflowAccessOperation.Inspect or WorkflowAccessOperation.Read or WorkflowAccessOperation.ReadOrders or
+        var handoff = operation is WorkflowAccessOperation.RecordShopHandoff or WorkflowAccessOperation.RecordProjectHandoffs;
+        var clear = operation == WorkflowAccessOperation.ClearShopHandoff;
+        if (!handoff && !clear && operation is not (WorkflowAccessOperation.Inspect or WorkflowAccessOperation.Read or WorkflowAccessOperation.ReadOrders or
             WorkflowAccessOperation.ReadRevision or WorkflowAccessOperation.ReadTrash or WorkflowAccessOperation.Apply))
             return Error("Эта операция выполняется в офисных «Заявках».", 400);
+        if ((handoff || clear || operation == WorkflowAccessOperation.Apply) && !allowWrites)
+            return Error("Удалённое сохранение выключено в панели сервера.", 403);
+        if (clear && (request.ClearShopHandoff is not { } clearRequest || clearRequest.OrderId == Guid.Empty))
+            return Error("Укажите заявку для снятия отметки передачи.", 400);
+        using var clearLease = clear ? WorkflowShopPublicationLock.Acquire(path, identity.DatabaseId, request.ClearShopHandoff!.OrderId) : null;
         if (operation == WorkflowAccessOperation.Apply)
         {
-            if (!allowWrites) return Error("Удалённое сохранение выключено в панели сервера.", 403);
             if (request.Patch is not { } patch || patch.Orders.Any(order => order.Value is null))
                 return Error("Окончательное удаление выполняется в офисных «Заявках».", 400);
             if (patch.Catalog is { } catalog)
@@ -52,6 +58,12 @@ internal sealed class OfficeWorkspace(string? databasePath, string? projectsRoot
         };
         if (command.Patch?.OfficeReportVersions is { Length: > 0 } versions)
             return Results.Ok(await ApplyCalculationAsync(command, versions, token));
+        if (handoff)
+        {
+            var orderId = operation == WorkflowAccessOperation.RecordShopHandoff ? command.ShopHandoff?.OrderId : command.ProjectHandoffs?.OrderId;
+            if (orderId is not { } id || id == Guid.Empty) return Error("Укажите заявку для передачи в цех.", 400);
+            return Results.Ok(await publication.RecordAsync(identity.DatabaseId, id, shopLease, () => transport.SendAsync(command, token), token));
+        }
         return Results.Ok(await transport.SendAsync(command, token));
     });
 
@@ -150,26 +162,80 @@ internal sealed class OfficeWorkspace(string? databasePath, string? projectsRoot
 
     public Task<IResult> PrepareProjectAsync(Guid orderId, WorkflowOfficeProjectPreparation request, CancellationToken token) => RunAsync(async path =>
     {
-        if (!allowWrites) return Error("remote-writes-disabled", 403);
-        if (projectsRoot is null || !Directory.Exists(projectsRoot)) return Error("project-folder-unavailable", 404);
+        if (!allowWrites) return RejectProjectPreparation("remote-writes-disabled", 403);
+        if (projectsRoot is null || !Directory.Exists(projectsRoot)) return RejectProjectPreparation("project-folder-unavailable", 404);
         var snapshot = await transport.SendAsync(new(1, WorkflowAccessOperation.ReadOrders, path, identity.DatabaseId,
             OrderIds: [orderId], OfficeSchema6: true), token);
         var order = snapshot.Orders?.SingleOrDefault(o => o.Id == orderId && !o.IsDeleted);
         if (order is null || order.Version != request.OrderVersion) throw new WorkflowConflictException();
         if (snapshot.Catalog is not { } catalog || !catalog.Employees.Any(e => e.Id == request.ActorId && e.CanWork))
-            throw new WorkflowValidationException("Выберите действующего технолога в настройках.");
-        var machine = catalog.Machines.SingleOrDefault(m => m.Id == request.MachineId)
-            ?? throw new WorkflowValidationException("Станок не найден. Обновите журнал (F5).");
-        if (request.HasPlannedBending) RequirePlannedBendingSchema(snapshot);
+            return RejectProjectPreparation("Выберите действующего технолога в настройках.");
+        if (catalog.Machines.SingleOrDefault(m => m.Id == request.MachineId) is not { } machine)
+            return RejectProjectPreparation("Станок не найден. Обновите журнал (F5).");
+        if (request.HasPlannedBending && NeedsPlannedBendingSchema(snapshot))
+            return RejectProjectPreparation(PlannedBendingSchemaMessage);
         var customer = catalog.Customers.Single(c => c.Id == order.CustomerId).Name;
         return Results.Ok(await WorkflowProjectFiles.PrepareRemoteAsync(projectsRoot, order, customer, machine,
             request.ThicknessMm, request.ItemId, request.ProjectId, DateTimeOffset.Now, token, request.HasPlannedBending));
     });
 
+    private static IResult RejectProjectPreparation(string error, int status = 422) =>
+        Results.Json(new { error, projectPreparationRejected = true }, statusCode: status);
+
+    private const string PlannedBendingSchemaMessage = "Для отметки гибки до расчёта откройте MDB в обновлённых «Заявках» на рабочем ПК.";
+    private static bool NeedsPlannedBendingSchema(WorkflowAccessResponse snapshot) =>
+        snapshot.OfficeSchemaVersion is null or < WorkflowMdbSchema.PlannedBendingVersion;
+
     private static void RequirePlannedBendingSchema(WorkflowAccessResponse snapshot)
     {
-        if (snapshot.OfficeSchemaVersion is null or < WorkflowMdbSchema.PlannedBendingVersion)
-            throw new WorkflowValidationException("Для отметки гибки до расчёта откройте MDB в обновлённых «Заявках» на рабочем ПК.");
+        if (NeedsPlannedBendingSchema(snapshot)) throw new WorkflowValidationException(PlannedBendingSchemaMessage);
+    }
+
+    public Task<IResult> OpenShopPublicationAsync(Guid orderId, long version, Guid owner, HttpContext context, CancellationToken token) => RunAsync(async path =>
+    {
+        if (!allowWrites) return Error("remote-writes-disabled", 403);
+        if (owner == Guid.Empty) return Error("Укажите идентификатор компьютера для восстановления передачи.", 400);
+        var snapshot = await ReadShopOrderAsync(path, orderId, version, token);
+        var order = snapshot.Orders!.Single();
+        var catalog = snapshot.Catalog!;
+        if (!WorkflowCuttingTask.Prepare(order, catalog.Employees, catalog.Customers, catalog.Machines).IsReady)
+            throw new WorkflowValidationException("Заявка не готова к передаче в цех. Проверьте состав и сохранённые расчёты.");
+        return publication.Open(path, identity.DatabaseId, orderId, owner, context);
+    });
+
+    public Task<IResult> UpdateShopPublicationAsync(Guid orderId, ShopPublicationChange change, string? shopLease, CancellationToken token) => RunAsync(async _ =>
+    {
+        if (!allowWrites) return Error("remote-writes-disabled", 403);
+        await publication.Verify(identity.DatabaseId, orderId, shopLease).UpdateAsync(change, token);
+        return Results.NoContent();
+    });
+
+    public Task<IResult> ReadShopSourcesAsync(Guid orderId, Guid projectId, long version, string? shopLease, CancellationToken token) => RunAsync(async path =>
+    {
+        if (shopLease is not null) publication.Verify(identity.DatabaseId, orderId, shopLease);
+        var snapshot = await ReadShopOrderAsync(path, orderId, version, token);
+        var order = snapshot.Orders!.Single();
+        if (!order.Items.Any(item => item.IsIncluded && item.CurrentProjectId == projectId))
+            throw new WorkflowConflictException();
+        var project = order.ActiveProjects.SingleOrDefault(p => p.Id == projectId);
+        var calculation = order.Specifications.SingleOrDefault(s => s.Id == projectId)?.Current;
+        var machine = snapshot.Catalog?.Machines.SingleOrDefault(m => m.Id == project?.MachineId);
+        if (project?.NativePath is not { } native || calculation is null || machine is null ||
+            WorkflowOfficeProjectPaths.InRoot(projectsRoot, native) is not { } folder || !Directory.Exists(folder))
+            return Error("project-folder-unavailable", 404);
+        var (tree, unavailable) = await WorkflowOfficeProjectPaths.ShopManifestAsync(folder, project, machine, calculation, token);
+        if (shopLease is not null) publication.Verify(identity.DatabaseId, orderId, shopLease);
+        return Results.Ok(new { tree.Directories, UnavailableFiles = unavailable, Files = tree.Files.Select(f => new { Path = f.RelativePath, f.Length, f.Sha256 }) });
+    });
+
+    private async Task<WorkflowAccessResponse> ReadShopOrderAsync(string path, Guid orderId, long version, CancellationToken token)
+    {
+        var snapshot = await transport.SendAsync(new(1, WorkflowAccessOperation.ReadOrders, path, identity.DatabaseId,
+            OrderIds: [orderId], OfficeSchema6: true), token);
+        if (snapshot.Orders is not [{ } order] || order.Id != orderId || order.IsDeleted || order.HasProjectRename || order.Version != version)
+            throw new WorkflowConflictException();
+        if (snapshot.Catalog is null) throw new InvalidDataException("Не получен справочник для заявки.");
+        return snapshot;
     }
 
     private bool OutsideProjectRoot(string? path) =>

@@ -54,15 +54,26 @@ public partial class WorkflowWindow : Window
             { model.Error = "Не удалось восстановить результат после обновления. Сохранённые заявки доступны."; }
         }
         InitializeJournalRefresh(model);
+        RefreshOfficeWorkspace();
         await model.Updates.RunAutomaticChecksAsync(_lifetime.Token);
     }
     protected override void OnClosing(WindowClosingEventArgs e)
     {
         if (!_confirmedApplicationClose && Model is { } model && !model.Updates.RestartScheduled)
         {
-            if (_closeDialogPending || OwnedWindows.Count > 0 || !model.CanCloseWorkspace) e.Cancel = true;
-            else if (model.PrepareClose(application: true) is { NeedsConfirmation: true })
-            { e.Cancel = true; _ = RequestCloseAsync(application: true); }
+            if (_officeCheckChoice is { } check && !_officeCheckForExit)
+            {
+                e.Cancel = true;
+                _closeAfterOfficeCheck = true;
+                check.TrySetResult(false);
+            }
+            else if (_closeDialogPending || OwnedWindows.Count > 0 || !model.CanCloseWorkspace) e.Cancel = true;
+            else if (model.PrepareClose(application: true) is { } request)
+            {
+                var checkOfficeFiles = model.HasOfficeWorkingCopies && e.CloseReason != WindowCloseReason.OSShutdown;
+                if (request.NeedsConfirmation || checkOfficeFiles)
+                { e.Cancel = true; _ = RequestCloseAsync(application: true, checkOfficeFiles); }
+            }
         }
         base.OnClosing(e);
     }
@@ -74,6 +85,8 @@ public partial class WorkflowWindow : Window
     }
     protected override void OnKeyDown(KeyEventArgs e)
     {
+        if (!e.Handled && e.Key == Key.Escape && _officeCheckChoice?.TrySetResult(false) == true)
+        { e.Handled = true; return; }
         OnCuttingTaskTextKeyDown(this, e); if (e.Handled) return;
         base.OnKeyDown(e);
         if (e.Handled || Model is not { CanUse: true } model) return;
@@ -160,6 +173,7 @@ public partial class WorkflowWindow : Window
         var window = new WorkflowSettingsWindow { DataContext = model.CreateGeneralSettings(), RequestedThemeVariant = ActualThemeVariant };
         window.SelectSection(section);
         await window.ShowDialog(this);
+        RefreshOfficeWorkspace();
     }
     private async void OnMoveToTrash(object? sender, RoutedEventArgs e)
     {
@@ -235,10 +249,13 @@ public partial class WorkflowWindow : Window
         { if (IsVisible && !_lifetime.IsCancellationRequested) model.Error = "Рабочая папка недоступна."; }
     }
 
-    private void OnOfficeWorkspaceActivated(object? sender, EventArgs e)
+    private void OnOfficeWorkspaceActivated(object? sender, EventArgs e) => RefreshOfficeWorkspace(recentlyOpenedOnly: true);
+
+    private void RefreshOfficeWorkspace(bool recentlyOpenedOnly = false)
     {
-        if (Model is { IsRemoteStorage: true, CanUse: true } model && OwnedWindows.Count == 0)
-            _ = model.RefreshOfficeFileStatesAsync(_lifetime.Token);
+        if (IsVisible && !_lifetime.IsCancellationRequested && !_closeDialogPending && OwnedWindows.Count == 0 &&
+            Model is { HasOfficeWorkingCopies: true, CanUse: true } model)
+            _ = model.RefreshOfficePendingFilesAsync(_lifetime.Token, recentlyOpenedOnly);
     }
 
     private async Task<string?> OpenOfficeWorkingFolderAsync(WorkflowViewModel model, WorkflowProjectRow row)
@@ -249,25 +266,31 @@ public partial class WorkflowWindow : Window
         {
             if (copy.Conflicts.Count == 0) return copy.Folder;
             foreach (var conflict in copy.Conflicts)
-            {
-                var comparison = await model.CompareOfficeWorkingFileAsync(row, conflict, token);
-                if (comparison is null || !Current()) return null;
-                var dialog = new WorkflowOfficeReportComparisonWindow(conflict, () => OpenFolderAsync(comparison.Folder))
-                    { RequestedThemeVariant = ActualThemeVariant };
-                var choice = await dialog.ShowDialog<WorkflowOfficeReportChoice>(this);
-                if (choice == WorkflowOfficeReportChoice.Cancel || !Current() ||
-                    !await model.ChooseOfficeWorkingFileAsync(row, conflict, comparison, choice == WorkflowOfficeReportChoice.Office, token))
-                    return null;
-            }
+                if (!await ResolveOfficeWorkingConflictAsync(model, row, conflict, Current)) return null;
         }
         return null;
+    }
+    private async Task<bool> ResolveOfficeWorkingConflictAsync(WorkflowViewModel model, WorkflowProjectRow row,
+        WorkflowOfficeFileConflict conflict, Func<bool> isCurrent, bool forShopTransfer = false)
+    {
+        var token = _lifetime.Token;
+        var comparison = await model.CompareOfficeWorkingFileAsync(row, conflict, token, refreshVersions: forShopTransfer);
+        if (comparison is null || !isCurrent()) return false;
+        var versions = new WorkflowOfficeFileConflict(conflict.Path, comparison.HomeHash, comparison.OfficeHash);
+        var dialog = new WorkflowOfficeReportComparisonWindow(versions, () => OpenFolderAsync(comparison.Folder), forShopTransfer)
+            { RequestedThemeVariant = ActualThemeVariant };
+        var choice = await dialog.ShowDialog<WorkflowOfficeReportChoice>(this);
+        return choice != WorkflowOfficeReportChoice.Cancel && isCurrent() &&
+            await model.ChooseOfficeWorkingFileAsync(row, versions, comparison, choice == WorkflowOfficeReportChoice.Office, token);
     }
     private async void OnPublishOfficeProject(object? sender, RoutedEventArgs e)
     {
         if (Model is not { CanUse: true } model || (sender as Control)?.DataContext is not WorkflowProjectRow row) return;
         var result = await model.PublishOfficeProjectAsync(row, _lifetime.Token);
         if (result is null || !IsVisible || _lifetime.IsCancellationRequested) return;
-        await new WorkflowProjectActionWindow("Файлы проекта", result, row.Name, "Закрыть", cancel: "")
+        var status = result is { Sent: 0, Problems.Length: 0, StopReason: null } ? "Изменённых файлов для отправки нет." : $"Отправлено файлов: {result.Sent}.";
+        var details = string.Join("\n", new[] { row.Name }.Concat(result.Problems).Append(result.StopReason).OfType<string>());
+        await new WorkflowProjectActionWindow("Файлы проекта", status, details, "Закрыть", cancel: "")
             { RequestedThemeVariant = ActualThemeVariant }.ShowDialog(this);
     }
     protected virtual async Task<bool> OpenFolderAsync(string path)

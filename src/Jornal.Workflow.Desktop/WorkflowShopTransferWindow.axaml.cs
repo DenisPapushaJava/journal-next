@@ -21,6 +21,18 @@ public partial class WorkflowShopTransferWindow : Window
     protected override void OnKeyDown(KeyEventArgs e)
     { base.OnKeyDown(e); if (!e.Handled && e.Key == Key.Escape) { Close(); e.Handled = true; } }
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
+    private async void OnChooseArchive(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not WorkflowShopTransferViewModel { CanEdit: true, SelectedProject: { CanChooseArchive: true } row } model) return;
+        try
+        {
+            var folders = await StorageProvider.OpenFolderPickerAsync(new() { Title = "Папка архивного комплекта" });
+            if (IsVisible && folders.FirstOrDefault()?.TryGetLocalPath() is { } path)
+                model.ChooseArchivedFolder(row, path);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        { if (IsVisible) model.Error = "Не удалось выбрать папку из архива. Проверьте доступ."; }
+    }
     private async void OnOpenFile(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not WorkflowShopTransferViewModel { CanEdit: true } model || sender is not Control { DataContext: WorkflowShopFileChoice file }) return;

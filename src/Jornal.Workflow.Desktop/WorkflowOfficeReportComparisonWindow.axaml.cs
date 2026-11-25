@@ -18,7 +18,7 @@ public partial class WorkflowOfficeReportComparisonWindow : Window
         _openCopies = openCopies;
     }
 
-    internal WorkflowOfficeReportComparisonWindow(WorkflowOfficeFileConflict conflict, Func<Task<bool>> openCopies)
+    internal WorkflowOfficeReportComparisonWindow(WorkflowOfficeFileConflict conflict, Func<Task<bool>> openCopies, bool forShopTransfer = false)
         : this(conflict.Path, openCopies)
     {
         Title = "Версии файла";
@@ -29,7 +29,9 @@ public partial class WorkflowOfficeReportComparisonWindow : Window
         }
         else
         {
-            ComparisonDescription.Text = "Файл изменён и дома, и в офисе. Выберите версию для локальной папки. Обе копии сохранятся. Домашнюю версию можно отправить позже из меню проекта.";
+            ComparisonDescription.Text = "Файл изменён и дома, и в офисе. Выберите версию для локальной папки. Обе копии сохранятся. " +
+                (forShopTransfer ? "Если выберете домашнюю версию, дальше подтвердите её отправку в офис." :
+                    "Домашнюю версию можно отправить позже из меню проекта.");
         }
     }
 

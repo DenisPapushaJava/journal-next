@@ -4,18 +4,13 @@ using Xunit;
 
 namespace Jornal.Workflow.Tests;
 
-public sealed class WorkflowNativeMdbTests
+public sealed partial class WorkflowNativeMdbTests
 {
     [Fact]
     public async Task RealWindowsHostCreatesValidDatabaseAndRunsOrderProjectCalculationTrashCycle()
     {
         if (!OperatingSystem.IsWindows()) { Assert.Skip("Native Jet/ADOX MDB lifecycle requires Windows and the x86 AccessHost."); return; }
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
-        while (root is not null && !File.Exists(Path.Combine(root.FullName, "Journal.Next.slnx"))) root = root.Parent;
-        Assert.NotNull(root);
-        var executable = Environment.GetEnvironmentVariable("WORKFLOW_TEST_ACCESS_HOST") ?? Path.Combine(root.FullName,
-            "src", "Jornal.Workflow.Desktop", "bin", "Release", "net10.0", "AccessHost", "Jornal.AccessHost.exe");
-        Assert.True(File.Exists(executable), "Build the Windows Desktop project to prepare its self-contained x86 AccessHost.");
+        var executable = NativeExecutable();
         using (var probe = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(executable, "--probe")
         { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true })!)
         {

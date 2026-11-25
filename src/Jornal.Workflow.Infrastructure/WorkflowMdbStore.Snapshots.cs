@@ -46,6 +46,7 @@ public sealed partial class WorkflowMdbStore
         workspace.Validate();
         // Publish the coherent snapshot only after every dependent read and validation succeeds.
         DatabaseId = response.DatabaseId; _catalog = catalog; _catalogVersion = response.CatalogVersion;
+        OfficeSchemaVersion = metadata.OfficeSchemaVersion;
         _snapshot = workspace; TrashCount = metadata.TrashCount;
         return workspace;
     }

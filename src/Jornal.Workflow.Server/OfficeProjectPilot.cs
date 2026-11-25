@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Jornal.Workflow.Core;
 using Jornal.Workflow.Infrastructure;
 using Microsoft.Net.Http.Headers;
 
@@ -67,7 +68,8 @@ internal sealed class OfficeProjectPilot(string? projectsRoot, OfficeJournal jou
             var (path, error) = await ResolveAsync(orderId, projectId, token);
             if (path is null) return error!;
             operation = "stage-upload";
-            var stagingPath = Path.Combine(Path.GetDirectoryName(path)!, ".office-upload-" + Guid.NewGuid().ToString("N"));
+            var state = WorkflowOfficeProjectPaths.CreateStateFolder(Path.GetDirectoryName(path)!);
+            var stagingPath = Path.Combine(state, "upload-" + Guid.NewGuid().ToString("N") + ".tmp");
             string currentUpload;
             await using (var output = new FileStream(stagingPath, FileMode.CreateNew, FileAccess.ReadWrite,
                 FileShare.None, 8192, FileOptions.Asynchronous))
@@ -107,7 +109,8 @@ internal sealed class OfficeProjectPilot(string? projectsRoot, OfficeJournal jou
         }
         catch (BadHttpRequestException exception) when (exception.StatusCode == 400)
         { return Error("incomplete-upload", 400); }
-        catch (Exception exception) when (FileError(exception)) { return Unavailable(operation, exception); }
+        catch (Exception exception) when (exception is WorkflowValidationException || FileError(exception))
+        { return Unavailable(operation, exception); }
         finally
         {
             if (staged is not null)

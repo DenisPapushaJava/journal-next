@@ -28,6 +28,7 @@ public sealed partial class WorkflowMdbStore(string path, IWorkflowAccessTranspo
     public int TotalCount => _page.TotalCount;
     public int TrashCount { get; private set; }
     public bool RequiresRefresh { get; private set; }
+    public int? OfficeSchemaVersion { get; private set; }
     public Guid? RecoveredOrderId { get; private set; }
     public void AcknowledgeRecovery() { RecoveredOrderId = null; _pendingCreate = null; }
     public Task<WorkflowWorkspace> RecordShopHandoffAsync(Guid orderId, long expectedOrderVersion, Guid actor, DateTimeOffset at, CancellationToken token = default) => Locked(async () =>
@@ -182,18 +183,29 @@ public sealed partial class WorkflowMdbStore(string path, IWorkflowAccessTranspo
         }
         catch (WorkflowOutcomeUnknownException) { RequiresRefresh = true; _unknownPurge = true; throw; }
     }, token);
-    public async Task<(WorkflowWorkspace Workspace, Guid OrderId)> CreateOrderFromNamesAsync(string manager, string customer, Guid actor, DateTimeOffset at, CancellationToken token = default)
+    public Task<(WorkflowWorkspace Workspace, Guid OrderId)> CreateOrderFromNamesAsync(string manager, string customer, Guid actor, DateTimeOffset at, CancellationToken token = default) =>
+        CreateOrderFromNamesAsync(manager, customer, actor, at, _pendingCreate ?? Guid.NewGuid(), null, token);
+
+    public Task<(WorkflowWorkspace Workspace, Guid OrderId)> CreateOfficeOrderAsync(Guid id, string manager, string customer,
+        Guid actor, DateTimeOffset at, Action<long> beforeInsert, CancellationToken token = default) =>
+        CreateOrderFromNamesAsync(manager, customer, actor, at, id, beforeInsert, token);
+
+    private async Task<(WorkflowWorkspace Workspace, Guid OrderId)> CreateOrderFromNamesAsync(string manager, string customer,
+        Guid actor, DateTimeOffset at, Guid id, Action<long>? beforeInsert, CancellationToken token)
     {
-        var id = _pendingCreate ?? Guid.NewGuid();
-        var workspace = await Write([], null, w =>
+        var recoverInStore = beforeInsert is null;
+        var workspace = await Write(recoverInStore ? [] : [id], null, w =>
         {
+            if (w.Orders.Any(order => order.Id == id)) return w;
             var next = WorkflowChanges.CreateOrderFromNames(w, manager, customer, actor, at, out var generated);
             return next with { Orders = next.Orders.Select(o => o.Id == generated ? o with { Id = id } : o).ToArray() };
-        }, token, creation: id).ConfigureAwait(false);
-        _pendingCreate = null; return (workspace, id);
+        }, token, creation: recoverInStore ? id : null, beforeOfficeInsert: beforeInsert).ConfigureAwait(false);
+        if (recoverInStore) _pendingCreate = null;
+        return (workspace, id);
     }
     private Task<WorkflowWorkspace> Write(Guid[] ids, long? expectedVersion, Func<WorkflowWorkspace, WorkflowWorkspace> change, CancellationToken token,
-        bool allowTrashed = false, Guid? creation = null, WorkflowOfficeReportVersion[]? officeReportVersions = null) => Locked(async () =>
+        bool allowTrashed = false, Guid? creation = null, WorkflowOfficeReportVersion[]? officeReportVersions = null,
+        Action<long>? beforeOfficeInsert = null) => Locked(async () =>
     {
         if (RequiresRefresh) throw new WorkflowValidationException("Исход предыдущей записи не подтверждён. Сначала обновите журнал (F5) и проверьте результат.");
         var read = await Send(WorkflowAccessOperation.ReadOrders, token, ids: ids).ConfigureAwait(false);
@@ -208,7 +220,10 @@ public sealed partial class WorkflowMdbStore(string path, IWorkflowAccessTranspo
             return SameOrder(old, value) ? null : new WorkflowOrderReplacement(id, old?.Version, value, allowTrashed);
         }).OfType<WorkflowOrderReplacement>().ToArray();
         if (catalog is null && changes.Length == 0) return _snapshot;
-        var patch = new WorkflowAccessPatch(expectedVersion, read.CatalogVersion, catalog, changes) { OfficeReportVersions = officeReportVersions };
+        // Persist the same revision that MDB checks inside its write transaction.
+        beforeOfficeInsert?.Invoke(read.Revision);
+        var patch = new WorkflowAccessPatch(beforeOfficeInsert is null ? expectedVersion : read.Revision,
+            read.CatalogVersion, catalog, changes) { OfficeReportVersions = officeReportVersions };
         try
         {
             var result = await Send(WorkflowAccessOperation.Apply, token, patch: patch).ConfigureAwait(false);

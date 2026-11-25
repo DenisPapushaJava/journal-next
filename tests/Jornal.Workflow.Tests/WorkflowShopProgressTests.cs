@@ -226,6 +226,31 @@ public sealed class WorkflowShopProgressTests
     }
 
     [AvaloniaFact]
+    public async Task ChangedOfficeSpecificationOffersCalculationFromTheProgressWindow()
+    {
+        using var f = new ShopFixture();
+        var model = new WorkflowShopTransferViewModel(f.ShopRoot, "test", f.Order, f.Book, _ => Task.CompletedTask,
+            _ => throw new InvalidOperationException("A calculation issue must be handled before copying"))
+        {
+            PrepareOfficeSources = (_, _, _) => throw new WorkflowOfficeShopCalculationRequiredException(f.Project.Id, "Спецификация изменилась.")
+        };
+        var window = new WorkflowShopProgressWindow { DataContext = model };
+        try
+        {
+            await model.RefreshAsync();
+            Assert.Equal(f.Project.Id, model.OfficeCalculationProjectId);
+            Assert.False(model.CanCopy);
+            window.Show(); window.Finish(); Pump();
+            var calculate = window.FindControl<Button>("ShopProgressCalculate")!;
+            Assert.True(calculate.IsEffectivelyVisible);
+            Click(calculate);
+            Assert.True(window.CalculationRequested);
+            Assert.False(window.IsVisible);
+        }
+        finally { window.Finish(forceClose: true); }
+    }
+
+    [AvaloniaFact]
     public async Task LargeResultIsLazyVirtualizedAndCanBeReadWithoutAnyIo()
     {
         using var f = new ShopFixture(); var requests = 0;

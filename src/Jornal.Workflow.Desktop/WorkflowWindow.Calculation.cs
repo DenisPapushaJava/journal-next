@@ -6,10 +6,12 @@ namespace Jornal.Workflow.Desktop;
 public partial class WorkflowWindow
 {
     private bool _calculatingReports;
-    private async void OnCalculateOrder(object? sender, RoutedEventArgs e)
+    private async void OnCalculateOrder(object? sender, RoutedEventArgs e) =>
+        await CalculateFromWindowAsync(ReferenceEquals(sender, GenerateWorkflowResult));
+
+    private async Task CalculateFromWindowAsync(bool rebuildText)
     {
         if (_calculatingReports || OwnedWindows.Count > 0 || Model is not { CanCalculateOrder: true } model) return;
-        var rebuildText = ReferenceEquals(sender, GenerateWorkflowResult);
         Task? managerMaps = null;
         _calculatingReports = true;
         try
@@ -75,6 +77,14 @@ public partial class WorkflowWindow
             case CalculationTarget.Recalculate: OnCalculateOrder(sender, e); break;
             case CalculationTarget.Refresh: model.ReloadCommand.Execute(null); break;
             case CalculationTarget.Settings: await ShowSettingsAsync(0); break;
+            case CalculationTarget.OfficeDraft:
+                if (model.OfficeCalculationConflictFolder is not { } draftFolder) break;
+                var draftDialog = new WorkflowProjectActionWindow("Незавершённый расчёт",
+                    "При открытии актуальной заявки текущий подбор этого расчёта сбросится. Черновик предыдущей отправки сохранится отдельно.",
+                    draftFolder, "Открыть актуальную заявку") { RequestedThemeVariant = ActualThemeVariant };
+                if (await draftDialog.ShowDialog<bool>(this) && IsVisible && ReferenceEquals(Model, model))
+                    await model.ArchiveConflictingOfficeCalculationAsync(_lifetime.Token);
+                break;
             case CalculationTarget.CompareOfficeReport:
                 var comparison = await model.CompareOfficeReportAsync(_lifetime.Token);
                 if (comparison is null || !IsVisible || !ReferenceEquals(Model, model) || _lifetime.IsCancellationRequested) break;

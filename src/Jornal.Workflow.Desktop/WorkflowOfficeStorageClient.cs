@@ -20,7 +20,7 @@ internal sealed partial class WorkflowOfficeStorageClient(WorkflowOfficeStorageS
     private static readonly HttpClient StorageTransport = WorkflowOfficeTransport.CreateClient(TimeSpan.FromSeconds(55));
     private readonly Uri _server = WorkflowOfficeTransport.RequireServer(settings.Address);
     private sealed record ConnectionResult(Guid DatabaseId, string Token, bool CanWrite);
-    private sealed record ServerError(string? Error, bool Conflict, bool OutcomeUnknown);
+    private sealed record ServerError(string? Error, bool Conflict, bool OutcomeUnknown, bool ProjectPreparationRejected);
     internal WorkflowOfficeStorageSettings Settings => settings;
     internal WorkflowMdbStore CreateStore() =>
         new(Path.Combine(profileDirectory, $"office-{settings.DatabaseId:N}.mdb"), this, settings.DatabaseId);
@@ -70,19 +70,26 @@ internal sealed partial class WorkflowOfficeStorageClient(WorkflowOfficeStorageS
 
     internal void SaveCredential() => new WorkflowOfficeConnection(settings.Address, token).Save(settings.CredentialPath(profileDirectory));
 
-    public async Task<WorkflowAccessResponse> SendAsync(WorkflowAccessRequest request, CancellationToken cancellation = default)
+    public Task<WorkflowAccessResponse> SendAsync(WorkflowAccessRequest request, CancellationToken cancellation = default) =>
+        SendStorageAsync(request, cancellation);
+
+    private async Task<WorkflowAccessResponse> SendStorageAsync(WorkflowAccessRequest request, CancellationToken cancellation, bool workingFiles = false)
     {
-        var write = request.Operation == WorkflowAccessOperation.Apply;
+        var write = request.Operation is WorkflowAccessOperation.Apply or WorkflowAccessOperation.RecordShopHandoff or
+            WorkflowAccessOperation.RecordProjectHandoffs or WorkflowAccessOperation.ClearShopHandoff;
         cancellation.ThrowIfCancellationRequested();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         deadline.CancelAfter(TimeSpan.FromSeconds(55));
         using var message = Request(HttpMethod.Post, "api/v1/storage/database");
+        if ((request.ShopHandoff?.OrderId ?? request.ProjectHandoffs?.OrderId) is { } orderId)
+            AddShopLease(message, orderId, required: true);
         if (write && request.Patch is { } patch) request = request with { Patch = patch with { SupportsPlannedBending = true } };
         message.Content = JsonContent.Create(request with { Path = "", DatabaseId = settings.DatabaseId }, options: JsonOptions);
         try
         {
             using var response = await SendAsync(http, message, deadline.Token);
-            await CheckAsync(response, deadline.Token);
+            if (workingFiles) await CheckWorkingFileResponseAsync(response, deadline.Token);
+            else await CheckAsync(response, deadline.Token);
             var data = await ReadAsync<WorkflowAccessResponse>(response, deadline.Token);
             if (data.Protocol != 1 || data.DatabaseId != settings.DatabaseId || data.Orders is null)
                 throw new InvalidDataException("Получен ответ другой MDB.");
@@ -91,12 +98,20 @@ internal sealed partial class WorkflowOfficeStorageClient(WorkflowOfficeStorageS
         // A reconnect can fail after a previous stream was already handed to HTTP.
         catch (HttpRequestException ex) when (ex.InnerException is WorkflowOfficeConnectException connection &&
             !message.Options.TryGetValue(WorkflowOfficeTransport.ConnectedRoute, out _))
-        { throw new WorkflowValidationException(connection.Message); }
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (workingFiles || !write) throw new WorkflowOfficeConnectionLostException(connection.Message, ex);
+            throw new WorkflowValidationException(connection.Message);
+        }
         catch (Exception ex) when (write && ex is HttpRequestException or IOException or JsonException or InvalidDataException or OperationCanceledException)
         { throw new WorkflowOutcomeUnknownException(ex); }
         catch (OperationCanceledException ex) when (!cancellation.IsCancellationRequested)
-        { throw new IOException("Сервер не ответил вовремя. Повторите чтение заявок.", ex); }
-        catch (HttpRequestException ex) { throw new IOException("Сервер недоступен. Проверьте подключение ZeroTier.", ex); }
+        { throw new WorkflowOfficeConnectionLostException("Офисный сервер не ответил вовремя. Проверьте связь с офисом.", ex); }
+        catch (HttpRequestException ex)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            throw new WorkflowOfficeConnectionLostException("Офисный сервер недоступен. Проверьте подключение ZeroTier.", ex);
+        }
     }
 
     private HttpRequestMessage Request(HttpMethod method, string path)
@@ -134,16 +149,20 @@ internal sealed partial class WorkflowOfficeStorageClient(WorkflowOfficeStorageS
         catch (Exception ex) when (ex is JsonException or HttpRequestException) { }
         if (problem?.OutcomeUnknown == true) throw new WorkflowOutcomeUnknownException();
         if (problem?.Conflict == true) throw new WorkflowConflictException();
-        throw new WorkflowValidationException(problem?.Error switch
+        var message = problem?.Error switch
         {
             "remote-writes-disabled" => "Удалённое сохранение выключено в панели сервера.",
+            "calculate-working-report" => "Этот файл связан с расчётом. Нажмите «Рассчитать», чтобы сохранить новую спецификацию.",
             "file-version-conflict" => "Файл изменился на сервере. Локальная копия сохранена.",
             "previous-version-needs-review" or "file-write-unconfirmed" => "Сервер не подтвердил замену файла. Проверьте обе версии.",
             "project-folder-unavailable" => "Рабочая папка проекта недоступна на сервере.",
             "operation-rejected" => "Сервер не смог обработать файлы проекта. Проверьте папку проекта или журнал сервера.",
             "operation-unavailable" => "Файлы проекта временно недоступны на сервере. Проверьте подключение и повторите действие.",
-            { } message => message,
+            { } detail => detail,
             _ => $"Не удалось обратиться к серверу (HTTP {(int)response.StatusCode})."
-        });
+        };
+        if (problem?.ProjectPreparationRejected == true)
+            throw new WorkflowOfficeProjectNotStartedException(message);
+        throw new WorkflowValidationException(message);
     }
 }

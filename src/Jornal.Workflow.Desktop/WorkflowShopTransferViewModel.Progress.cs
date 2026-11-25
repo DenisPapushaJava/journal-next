@@ -22,7 +22,8 @@ public partial class WorkflowShopTransferViewModel
     public WorkflowShopProgressStep[] ProgressSteps { get; } =
         [new("Проверка"), new("Карты"), new("Файлы"), new("Отметка"), new("Текст")];
     public bool IsProgressSuccessful => !IsBusy && AllPrepared && TextCopied && !HasError && !WasCancelled;
-    public string ProgressTitle => IsProgressSuccessful ? "Передано в цех" : IsBusy && CancellationRequested ? "Останавливаем подготовку…" :
+    public string ProgressTitle => IsProgressSuccessful ? PrepareOfficeSources is null ? "Передано в цех" : "Задание сохранено" :
+        IsBusy && CancellationRequested ? "Останавливаем подготовку…" :
         HasError ? "Передача требует внимания" : !IsBusy && WasCancelled ? "Подготовка остановлена" : Progress?.Stage switch
     {
         WorkflowShopStage.Signing => "Подписываем карты раскроя",
@@ -36,8 +37,10 @@ public partial class WorkflowShopTransferViewModel
     public bool HasProgressFile => !string.IsNullOrEmpty(Progress?.File);
     public string ProgressProject => Progress?.Project ?? "";
     public string ProgressFile => Progress?.File ?? "";
-    public string ProgressActivity => IsProgressSuccessful ? "Можно отправить скопированное сообщение в цех." :
-        IsBusy && CancellationRequested ? "Дождитесь безопасной остановки. Готовые комплекты и подписанные карты сохранятся." :
+    public string ProgressActivity => IsProgressSuccessful ? PrepareOfficeSources is null ? "Можно отправить скопированное сообщение в цех." :
+        "Комплект в локальной папке Яндекс Диска. Текст скопирован, отметка сохранена." :
+        IsBusy && CancellationRequested ? PrepareOfficeSources is null ? "Дождитесь безопасной остановки. Готовые комплекты и подписанные карты сохранятся." :
+        "Дождитесь безопасной остановки. Готовые комплекты сохранятся." :
         HasError || !IsBusy && WasCancelled ? Status ?? "Проверьте сообщение ниже." : Progress?.Activity ?? "";
     public bool HasProgressCount => Progress is { Completed: >= 0, Total: > 0 };
     public string ProgressCount => IsProgressSuccessful ? $"Подготовлено проектов: {Projects.Count}" :

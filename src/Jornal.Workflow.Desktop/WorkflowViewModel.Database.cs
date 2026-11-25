@@ -44,20 +44,24 @@ public partial class WorkflowViewModel
         WorkflowOfficeWorkingCopy? copy = null;
         var copiesRoot = OfficeCopiesRoot;
         var project = row.Project;
-        await RunAsync(async () => copy = await Task.Run(() => server.OpenWorkingCopyAsync(order.Id, project.Id, token, copiesRoot, project.NativePath), token),
+        await RunAsync(async () => copy = await Task.Run(() => server.OpenWorkingCopyAsync(order.Id, project.Id, token, copiesRoot,
+            project.NativePath, allowOffline: true), token),
             "Не удалось обновить локальную папку проекта.");
         if (!ReferenceEquals(server, _connection.RemoteClient) || CurrentOrder?.Id != order.Id || !Projects.Contains(row)) return null;
-        if (copy?.HasPendingFiles is { } pending) row.ApplyPendingOfficeFiles(pending);
+        if (copy is not null) _openedOfficeCopies.Add(project.Id);
+        if (copy?.HasPendingFiles is { } pending) ApplyOfficeProjectPending(row, pending);
+        if (copy?.IsOffline == true)
+            Error = "Нет связи с офисом. Открыта скачанная копия. Новые правки останутся на этом компьютере до отправки.";
         return copy;
     }
 
     internal async Task<WorkflowOfficeFileComparison?> CompareOfficeWorkingFileAsync(WorkflowProjectRow row,
-        WorkflowOfficeFileConflict conflict, CancellationToken token)
+        WorkflowOfficeFileConflict conflict, CancellationToken token, bool refreshVersions = false)
     {
         if (_connection.RemoteClient is not { } server || CurrentOrder is not { } order || !Projects.Contains(row)) return null;
         CancelOfficeFileCheck();
         WorkflowOfficeFileComparison? comparison = null;
-        await RunAsync(async () => comparison = await server.CompareWorkingFileAsync(order.Id, row.Project.Id, conflict, token),
+        await RunAsync(async () => comparison = await server.CompareWorkingFileAsync(order.Id, row.Project.Id, conflict, token, refreshVersions),
             "Не удалось скачать версии файла для сравнения.");
         return ReferenceEquals(server, _connection.RemoteClient) && Projects.Contains(row) ? comparison : null;
     }
@@ -102,7 +106,7 @@ public partial class WorkflowViewModel
                 { continue; }
                 if (check.IsCancellationRequested || _cuttingTaskDetached || !ReferenceEquals(server, _connection.RemoteClient) ||
                     CurrentOrder?.Id != order.Id) return;
-                if (pending is { } known && Projects.Contains(row)) row.ApplyPendingOfficeFiles(known);
+                if (pending is { } known && Projects.Contains(row)) ApplyOfficeProjectPending(row, known);
             }
         }
         catch (OperationCanceledException) when (check.IsCancellationRequested) { }
@@ -126,16 +130,28 @@ public partial class WorkflowViewModel
         return local;
     }
 
-    internal async Task<string?> PublishOfficeProjectAsync(WorkflowProjectRow row, CancellationToken token)
+    internal async Task<WorkflowOfficeFilePublication?> PublishOfficeProjectAsync(WorkflowProjectRow row, CancellationToken token)
     {
         if (_connection.Office is { CanWrite: false }) { Error = "Удалённое сохранение выключено в панели сервера."; return null; }
         if (_connection.RemoteClient is not { } server || CurrentOrder is not { } order || !Projects.Contains(row)) return null;
         CancelOfficeFileCheck();
-        int? sent = null;
-        await RunAsync(async () => sent = await server.PublishCopyAsync(order.Id, row.Project.Id, token, OfficeCopiesRoot, row.Project.NativePath),
+        WorkflowOfficeFilePublication? result = null;
+        var root = OfficeCopiesRoot;
+        await RunAsync(async () =>
+        {
+            try
+            {
+                var current = await server.ReadActiveOrderForWorkingFilesAsync(order.Id, token);
+                var project = current.ActiveProjects.SingleOrDefault(candidate => candidate.Id == row.Project.Id)
+                    ?? throw new WorkflowValidationException("Проект недоступен в активных заявках. Обновите журнал и проверьте корзину.");
+                result = await Task.Run(() => server.PublishCopyAsync(order.Id, project.Id, token, root, project.NativePath,
+                    WorkflowOfficeProjectPaths.AcceptedReportName(current, project.Id), project), token);
+            }
+            catch (WorkflowOfficeSyncUnavailableException ex) { result = new(0, [], ex.Message); }
+        },
             "Не удалось завершить отправку файлов. Локальные копии сохранены.");
         await RefreshOfficeFileStatesAsync(token);
-        return sent switch { null => null, 0 => "Изменённых файлов для отправки нет.", _ => $"Отправлено файлов: {sent}." };
+        return result;
     }
 
     internal async Task<string?> SaveOfficeCopiesRootAsync(string? expected, string? root, CancellationToken token)
@@ -258,7 +274,7 @@ public partial class WorkflowViewModel
             _sourceLetters[previousKey] = previous;
             ForgetOpenCard(); IsCreating = false; NewCustomer = ""; NewManager = "";
             _reportReview = null; _reportImportOrderId = null;
-            ResetCuttingTask(); _bendingFolderFailures = null;
+            ResetCuttingTask(); ResetOfficePendingFiles(); ClearOfflineOfficeFolders(); _bendingFolderFailures = null;
             _cards.Clear(); SelectedOrder = null; _connection = candidateConnection with { EmployeeId = saved.EmployeeId }; _workspace = workspace;
             CancelManagerMapJobs();
             _localPreferences = saved; _hasLoadedOrders = true; RecordListedSnapshot(workspace);
@@ -336,6 +352,7 @@ public partial class WorkflowViewModel
             var source = _store;
             var book = more ? await store.ReadMoreAsync(token) : await store.ReadAsync(token);
             if (generation != _searchGeneration || !ReferenceEquals(source, _store)) return;
+            if (OfflineOfficeFolders is not null) { ClearOfflineOfficeFolders(); Error = null; }
             _orderQueryFailed = false;
             CaptureCard(); var state = _openOrderId is { } id ? _cards.GetValueOrDefault(id) : null;
             _loadedOrderSnapshot = CurrentOrder; _workspace = book; _hasLoadedOrders = true; if (!more) RecordListedSnapshot(book);

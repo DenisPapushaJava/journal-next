@@ -43,6 +43,8 @@
           <StackPanel Grid.Row="4" Spacing="6">
             <TextBlock Text="{Binding BendingText}" IsVisible="{Binding HasBending}" TextWrapping="Wrap" FontSize="12" />
             <TextBlock Text="{Binding Problem}" Foreground="{DynamicResource JournalDangerForeground}" TextWrapping="Wrap" />
+            <ui:JournalButton Label="{Binding ArchiveAction}" Click="OnChooseArchive" IsVisible="{Binding CanChooseArchive}"
+                              HorizontalAlignment="Left" ToolTip.Tip="{Binding ArchivedFolder}" />
           </StackPanel>
           <CheckBox x:Name="ShopReviewed" Grid.Row="5" Content="Состав этого проекта проверен" IsChecked="{Binding Reviewed}" IsVisible="{Binding RequiresReview}" />
         </Grid>
