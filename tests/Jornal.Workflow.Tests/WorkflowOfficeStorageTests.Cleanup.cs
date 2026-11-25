@@ -73,9 +73,11 @@ public sealed partial class WorkflowOfficeStorageTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task CleanupRemovesOnlyConfirmedLocalCopyAndOpeningDownloadsItAgain(bool custom)
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task CleanupRemovesOnlyConfirmedLocalCopyAndOpeningDownloadsItAgain(bool custom, bool updatedInOffice)
     {
         using var fixture = new WorkingFiles();
         var token = TestContext.Current.CancellationToken;
@@ -95,24 +97,26 @@ public sealed partial class WorkflowOfficeStorageTests
         var unrelated = Path.Combine(other.FullName, name);
         await File.WriteAllTextAsync(unrelated, "Другая база", token);
 
+        if (updatedInOffice) fixture.Office[name] = "updated before preview";
         var plan = await fixture.Client.PreviewCleanupAsync([order], new HashSet<Guid>(), null, null, token);
         Assert.Equal(6, Assert.Single(plan.Copies).Bytes);
         Assert.Empty(plan.Skipped);
         Assert.True(File.Exists(Path.Combine(copy.Folder, name)));
 
+        var officeVersion = updatedInOffice ? "updated after preview" : "office";
+        fixture.Office[name] = officeVersion;
         var result = await fixture.Client.RemoveCleanCopiesAsync(plan, new HashSet<Guid>(), null, null, token);
         Assert.Empty(result.Skipped);
         Assert.Equal(1, result.Removed);
         Assert.Equal(6, result.Bytes);
         Assert.False(Directory.Exists(copy.Folder));
-        Assert.Equal("office", fixture.Office[name]);
+        Assert.Equal(officeVersion, fixture.Office[name]);
         Assert.Empty(fixture.Uploads);
         Assert.Equal("Другая база", await File.ReadAllTextAsync(unrelated, token));
 
-        fixture.Office[name] = "new office version";
         var reopened = await fixture.Client.OpenWorkingCopyAsync(order.Id, fixture.Project, token, root, order.Projects[0].NativePath);
         Assert.Equal(copy.Folder, reopened.Folder);
-        Assert.Equal("new office version", await File.ReadAllTextAsync(Path.Combine(reopened.Folder, name), token));
+        Assert.Equal(officeVersion, await File.ReadAllTextAsync(Path.Combine(reopened.Folder, name), token));
     }
 
     [Theory]
@@ -123,7 +127,7 @@ public sealed partial class WorkflowOfficeStorageTests
     [InlineData("черновик в карточке", "черновик расчёта")]
     [InlineData("сохранённая версия", "версии для восстановления")]
     [InlineData("заблокирован файл", "Закройте открытые файлы")]
-    [InlineData("офисная версия изменилась", "Офисная копия отличается")]
+    [InlineData("файл исчез в офисе", "недоступна в офисе")]
     [InlineData("общая папка", "отдельной локальной папки")]
     [InlineData("папка цеха", "отдельной локальной папки")]
     [InlineData("чужая папка", "проект недоступен в офисе")]
@@ -150,7 +154,7 @@ public sealed partial class WorkflowOfficeStorageTests
         }
         if (scenario == "изменён файл") await File.WriteAllTextAsync(path, "home", token);
         if (scenario == "удалён файл") File.Delete(path);
-        if (scenario == "офисная версия изменилась") fixture.Office[name] = "updated";
+        if (scenario == "файл исчез в офисе") fixture.Office.Remove(name);
         if (scenario == "чужая папка")
             fixture.ReadDatabase = request => new(1, fixture.Client.Settings.DatabaseId, Orders: [],
                 Catalog: request.KnownCatalogVersion is null ? WorkflowCatalog.From(WorkflowWorkspace.Empty) : null);
@@ -171,7 +175,8 @@ public sealed partial class WorkflowOfficeStorageTests
     [InlineData("новый файл")]
     [InlineData("правка")]
     [InlineData("нет связи")]
-    [InlineData("офисная правка")]
+    [InlineData("файл исчез в офисе")]
+    [InlineData("правки дома и в офисе")]
     [InlineData("занята после сверки")]
     public async Task CleanupRechecksAfterConfirmationAndKeepsTheCopyIfSomethingChanged(string scenario)
     {
@@ -186,8 +191,10 @@ public sealed partial class WorkflowOfficeStorageTests
         Assert.Single(plan.Copies);
         var path = Path.Combine(copy.Folder, scenario == "новый файл" ? "Добавлено.nc" : name);
         if (scenario == "нет связи") fixture.ManifestUnavailable = true;
-        else if (scenario == "офисная правка") fixture.Office[name] = "Только в офисе";
-        else if (scenario != "занята после сверки") await File.WriteAllTextAsync(path, "Только дома", token);
+        if (scenario == "файл исчез в офисе") fixture.Office.Remove(name);
+        if (scenario == "правки дома и в офисе") fixture.Office[name] = "Только в офисе";
+        var editedLocally = scenario is "новый файл" or "правка" or "правки дома и в офисе";
+        if (editedLocally) await File.WriteAllTextAsync(path, "Только дома", token);
 
         WorkflowOfficeCleanupResult result;
         using (var open = scenario == "занята после сверки" ? File.Open(path, FileMode.Open, FileAccess.Write,
@@ -196,7 +203,7 @@ public sealed partial class WorkflowOfficeStorageTests
 
         Assert.Equal(0, result.Removed);
         Assert.Single(result.Skipped);
-        Assert.Equal(scenario is "новый файл" or "правка" ? "Только дома" : "office", await File.ReadAllTextAsync(path, token));
+        Assert.Equal(editedLocally ? "Только дома" : "office", await File.ReadAllTextAsync(path, token));
         Assert.Empty(Directory.EnumerateDirectories(Path.GetDirectoryName(copy.Folder)!, ".office-cleanup-*"));
         Assert.Empty(fixture.Uploads);
     }

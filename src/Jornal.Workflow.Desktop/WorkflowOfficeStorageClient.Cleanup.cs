@@ -10,7 +10,7 @@ internal sealed record WorkflowOfficeCleanupResult(int Removed, long Bytes, stri
 
 internal sealed partial class WorkflowOfficeStorageClient
 {
-    private sealed record CopyContents(string[] Files, string[] Directories, Dictionary<string, string> Versions, long Bytes);
+    private sealed record CopyContents(string[] Files, string[] Directories, long Bytes);
     private const string RecoveryFolder = ".office-sync";
 
     internal async Task<WorkflowOfficeCleanupPlan> PreviewCleanupAsync(WorkflowOrder[] orders, IReadOnlySet<Guid> protectedProjects,
@@ -211,7 +211,6 @@ internal sealed partial class WorkflowOfficeStorageClient
     {
         var files = new List<string>();
         var directories = new List<string>();
-        var versions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         long bytes = 0;
         foreach (var (path, relative, directory) in WorkflowOfficeProjectPaths.CopyEntries(folder, token))
@@ -238,25 +237,25 @@ internal sealed partial class WorkflowOfficeStorageClient
             {
                 var length = input.Length;
                 var hash = Convert.ToHexString(await SHA256.HashDataAsync(input, token));
-                if (hash != previous || input.Length != length || !versions.TryAdd(name, hash))
+                if (hash != previous || input.Length != length)
                     throw new WorkflowValidationException("В копии есть изменения. Проверьте и отправьте файлы в офис.");
                 files.Add(relative);
                 bytes = checked(bytes + length);
             }
             finally { if (held is null) await input.DisposeAsync(); }
         }
-        if (versions.Count != baseline.Count)
+        if (files.Count != baseline.Count)
             throw new WorkflowValidationException("В локальной папке удалены файлы. Откройте проект для сверки с офисом.");
-        return new(files.ToArray(), directories.ToArray(), versions, bytes);
+        return new(files.ToArray(), directories.ToArray(), bytes);
     }
 
     private static void VerifyRecoverable(ProjectManifest office, CopyContents copy)
     {
-        var files = office.Files.ToDictionary(file => file.Path, file => file.Sha256, StringComparer.OrdinalIgnoreCase);
+        var files = office.Files.Select(file => file.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var folders = office.Directories.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (copy.Versions.Any(file => files.GetValueOrDefault(file.Key) != file.Value) ||
+        if (copy.Files.Any(path => !files.Contains(path.Replace(Path.DirectorySeparatorChar, '/'))) ||
             copy.Directories.Any(path => path != RecoveryFolder && !folders.Contains(path.Replace(Path.DirectorySeparatorChar, '/'))))
-            throw new WorkflowValidationException("Офисная копия отличается. Откройте папку проекта, чтобы обновить файлы.");
+            throw new WorkflowValidationException("Часть файлов или папок этой копии недоступна в офисе.");
     }
 
     private static bool IsCleanupUnavailable(Exception error) =>
