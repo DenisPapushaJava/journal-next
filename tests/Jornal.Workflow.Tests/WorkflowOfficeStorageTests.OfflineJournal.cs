@@ -369,7 +369,7 @@ public sealed partial class WorkflowOfficeStorageTests
             Assert.Empty(office.Requests);
             Assert.Empty(files.Uploads);
         }
-        finally { model.Detach(); }
+        finally { await DetachAndWaitForFileCheckAsync(model, files.Client); }
 
         var resumedClient = files.ReopenClient();
         var restarted = new WorkflowViewModel(resumedClient.CreateStore(), new(new WorkflowAppUpdater()), preferences: preferences,
@@ -412,7 +412,14 @@ public sealed partial class WorkflowOfficeStorageTests
             if (officeChange == "спецификация") Assert.Contains("15000", files.Office[name]);
             if (!officeChanged) Assert.Single(Assert.Single(restarted.Orders).Order.Specifications);
         }
-        finally { restarted.Detach(); }
+        finally { await DetachAndWaitForFileCheckAsync(restarted, resumedClient); }
+
+        async Task DetachAndWaitForFileCheckAsync(WorkflowViewModel viewModel, WorkflowOfficeStorageClient client)
+        {
+            viewModel.Detach();
+            // The file check takes the same gate as the cancelled background read.
+            await client.HasPendingFilesAsync(project.Id, prefs.OfficeCopiesRoot, project.NativePath, CancellationToken.None);
+        }
 
         async Task ReceivePackageAsync()
         {
