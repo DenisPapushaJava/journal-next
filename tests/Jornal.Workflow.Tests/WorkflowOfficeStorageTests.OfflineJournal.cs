@@ -371,8 +371,9 @@ public sealed partial class WorkflowOfficeStorageTests
         }
         finally { model.Detach(); }
 
-        var restarted = new WorkflowViewModel(files.Client.CreateStore(), new(new WorkflowAppUpdater()), preferences: preferences,
-            initialPreferences: prefs, remoteTransport: files.Client);
+        var resumedClient = files.ReopenClient();
+        var restarted = new WorkflowViewModel(resumedClient.CreateStore(), new(new WorkflowAppUpdater()), preferences: preferences,
+            initialPreferences: prefs, remoteTransport: resumedClient);
         try
         {
             await restarted.ReloadCommand.ExecuteAsync(null);
@@ -403,8 +404,8 @@ public sealed partial class WorkflowOfficeStorageTests
             else if (exchangeEnabled && !packageFirst) await ReceivePackageAsync();
             Assert.False(restarted.ShowOfflineJournal);
             var officeChanged = officeChange is "заявка" or "спецификация";
-            Assert.Equal(officeChanged, files.Client.HasCalculationDraft(order.Id));
-            Assert.Equal(officeChanged ? new[] { order.Id } : [], files.Client.PendingCalculationOrders(token));
+            Assert.Equal(officeChanged, resumedClient.HasCalculationDraft(order.Id));
+            Assert.Equal(officeChanged ? new[] { order.Id } : [], resumedClient.PendingCalculationOrders(token));
             Assert.Equal(officeChanged ? 0 : 1, office.Requests.Count(request => request.Operation == WorkflowAccessOperation.Apply));
             Assert.Equal(officeChanged || packageFirst ? 0 : 1, files.Uploads.Count);
             if (officeChange == "заявка") Assert.Equal("Свежее в офисе", Assert.Single(office.Book.Orders).Blcb);
@@ -486,7 +487,11 @@ public sealed partial class WorkflowOfficeStorageTests
         await Assert.ThrowsAsync<WorkflowValidationException>(() => fixture.Client.CreateStore().ReadAsync(token));
         Assert.Null(fixture.Client.ReadOfflineJournal());
         var file = Assert.Single(Directory.GetFiles(fixture.DirectoryPath, ".office-journal-*.json"));
-        await File.WriteAllTextAsync(file, "{", token);
+        await using (var invalid = File.Open(file, FileMode.Open, FileAccess.Write))
+        {
+            invalid.SetLength(0);
+            await invalid.WriteAsync("{"u8.ToArray(), token);
+        }
         var restart = new WorkflowOfficeStorageClient(fixture.Client.Settings, StorageToken, fixture.DirectoryPath, http);
         Assert.Null(restart.ReadOfflineJournal());
     }

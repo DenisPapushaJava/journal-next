@@ -1105,6 +1105,8 @@ public sealed partial class WorkflowOfficeStorageTests
             Client = new(new(Address, databaseId ?? Guid.NewGuid(), Guid.NewGuid(), true), StorageToken, _temp.DirectoryPath, _http, _http);
         }
 
+        public WorkflowOfficeStorageClient ReopenClient() => new(Client.Settings, StorageToken, DirectoryPath, _http, _http);
+
         public Task<WorkflowOfficeWorkingCopy> OpenAsync(CancellationToken token) => Client.OpenWorkingCopyAsync(Order, Project, token);
         public Task<bool?> PendingAsync(CancellationToken token) => Client.HasPendingFilesAsync(Project, null, null, token);
         private static byte[] Bytes(string contents) => System.Text.Encoding.UTF8.GetBytes(contents);
