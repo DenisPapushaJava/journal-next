@@ -293,6 +293,7 @@ public sealed class WorkflowOfficeSetupTests
 
     [Theory]
     [InlineData("{\"status\":\"ok\"}", 200, "Reachable")]
+    [InlineData("{\"status\":\"ok\",\"version\":\"v24\"}", 200, "Reachable")]
     [InlineData("{\"status\":\"error\"}", 200, "UnexpectedResponse")]
     [InlineData("not json", 200, "UnexpectedResponse")]
     [InlineData("{\"status\":\"ok\"}", 302, "UnexpectedResponse")]

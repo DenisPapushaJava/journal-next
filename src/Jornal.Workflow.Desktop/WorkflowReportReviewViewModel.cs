@@ -326,6 +326,9 @@ public partial class WorkflowReportReviewViewModel : ObservableObject
     internal Func<bool>? IsContextCurrent { get; init; }
     internal Func<long?>? CurrentOrderVersion { get; init; }
     internal bool NeedsOfficeComparison { get; set; }
+    internal bool QueuedForOffice { get; set; }
+    internal bool OfflineBatch { get; set; }
+    private readonly Dictionary<WorkflowReportCandidate, string> _confirmedOfflineEstimates = [];
     private bool _isGuided;
     public bool IsGuided { get => _isGuided; internal set { if (_isGuided == value) return; _isGuided = value; Changed(); } }
     public IEnumerable<WorkflowReportCandidate> GuidedCandidates => Candidates.Where(c => c.NeedsDecision);
@@ -344,6 +347,8 @@ public partial class WorkflowReportReviewViewModel : ObservableObject
     public bool CanEdit => !IsBusy && !WasSaved;
     private bool IsReadyToSave(WorkflowReportCandidate candidate) => !candidate.WasAccepted && candidate.Ready &&
         (IsGuided ? !candidate.UsesEstimatedPierces || ReferenceEquals(candidate, Selected) : candidate.IsSelected);
+    private bool IsReadyForOfflineBatch(WorkflowReportCandidate candidate) => candidate.Ready &&
+        (!candidate.UsesEstimatedPierces || candidate.Snapshot?.Sha256 == _confirmedOfflineEstimates.GetValueOrDefault(candidate));
     private bool CanSave => CanEdit && !_orderChanged && (IsGuided && (_needsRefresh || Selected?.CanConfirmMaterial == true) || Candidates.Any(IsReadyToSave));
     private bool CanRefresh => CanEdit && !_orderChanged && _refresh is not null;
     public string SaveCaption => IsGuided ? _needsRefresh ? "Продолжить" : Selected?.CanConfirmMaterial == true ? "Подтвердить и продолжить" :
@@ -405,9 +410,12 @@ public partial class WorkflowReportReviewViewModel : ObservableObject
         {
             var failure = await next._save(candidates, cancellation);
             if (next._needsRefresh) _needsRefresh = true;
+            QueuedForOffice = next.QueuedForOffice;
             return failure;
         };
         PreviewOrderVersion = next.PreviewOrderVersion; _needsRefresh = false;
+        OfflineBatch = next.OfflineBatch;
+        _confirmedOfflineEstimates.Clear();
         MaterialSuggestions = next.MaterialSuggestions;
         Candidates.Clear();
         foreach (var candidate in next.Candidates) { candidate.UseChangedCallback(Changed); Candidates.Add(candidate); }
@@ -427,7 +435,7 @@ public partial class WorkflowReportReviewViewModel : ObservableObject
     {
         if (!CanEdit || _orderChanged) return;
         var ready = Candidates.Where(c => c.CanAcceptAutomatically).ToArray();
-        if (ready.Length == 0) return;
+        if (ready.Length == 0 || OfflineBatch && GuidedCandidates.Any(candidate => !candidate.CanAcceptAutomatically)) return;
         IsBusy = true; Error = null;
         try { Error = await _save(ready, token); if (Error is null && CurrentOrderVersion?.Invoke() is { } version) PreviewOrderVersion = version; Changed(); }
         finally { IsBusy = false; }
@@ -449,6 +457,15 @@ public partial class WorkflowReportReviewViewModel : ObservableObject
                 }
                 if (IsGuided && Selected is { CanConfirmMaterial: true, Draft: { } materialDraft }) materialDraft.MaterialConfirmed = true;
                 var ready = Candidates.Where(IsReadyToSave).ToArray();
+                if (OfflineBatch)
+                {
+                    if (Selected is { UsesEstimatedPierces: true, Ready: true, Snapshot: { } snapshot } selected)
+                        _confirmedOfflineEstimates[selected] = snapshot.Sha256;
+                    var batch = GuidedCandidates.ToArray();
+                    if (batch.FirstOrDefault(candidate => !IsReadyForOfflineBatch(candidate)) is { } remaining)
+                    { Selected = remaining; return; }
+                    ready = batch;
+                }
                 if (ready.Length == 0) { WasSaved = IsGuided && !GuidedCandidates.Any(); return; }
                 Error = await _save(ready, token);
                 if (Error is not null)

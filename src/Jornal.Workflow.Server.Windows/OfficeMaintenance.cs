@@ -154,7 +154,8 @@ internal static partial class OfficeInstallation
         if (settings is null) return;
         foreach (var folder in RetiredFolders().Prepend(AppDirectory))
         {
-            if (Inside(settings.DatabasePath, folder) || Inside(settings.ProjectsRoot, folder))
+            if (Inside(settings.DatabasePath, folder) || Inside(settings.ProjectsRoot, folder) ||
+                settings.CalculationExchangeRoot is { } exchange && Inside(exchange, folder))
                 throw new IOException("Переместите MDB и проекты из папки установки и укажите новые пути в панели сервера.");
         }
     }

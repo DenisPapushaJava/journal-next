@@ -14,8 +14,8 @@ public partial class WorkflowViewModel
         { Incomplete: true } => "Не удалось проверить локальные файлы",
         _ => null
     };
-    public bool HasOfficePendingFilesNotice => OfficePendingFilesNotice is not null;
-    internal bool CanPublishOfficeFiles => _connection.Office is { CanWrite: true } && _connection.RemoteClient is not null;
+    public bool HasOfficePendingFilesNotice => !ShowOfflineJournal && OfficePendingFilesNotice is not null;
+    internal bool CanPublishOfficeFiles => !ShowOfflineJournal && _connection.Office is { CanWrite: true } && _connection.RemoteClient is not null;
     internal bool HasOfficeWorkingCopies => _connection.RemoteClient is not null;
 
     internal async Task<WorkflowOfficePendingFiles?> RefreshOfficePendingFilesAsync(CancellationToken token, bool recentlyOpenedOnly = false)

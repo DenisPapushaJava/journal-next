@@ -19,7 +19,7 @@ public partial class WorkflowViewModel
         (string.IsNullOrWhiteSpace(Blcb) ? "пока нет" : Blcb);
     private void NotifyHeaderEdit() { OnPropertyChanged(nameof(HasPendingEdits)); OnPropertyChanged(nameof(HeaderSummary)); NotifyCuttingTask(); }
     private long CardVersion => _loadedOrderVersion ?? CurrentOrder?.Version ?? 0;
-    private bool HasCurrentCardEdits => IsCreating ? !string.IsNullOrWhiteSpace(NewCustomer) || !string.IsNullOrWhiteSpace(NewManager) :
+    private bool HasCurrentCardEdits => IsCreating ? HasUnsavedNewOrderFields :
         IsPlanning || Drafts.Any(d => d.IsDirty) || HasHeaderChanges;
     private bool HasDraftForOrder(Guid id) => id == _openOrderId && !IsCreating ? HasCurrentCardEdits :
         _cards.TryGetValue(id, out var state) && state.HasEdits;

@@ -201,7 +201,7 @@ public partial class WorkflowViewModel
 
     public bool CompleteCalculation(WorkflowReportReviewViewModel review)
     {
-        if (review.IsContextCurrent?.Invoke() != true || review.PreviewOrderVersion != CurrentOrder?.Version || review.Error is not null) return false;
+        if (review.QueuedForOffice || review.IsContextCurrent?.Invoke() != true || review.PreviewOrderVersion != CurrentOrder?.Version || review.Error is not null) return false;
         if (review.GuidedCandidates.FirstOrDefault() is { } question)
         { review.Selected = question; SetCalculationNotice($"Проект «{question.Project.Name}»: {question.Message}", CalculationTarget.Reports, question.Project.Id); return false; }
         if (review.Candidates.FirstOrDefault(c => !c.WasAccepted && c.Status != "Без изменений") is { } missing)

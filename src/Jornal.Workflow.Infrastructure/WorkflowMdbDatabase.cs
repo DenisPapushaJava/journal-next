@@ -25,6 +25,7 @@ public sealed partial class WorkflowMdbDatabase
         if (!File.Exists(path)) throw new WorkflowValidationException("Файл базы программы «Заявки» не найден или недоступен. Проверьте путь и сеть; новая база автоматически не создаётся.");
         if (request.Operation == WorkflowAccessOperation.Inspect) UpgradeSchema(path, request.DatabaseId);
         if (request.Operation == WorkflowAccessOperation.Apply) return Apply(path, request);
+        if (request.Operation == WorkflowAccessOperation.PublishCalculationFile) return PublishCalculationFile(path, request);
         if (request.Operation == WorkflowAccessOperation.Purge) return Purge(path, request);
         if (request.Operation is WorkflowAccessOperation.RecordShopHandoff or WorkflowAccessOperation.ClearShopHandoff or WorkflowAccessOperation.RecordProjectHandoffs) return RecordShopHandoff(path, request);
         return ReadSnapshot(path, request);

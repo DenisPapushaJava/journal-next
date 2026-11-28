@@ -1,4 +1,5 @@
 using Avalonia.Interactivity;
+using Avalonia.Controls;
 using Avalonia.Threading;
 
 namespace Jornal.Workflow.Desktop;
@@ -8,6 +9,12 @@ public partial class WorkflowWindow
     private bool _calculatingReports;
     private async void OnCalculateOrder(object? sender, RoutedEventArgs e) =>
         await CalculateFromWindowAsync(ReferenceEquals(sender, GenerateWorkflowResult));
+
+    private async void OnCalculateOfflineOrder(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: WorkflowOfflineOrderRow row } && Model?.SelectOfflineCalculation(row) == true)
+            await CalculateFromWindowAsync(rebuildText: false);
+    }
 
     private async Task CalculateFromWindowAsync(bool rebuildText)
     {
@@ -19,7 +26,7 @@ public partial class WorkflowWindow
             for (var attempt = 0; attempt < 2; attempt++)
             {
                 var review = await model.CalculateOrderAsync(_lifetime.Token);
-                if (!IsVisible || !ReferenceEquals(Model, model) || review is null || _lifetime.IsCancellationRequested) return;
+                if (!IsVisible || !ReferenceEquals(Model, model) || review is null || review.QueuedForOffice || _lifetime.IsCancellationRequested) return;
                 if (model.CanRetryCalculation)
                 {
                     if (attempt == 0) continue;

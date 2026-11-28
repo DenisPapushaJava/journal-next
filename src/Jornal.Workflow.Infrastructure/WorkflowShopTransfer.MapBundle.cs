@@ -74,6 +74,7 @@ public static partial class WorkflowShopTransfer
         if (word is null) throw new WorkflowValidationException("Для подготовки карт HansLaser требуется Microsoft Word на Windows.");
         var maps = files.OrderBy(f => f.Name, MapNameOrder).ThenBy(f => f.Name, StringComparer.Ordinal).ToArray();
         var folder = Directory.CreateTempSubdirectory("JournalNext-maps-").FullName;
+        WorkflowServiceFiles.TryHide(folder);
         try
         {
             for (var i = 0; i < maps.Length; i++)

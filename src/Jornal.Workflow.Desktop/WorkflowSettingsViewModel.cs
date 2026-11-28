@@ -61,7 +61,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
     public bool HasRootChanges => ProjectRoot != _originalRoot;
     public bool HasProfileChanges => ProfileName != _originalProfile.Name || ProfileColorArgb != _originalProfile.ColorArgb ||
         (!_employees.Any(e => e.Id == _originalProfile.EmployeeId) && !string.IsNullOrWhiteSpace(ProfileName));
-    public bool HasChanges => HasRootChanges || HasProfileChanges || HasShopRootChanges || HasOfficeCopiesRootChanges || HasHansMapChanges || HasManagerMapFormatChanges;
+    public bool HasChanges => HasRootChanges || HasProfileChanges || HasShopRootChanges || HasOfficeCopiesRootChanges || HasCalculationExchangeRootChanges || HasHansMapChanges || HasManagerMapFormatChanges;
     public bool CanEdit => !IsBusy && !IsExporting && !Updates.IsApplying;
     public string CloseLabel => HasChanges ? "Отмена" : "Закрыть";
     public bool IsSaveVisible => IsProfile || IsStorage;
@@ -112,7 +112,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
         finally { IsBusy = false; }
     }
     private bool CanSave => CanEdit && (IsProfile ? HasProfileChanges || HasHansMapChanges || HasManagerMapFormatChanges :
-        IsStorage && (HasRootChanges || HasShopRootChanges || HasOfficeCopiesRootChanges));
+        IsStorage && (HasRootChanges || HasShopRootChanges || HasOfficeCopiesRootChanges || HasCalculationExchangeRootChanges));
 
     public WorkflowSettingsViewModel(string workspacePath, Func<WorkflowWorkspace> snapshot,
         Func<string?, string?, CancellationToken, Task<string?>> saveRoot, Func<WorkflowProfileDraft> profile,
@@ -123,7 +123,7 @@ public partial class WorkflowSettingsViewModel : ObservableObject, IDisposable
         _snapshot = snapshot; _saveRoot = saveRoot; _profile = profile; _saveProfile = saveProfile;
         _suggestions = suggestions; _saveSuggestions = saveSuggestions;
         Journal = journal; Updates.PropertyChanged += OnUpdatesChanged; Journal.PropertyChanged += OnJournalAvailabilityChanged;
-        _originalProfile = profile(); ReloadRoot(); ReloadProfile(); ReloadShopRoot(); ReloadOfficeCopiesRoot(); ReloadHansMaps(); ReloadResultPricing();
+        _originalProfile = profile(); ReloadRoot(); ReloadProfile(); ReloadShopRoot(); ReloadOfficeCopiesRoot(); ReloadCalculationExchangeRoot(); ReloadHansMaps(); ReloadResultPricing();
         _originalManagerMapsAsPdf = _managerMapsAsPdf = Journal.ManagerMapsAsPdf;
         Changed();
     }

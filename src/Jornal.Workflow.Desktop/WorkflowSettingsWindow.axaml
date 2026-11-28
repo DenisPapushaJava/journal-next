@@ -186,6 +186,16 @@
             </Border>
             <Border Classes="workflow-settings-group">
               <StackPanel Spacing="8">
+                <TextBlock Text="Папка обмена расчётами" FontWeight="SemiBold" FontSize="16" />
+                <Grid ColumnDefinitions="*,8,Auto">
+                  <TextBox Text="{Binding CalculationExchangeRoot}" AutomationProperties.Name="Папка обмена расчётами на этом компьютере" />
+                  <ui:JournalButton Grid.Column="2" Label="Выбрать…" Click="OnBrowseCalculationExchangeRoot" />
+                </Grid>
+                <TextBlock Text="Выберите локальную копию общей папки Яндекс Диска для передачи расчётов при недоступности сервера." Classes="muted" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+            <Border Classes="workflow-settings-group">
+              <StackPanel Spacing="8">
                 <TextBlock Text="Папка заданий в цех" FontWeight="SemiBold" FontSize="16" />
                 <Grid ColumnDefinitions="*,8,Auto">
                   <TextBox x:Name="WorkflowShopRoot" Text="{Binding ShopRoot}" PlaceholderText="Начальная папка, например «Принтер на складе»"

@@ -21,6 +21,48 @@ public sealed partial class WorkflowNativeMdbTests
     }
 
     [Fact]
+    public async Task CalculationFilePublicationUsesCurrentJetOrderVersionWithoutChangingTheDatabase()
+    {
+        if (!OperatingSystem.IsWindows()) { Assert.Skip("The guarded file publication requires Windows and the x86 AccessHost."); return; }
+        using var fixture = new ProjectFixture();
+        var token = TestContext.Current.CancellationToken;
+        var path = Path.Combine(fixture.DirectoryPath, "Publication.mdb");
+        var root = Directory.CreateDirectory(Path.Combine(fixture.DirectoryPath, "Projects")).FullName;
+        var archives = Directory.CreateDirectory(Path.Combine(root, "Project", ".workflow-reports")).FullName;
+        var access = new WorkflowAccessClient(NativeExecutable());
+        var database = (await access.SendAsync(new(1, WorkflowAccessOperation.Create, path), token)).DatabaseId;
+        var store = new WorkflowMdbStore(path, access, database);
+        var book = await store.SaveEmployeeProfileAsync(null, "Технолог проверки", 0xFF628DB2, token);
+        book = await store.WriteAsync(book.Version, book => book with { ProjectRoot = root }, token);
+        var actor = Assert.Single(book.Employees).Id;
+        var (opened, id) = await store.CreateOrderFromNamesAsync("Менеджер проверки", "Заказчик проверки", actor, DateTimeOffset.UtcNow, token);
+        var order = Assert.Single(opened.Orders);
+        var latest = await store.WriteOrderAsync(id, order.Version, current => WorkflowChanges.UpdateOrder(current,
+            id, order.Version, order.ManagerId, order.TechnologistId, "БЛЦБ-123456", actor, DateTimeOffset.UtcNow), token);
+        var file = Path.Combine(Path.GetDirectoryName(archives)!, "specification.html");
+        var stagedId = Guid.NewGuid();
+        var staged = Path.Combine(archives, $"{stagedId:N}.tmp");
+        const string previous = "Рабочая спецификация в офисе";
+        await File.WriteAllTextAsync(file, previous, token);
+        await File.WriteAllTextAsync(staged, "Спецификация из пакета", token);
+        var (_, hash) = await WorkflowOfficeProjectPaths.FingerprintAsync(file, token);
+        var (_, stagedHash) = await WorkflowOfficeProjectPaths.FingerprintAsync(staged, token);
+        var request = new WorkflowCalculationFilePublication(id, order.Version, root, file, stagedId, stagedHash, hash);
+
+        await Assert.ThrowsAsync<WorkflowConflictException>(() => store.PublishCalculationFileAsync(request, token));
+        Assert.Equal(previous, await File.ReadAllTextAsync(file, token));
+        Assert.True(File.Exists(staged));
+
+        var currentOrder = Assert.Single(latest.Orders);
+        await store.PublishCalculationFileAsync(request with { OrderVersion = currentOrder.Version }, token);
+        Assert.Equal("Спецификация из пакета", await File.ReadAllTextAsync(file, token));
+        Assert.Empty(Directory.EnumerateFiles(archives));
+        var readback = await store.ReadOrderAsync(id, token);
+        Assert.Equal(latest.Version, readback.Version);
+        Assert.Equal(currentOrder.Version, Assert.Single(readback.Orders).Version);
+    }
+
+    [Fact]
     public async Task RemoteCreationRecoversThroughRealJetAfterResponsesAreLost()
     {
         if (!OperatingSystem.IsWindows()) { Assert.Skip("Remote creation recovery through the native MDB host requires Windows."); return; }
@@ -100,7 +142,7 @@ public sealed partial class WorkflowNativeMdbTests
             first.NewManager = "Менеджер проверки";
             first.NewCustomer = "Заказчик проверки";
             await first.CreateOrderCommand.ExecuteAsync(null);
-            Assert.Contains("не подтвердил создание заявки", first.Error);
+            Assert.Equal("Ожидает подтверждения", Assert.Single(first.QueuedOfficeOrderRows).Status);
             Assert.Empty((await office.ReadAsync(token)).Orders);
         }
         finally { first.Detach(); }
@@ -109,9 +151,12 @@ public sealed partial class WorkflowNativeMdbTests
         try
         {
             await resumed.ReloadCommand.ExecuteAsync(null);
-            Assert.True(resumed.IsCreating);
-            await resumed.CreateOrderCommand.ExecuteAsync(null);
+            Assert.Single(resumed.QueuedOfficeOrderRows);
+            await resumed.SynchronizeOfficeOrdersAsync(DateTimeOffset.UtcNow, token);
+            Assert.Empty(resumed.QueuedOfficeOrderRows);
             Assert.Null(resumed.Error);
+            resumed.SelectedOrder = Assert.Single(resumed.Orders);
+            resumed.OpenOrderCommand.Execute(null);
             resumed.AddProjectCommand.Execute(null);
             resumed.PlanMachine = resumed.ProjectMachines.Single(m => m.Name == "Лазер");
             resumed.PlanThickness = "6";

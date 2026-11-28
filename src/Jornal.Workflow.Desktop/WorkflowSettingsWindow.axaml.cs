@@ -178,6 +178,9 @@ public partial class WorkflowSettingsWindow : Window
     private async void OnBrowseOfficeCopiesRoot(object? sender, RoutedEventArgs e) =>
         await BrowseStorageFolderAsync("Папка для локальных копий", (model, path) => model.OfficeCopiesRoot = path);
 
+    private async void OnBrowseCalculationExchangeRoot(object? sender, RoutedEventArgs e) =>
+        await BrowseStorageFolderAsync("Папка обмена расчётами", (model, path) => model.CalculationExchangeRoot = path);
+
     private async void OnFreeOfficeCopySpace(object? sender, RoutedEventArgs e)
     {
         if (Model is not { CanEdit: true, ShowOfficeCopyCleanup: true } model || OwnedWindows.Count > 0) return;

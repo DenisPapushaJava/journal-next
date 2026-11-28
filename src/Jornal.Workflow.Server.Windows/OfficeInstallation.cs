@@ -17,6 +17,8 @@ internal sealed record OfficeSettings(string DatabasePath, string ProjectsRoot, 
     string? ZeroTierNetworkId = null, OfficeZeroTierListener? ZeroTierListener = null,
     Guid? RemoteAccessDatabaseId = null, OfficeTechnologistKey[]? TechnologistKeys = null, bool AllowRemoteWrites = false)
 {
+    public string? CalculationExchangeRoot { get; init; }
+
     public string Key() => ReadKey(ProtectedKey);
 
     public OfficeWorkAccess WorkAccess() => new(RemoteAccessDatabaseId,
@@ -267,8 +269,18 @@ internal static partial class OfficeInstallation
     public static async Task<bool> IsListeningAsync(Uri address)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        try { return await LocalClient.GetStringAsync(new Uri(address, "health"), timeout.Token) == "{\"status\":\"ok\"}"; }
-        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException) { return false; }
+        try
+        {
+            using var response = await LocalClient.GetAsync(new Uri(address, "health"), HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+            if (response.StatusCode != HttpStatusCode.OK) return false;
+            await response.Content.LoadIntoBufferAsync(4096, timeout.Token);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
+            return body.RootElement.ValueKind == JsonValueKind.Object &&
+                body.RootElement.TryGetProperty("status", out var status) && status.ValueKind == JsonValueKind.String &&
+                status.ValueEquals("ok");
+        }
+        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or IOException or JsonException)
+        { return false; }
     }
 
     public static async Task WaitForListenerAsync(Uri address)
@@ -322,6 +334,7 @@ internal static partial class OfficeInstallation
             Environment.SetEnvironmentVariable("JOURNAL_OFFICE_SERVER_TOKEN", settings.Key());
             Environment.SetEnvironmentVariable("OfficeServer__DatabasePath", settings.DatabasePath);
             Environment.SetEnvironmentVariable("OfficeServer__ProjectsRoot", settings.ProjectsRoot);
+            Environment.SetEnvironmentVariable("OfficeServer__CalculationExchangeRoot", settings.CalculationExchangeRoot);
             Environment.SetEnvironmentVariable("OfficeServer__Port", settings.Port.ToString(CultureInfo.InvariantCulture));
             Environment.SetEnvironmentVariable("Logging__LogLevel__Default", "Warning");
             var workAccess = settings.WorkAccess();

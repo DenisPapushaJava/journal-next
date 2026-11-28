@@ -170,6 +170,7 @@ internal sealed partial class WorkflowOfficeStorageClient
             }
 
             var folder = Directory.CreateTempSubdirectory("journal-shop-").FullName;
+            WorkflowServiceFiles.TryHide(folder);
             var pdfChecks = new Dictionary<(Guid ProjectId, string Path), (string Hash, string InputKey, bool Unrelated)>();
             async Task ValidateProject(ShopTransferSelection selection, CancellationToken cancellation)
             {

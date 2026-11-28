@@ -1,3 +1,4 @@
+using Avalonia.Controls;
 using Avalonia.Interactivity;
 
 namespace Jornal.Workflow.Desktop;
@@ -35,7 +36,26 @@ public partial class WorkflowWindow
         finally
         {
             _openingOfflineFolder = false;
-            if (IsCurrent()) OfflineOfficeFoldersButton.Focus();
+            if (IsCurrent() && sender is Control button) button.Focus();
         }
+    }
+
+    private async void OnOpenOfflineJournalProject(object? sender, RoutedEventArgs e)
+    {
+        if (_openingOfflineFolder || OwnedWindows.Count > 0 || Model is not { CanUse: true, OfflineJournal: { } journal } model ||
+            sender is not Control { DataContext: WorkflowOfflineProjectRow project }) return;
+        var token = _lifetime.Token;
+        bool IsCurrent() => IsVisible && ReferenceEquals(Model, model) && ReferenceEquals(model.OfflineJournal, journal) && !token.IsCancellationRequested;
+        _openingOfflineFolder = true;
+        try
+        {
+            var folder = await model.VerifyOfflineJournalProjectAsync(project, token);
+            if (!IsCurrent()) return;
+            if (folder is null || !await OpenFolderAsync(folder)) model.Error = "Скачанная папка проекта недоступна. Проверьте её расположение.";
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        { if (IsCurrent()) model.Error = "Не удалось открыть скачанную папку проекта."; }
+        finally { _openingOfflineFolder = false; }
     }
 }

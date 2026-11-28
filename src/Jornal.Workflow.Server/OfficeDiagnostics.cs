@@ -11,6 +11,8 @@ internal sealed class OfficeDiagnostics
     private readonly Queue<Entry> _events = new(Capacity);
     private readonly object _gate = new();
 
+    internal string? Version => _build.Version;
+
     public void Record(string code, string operation, Exception exception)
     {
         lock (_gate)
@@ -24,7 +26,7 @@ internal sealed class OfficeDiagnostics
     {
         Entry[] entries;
         lock (_gate) entries = _events.ToArray();
-        return Results.Ok(new { startedAt = _startedAt, version = _build.Version, buildId = _build.BuildId, events = entries });
+        return Results.Ok(new { startedAt = _startedAt, version = Version, buildId = _build.BuildId, events = entries });
     }
 
     private static string ErrorCode(Exception exception)

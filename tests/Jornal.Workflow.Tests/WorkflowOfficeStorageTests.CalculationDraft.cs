@@ -15,6 +15,7 @@ public sealed partial class WorkflowOfficeStorageTests
     [InlineData("ответ потерян")]
     [InlineData("новая запись в офисе")]
     [InlineData("новый файл в офисе")]
+    [InlineData("сервер временно занят при чтении")]
     public async Task CalculationDraftSurvivesRestartAndChecksOfficeBeforeWritingAgain(string scenario)
     {
         using var fixture = new ProjectFixture();
@@ -31,6 +32,7 @@ public sealed partial class WorkflowOfficeStorageTests
         var preferences = new WorkflowPreferencesStore(Path.Combine(profile, "preferences.json"));
         preferences.Save(prefs);
         var failApply = true;
+        var busyOnce = false;
         var applies = 0;
         var uploads = 0;
         using var http = new HttpClient(new Handler(async (request, cancellation) =>
@@ -39,6 +41,11 @@ public sealed partial class WorkflowOfficeStorageTests
             if (path.EndsWith("/database", StringComparison.Ordinal))
             {
                 var access = (await request.Content!.ReadFromJsonAsync<WorkflowAccessRequest>(cancellation))!;
+                if (busyOnce && access.Operation == WorkflowAccessOperation.ReadOrders)
+                {
+                    busyOnce = false;
+                    return new(HttpStatusCode.Conflict) { Content = JsonContent.Create(new { conflict = true }) };
+                }
                 if (access.Operation == WorkflowAccessOperation.Apply)
                 {
                     applies++;
@@ -99,9 +106,10 @@ public sealed partial class WorkflowOfficeStorageTests
         CuttingParameters submittedParameters;
         try
         {
-            var attempt = await first.CalculateOrderAsync(token);
-            Assert.NotNull(attempt?.Error);
-            Assert.Contains("на этом компьютере", attempt.Error);
+            var attempt = Assert.IsType<WorkflowReportReviewViewModel>(await first.CalculateOrderAsync(token));
+            Assert.Null(attempt.Error);
+            Assert.True(attempt.QueuedForOffice);
+            Assert.Contains("на этом компьютере", first.CalculationExchangeStatus);
             Assert.Equal(1, applies);
             Assert.Equal(1, uploads);
             Assert.True(firstClient.HasCalculationDraft(order.Id));
@@ -126,13 +134,24 @@ public sealed partial class WorkflowOfficeStorageTests
         try
         {
             Assert.Contains("незавершённый расчёт", resumed.CalculationNotice);
-            var result = await resumed.CalculateOrderAsync(token);
+            var now = DateTimeOffset.UtcNow;
+            busyOnce = scenario == "сервер временно занят при чтении";
+            await resumed.SynchronizeOfficeOrdersAsync(now, token);
+            if (scenario == "сервер временно занят при чтении")
+            {
+                Assert.False(busyOnce);
+                Assert.True(restarted.HasCalculationDraft(order.Id));
+                Assert.Null(resumed.CalculationExchangeStatus);
+                Assert.Equal(1, applies);
+                await resumed.SynchronizeOfficeOrdersAsync(now.AddSeconds(11), token);
+            }
             Assert.Equal(1, uploads);
             if (scenario.StartsWith("нов", StringComparison.Ordinal))
             {
-                Assert.Null(result);
                 Assert.Equal(1, applies);
                 Assert.True(restarted.HasCalculationDraft(order.Id));
+                Assert.Contains("требуют сверки", resumed.CalculationExchangeStatus);
+                Assert.Null(await resumed.CalculateOrderAsync(token));
                 Assert.Equal(CalculationTarget.OfficeDraft, resumed.GoToCalculationProblem());
                 var archive = Assert.IsType<string>(resumed.OfficeCalculationConflictFolder);
                 Assert.True(await resumed.ArchiveConflictingOfficeCalculationAsync(token));
@@ -146,8 +165,8 @@ public sealed partial class WorkflowOfficeStorageTests
             }
             else
             {
-                Assert.NotNull(result);
-                Assert.Null(result.Error);
+                Assert.Null(resumed.Error);
+                Assert.Contains("подтверждены", resumed.CalculationExchangeStatus);
                 Assert.Equal(scenario == "ответ потерян" ? 1 : 2, applies);
                 Assert.False(restarted.HasCalculationDraft(order.Id));
                 Assert.True(submittedParameters.SameInputs(office.Book.Orders.Single().Specifications.Single().Current.Parameters));

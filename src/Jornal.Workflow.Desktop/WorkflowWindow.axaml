@@ -97,7 +97,7 @@
         </Grid>
         <ui:HeaderClock x:Name="WorkflowHeaderClock" Grid.Column="1" MinWidth="200" Margin="12,0" FontFeatures="tnum" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" />
         <Grid Grid.Column="2" ColumnDefinitions="Auto,8,Auto,8,Auto,8,Auto,8,Auto" HorizontalAlignment="Right">
-          <ui:JournalButton x:Name="WorkflowCatalog" Label="Станки и цены" Click="OnCatalog" IsEnabled="{Binding CanUse}" />
+          <ui:JournalButton x:Name="WorkflowCatalog" Label="Станки и цены" Click="OnCatalog" IsEnabled="{Binding CanUse}" IsVisible="{Binding !ShowOfflineJournal}" />
           <Border x:Name="WorkflowProfileBadge" Grid.Column="2" Width="130" Padding="9,6" CornerRadius="6" VerticalAlignment="Center"
                   Background="{DynamicResource JournalBackground}" BorderBrush="{DynamicResource JournalBorder}" BorderThickness="1"
                   ToolTip.Tip="{Binding ProfileHint}" AutomationProperties.Name="{Binding ProfileName}">
@@ -115,24 +115,82 @@
         </Grid>
       </Grid>
     </Border>
-    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" IsVisible="{Binding HasError}" Margin="20,8,20,0" HorizontalAlignment="Left">
-      <TextBlock Text="{Binding Error}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource JournalDangerForeground}" />
-      <ui:JournalButton x:Name="OfflineOfficeFoldersButton" Grid.Column="1" Margin="12,0,0,0" Label="Скачанные папки"
-                        IsVisible="{Binding HasOfflineOfficeFolders}" IsEnabled="{Binding CanUse}" Click="OnOfflineOfficeFolders" />
-    </Grid>
+    <StackPanel Grid.Row="1">
+      <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasError}" Margin="20,8,20,0" HorizontalAlignment="Left">
+        <TextBlock Text="{Binding Error}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource JournalDangerForeground}" />
+        <ui:JournalButton x:Name="OfflineOfficeFoldersButton" Grid.Column="1" Margin="12,0,0,0" Label="Скачанные папки"
+                          IsVisible="{Binding HasOfflineOfficeFolders}" IsEnabled="{Binding CanUse}" Click="OnOfflineOfficeFolders" />
+      </Grid>
+      <Grid IsVisible="{Binding ShowCalculationExchangeStatus}" ColumnDefinitions="Auto,*" Margin="20,6,20,0">
+        <Panel IsVisible="{Binding ShowCalculationExchange}">
+          <Button Classes="progress-link" Content="Выгрузить черновики" Click="OnExportCalculationDrafts" IsVisible="{Binding IsRemoteStorage}" IsEnabled="{Binding CanUse}" />
+          <Button Classes="progress-link" Content="Принять расчёт…" Click="OnImportCalculationPackage" IsVisible="{Binding !IsRemoteStorage}" IsEnabled="{Binding CanUse}" />
+        </Panel>
+        <TextBlock Grid.Column="1" Margin="8,0,0,0" Classes="muted" Text="{Binding CalculationExchangeStatus}" TextWrapping="Wrap"
+                   VerticalAlignment="Center" FontSize="12" AutomationProperties.LiveSetting="Polite" />
+      </Grid>
+      <Button Classes="progress-link" Margin="20,6,20,0" Content="{Binding OfficeCreationNotice}"
+              IsVisible="{Binding HasOfficeCreationNotice}" IsEnabled="{Binding CanUse}" ToolTip.Tip="Открыть созданную заявку"
+              AutomationProperties.LiveSetting="Polite" Click="OnOpenLastOfficeCreation" />
+    </StackPanel>
     <Grid x:Name="JournalWorkspace" Grid.Row="2" Margin="20,8" IsEnabled="{Binding CanBrowseWorkspace}">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="4*" MinWidth="368" />
         <ColumnDefinition Width="12" />
         <ColumnDefinition Width="6*" MinWidth="760" />
       </Grid.ColumnDefinitions>
-      <Grid RowDefinitions="Auto,8,Auto,8,Auto,8,*">
+      <Grid RowDefinitions="Auto,8,Auto,*">
         <Grid ColumnDefinitions="*,8,Auto,8,32">
           <ui:JournalButton x:Name="NewWorkflowOrder" Label="Новая заявка" Icon="plus" Classes="primary" Height="32" HorizontalAlignment="Left" Command="{Binding NewOrderCommand}" Click="OnFocusNewOrder" ToolTip.Tip="{Binding NewOrderHint}" ToolTip.ShowOnDisabled="True" />
-          <ui:JournalButton x:Name="OpenWorkflowTrash" Grid.Column="2" Label="{Binding TrashCaption}" Icon="trash" Height="32" Click="OnTrash" ToolTip.Tip="Открыть корзину заявок" />
-          <ui:JournalButton Grid.Column="4" Icon="refresh-cw" IconOnly="True" Width="32" Height="32" Padding="0" Command="{Binding ReloadCommand}" ToolTip.Tip="Обновить заявки · F5" AutomationProperties.Name="Обновить заявки" />
+          <ui:JournalButton x:Name="OpenWorkflowTrash" Grid.Column="2" IsVisible="{Binding !ShowOfflineJournal}" Label="{Binding TrashCaption}" Icon="trash" Height="32" Click="OnTrash" ToolTip.Tip="Открыть корзину заявок" />
+          <ui:JournalButton x:Name="RefreshWorkflowJournal" Grid.Column="4" Icon="refresh-cw" IconOnly="True" Width="32" Height="32" Padding="0" Command="{Binding ReloadCommand}" ToolTip.Tip="Обновить заявки · F5" AutomationProperties.Name="Обновить заявки" />
         </Grid>
-        <Grid Grid.Row="2" ColumnDefinitions="96,8,*,8,96">
+        <ScrollViewer Grid.Row="2" IsVisible="{Binding HasQueuedOfficeOrders}" Margin="0,0,0,8" MaxHeight="152"
+                      HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <ItemsControl x:Name="QueuedOfficeOrders" ItemsSource="{Binding QueuedOfficeOrderRows}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:WorkflowQueuedOrderRow">
+                <Border Classes="panel" Padding="8,6" Margin="0,0,0,4" ToolTip.Tip="{Binding Details}">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding Customer}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Status}" FontSize="12" AutomationProperties.LiveSetting="Polite" />
+                    <TextBlock Text="{Binding Details}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                  <Button Classes="progress-link" Content="Проверить…" IsVisible="{Binding CanReview}" Click="OnReviewQueuedOrder" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+        <Grid x:Name="OfflineJournalPanel" Grid.Row="3" RowDefinitions="Auto,*" IsVisible="{Binding ShowOfflineJournal}">
+          <WrapPanel Margin="0,0,0,8" Orientation="Horizontal">
+            <TextBlock Text="{Binding OfflineJournalStatus}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,8,0"
+                       AutomationProperties.LiveSetting="Polite" />
+            <ui:JournalButton Label="Скачанные папки" IsVisible="{Binding HasOfflineOfficeFolders}"
+                              IsEnabled="{Binding CanUse}" Click="OnOfflineOfficeFolders" />
+          </WrapPanel>
+        <Grid Grid.Row="1" DataContext="{Binding OfflineJournal}" x:DataType="vm:WorkflowOfflineJournal" RowDefinitions="Auto,8,*">
+          <TextBox x:Name="OfflineJournalSearch" Text="{Binding Search}" PlaceholderText="Поиск по сохранённым заявкам" AutomationProperties.Name="Поиск по сохранённым заявкам" />
+          <DataGrid x:Name="OfflineOrdersGrid" Grid.Row="2" ItemsSource="{Binding Orders}" SelectedItem="{Binding Selected, Mode=TwoWay}"
+                    AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="None" SelectionMode="Single">
+            <DataGrid.Columns>
+              <DataGridTemplateColumn Header="Заявка" Width="165" SortMemberPath="Number"><DataGridTemplateColumn.CellTemplate>
+                <DataTemplate x:DataType="vm:WorkflowOfflineOrderRow"><TextBlock Text="{Binding Number}" Classes="tabular" VerticalAlignment="Center" /></DataTemplate>
+              </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+              <DataGridTemplateColumn Header="Заказчик" Width="*" SortMemberPath="Customer"><DataGridTemplateColumn.CellTemplate>
+                <DataTemplate x:DataType="vm:WorkflowOfflineOrderRow"><TextBlock Text="{Binding Customer}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /></DataTemplate>
+              </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+              <DataGridTemplateColumn Header="Резка" Width="94" CanUserSort="False"><DataGridTemplateColumn.CellTemplate>
+                <DataTemplate x:DataType="vm:WorkflowOfflineOrderRow"><TextBlock Text="{Binding Total}" Classes="tabular" HorizontalAlignment="Right" VerticalAlignment="Center" /></DataTemplate>
+              </DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+            </DataGrid.Columns>
+          </DataGrid>
+          <TextBlock Grid.Row="2" Text="{Binding EmptyListText}" IsVisible="{Binding !HasOrders}" Classes="muted"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
+        </Grid>
+        </Grid>
+        <Grid Grid.Row="3" RowDefinitions="Auto,8,Auto,8,*" IsVisible="{Binding !ShowOfflineJournal}">
+        <Grid ColumnDefinitions="96,8,*,8,96">
           <RadioButton x:Name="WorkflowToday" Classes="filter" Content="Сегодня" GroupName="WorkflowPeriod"
                        Height="32" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                        IsChecked="{Binding IsTodaySelected, Mode=TwoWay}" Command="{Binding TodayCommand}" />
@@ -142,7 +200,7 @@
                        Height="32" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                        IsChecked="{Binding IsAllDatesSelected, Mode=TwoWay}" Command="{Binding AllDatesCommand}" />
         </Grid>
-        <TextBox x:Name="WorkflowSearchInput" Grid.Row="4" Text="{Binding Search, Mode=TwoWay}"
+        <TextBox x:Name="WorkflowSearchInput" Grid.Row="2" Text="{Binding Search, Mode=TwoWay}"
                  PlaceholderText="Поиск по заявкам" KeyDown="OnSearchKeyDown" AutomationProperties.Name="Поиск заявок и спецификаций"
                  ToolTip.Tip="По части номера, спецификации, заказчика, менеджера, БЛЦБ, проекта или материала. Поиск действует в выбранном периоде вместе с фильтрами.">
           <TextBox.InnerLeftContent>
@@ -157,7 +215,7 @@
             </Grid>
           </TextBox.InnerRightContent>
         </TextBox>
-        <Grid Grid.Row="6" RowDefinitions="Auto,*,Auto">
+        <Grid Grid.Row="4" RowDefinitions="Auto,*,Auto">
         <StackPanel Spacing="3" Margin="0,0,0,8">
           <Grid ColumnDefinitions="*,8,Auto,Auto">
             <TextBlock x:Name="WorkflowSearchSummary" Text="{Binding SearchSummary}" Classes="muted" FontSize="12" VerticalAlignment="Center"
@@ -255,11 +313,50 @@
         </Grid>
         <ui:JournalButton x:Name="LoadMoreWorkflowOrders" Grid.Row="2" Label="Показать ещё" Command="{Binding LoadMoreOrdersCommand}" IsVisible="{Binding HasMoreOrders}" IsEnabled="{Binding CanUse}" Margin="0,8,0,0" />
         </Grid>
+        </Grid>
       </Grid>
       <GridSplitter x:Name="JournalPaneSplitter" Classes="workflow-splitter columns" Grid.Column="1" Width="6" HorizontalAlignment="Center" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
                     KeyboardIncrement="16" ToolTip.Tip="Ширина журнала и карточки · ← →" AutomationProperties.Name="Ширина журнала и карточки заявки" />
       <Grid Grid.Column="2">
-        <TextBlock Text="Выберите заявку слева или создайте новую" IsVisible="{Binding IsNoCardSelected}" Classes="muted" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        <Border Classes="panel" Padding="16" IsVisible="{Binding ShowOfflineOrderCard}">
+          <Grid DataContext="{Binding OfflineJournal}" x:DataType="vm:WorkflowOfflineJournal" RowDefinitions="Auto,*">
+          <TextBlock Text="{Binding SelectedPendingCalculation}" IsVisible="{Binding HasSelectedPendingCalculation}"
+                     Classes="muted" Margin="0,0,0,8" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+          <ContentControl Grid.Row="1" Content="{Binding Selected}">
+            <ContentControl.ContentTemplate>
+              <DataTemplate x:DataType="vm:WorkflowOfflineOrderRow">
+                <Grid RowDefinitions="Auto,Auto,*">
+                  <Grid ColumnDefinitions="*,8,Auto">
+                    <TextBlock Text="{Binding Customer}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <ui:JournalButton Grid.Column="2" Label="Рассчитать" IsVisible="{Binding HasDownloadedProject}" Click="OnCalculateOfflineOrder" />
+                  </Grid>
+                  <TextBlock Grid.Row="1" Text="{Binding Details}" Classes="muted" TextWrapping="Wrap" Margin="0,4,0,10" />
+                  <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding Projects}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:WorkflowOfflineProjectRow">
+                          <Border Classes="panel" Padding="10" Margin="0,0,0,6">
+                            <Grid ColumnDefinitions="*,10,Auto">
+                              <StackPanel Spacing="3">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding Details}" Classes="muted" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding Result}" />
+                              </StackPanel>
+                              <ui:JournalButton Grid.Column="2" Label="Открыть папку" IsVisible="{Binding CanOpenFolder}"
+                                                VerticalAlignment="Center" Click="OnOpenOfflineJournalProject" />
+                            </Grid>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </ScrollViewer>
+                </Grid>
+              </DataTemplate>
+            </ContentControl.ContentTemplate>
+          </ContentControl>
+          </Grid>
+        </Border>
+        <TextBlock Text="Выберите заявку слева или создайте новую" IsVisible="{Binding ShowLiveEmptyCard}" Classes="muted" HorizontalAlignment="Center" VerticalAlignment="Center" />
         <Border x:Name="WorkflowNewOrderForm" IsVisible="{Binding IsCreating}" Classes="panel" Padding="20" Width="600" HorizontalAlignment="Left" VerticalAlignment="Top">
           <StackPanel Spacing="16">
             <Grid ColumnDefinitions="*,8,Auto">
@@ -279,7 +376,7 @@
             </StackPanel>
           </StackPanel>
         </Border>
-      <Grid x:Name="WorkflowOrderCard" IsVisible="{Binding IsCardVisible}" RowDefinitions="Auto,6,Auto,6,*,6,Auto">
+      <Grid x:Name="WorkflowOrderCard" IsVisible="{Binding ShowLiveOrderCard}" RowDefinitions="Auto,6,Auto,6,*,6,Auto">
         <StackPanel Spacing="8">
           <Grid ColumnDefinitions="*,8,Auto,4,Auto">
             <TextBlock x:Name="WorkflowOrderTitle" Text="{Binding OrderTitle}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding OrderTitle}" />
@@ -490,6 +587,7 @@
                   <Grid>
                   <TextBlock Text="{Binding CalculationEmptyText}" IsVisible="{Binding !HasSelectedDraft}" Classes="muted" TextWrapping="Wrap" MaxWidth="580" TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center" />
                   <Grid RowDefinitions="Auto,4,*,4,Auto" IsVisible="{Binding HasSelectedDraft}">
+                    <StackPanel>
                     <Grid ColumnDefinitions="Auto,12,*,12,Auto">
                       <TextBlock Text="Расчёт" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
                       <TextBlock Grid.Column="2" DataContext="{Binding SelectedDraft}" x:DataType="vm:SpecificationDraft" Text="{Binding ProjectSummary}"
@@ -497,6 +595,12 @@
                       <ui:JournalButton x:Name="OpenWorkflowSpecification" Grid.Column="4" Label="Открыть спецификацию" Click="OnOpenSpecification"
                                         IsEnabled="{Binding CanOpenSpecificationSource}" VerticalAlignment="Center" />
                     </Grid>
+                    <Grid ColumnDefinitions="*,8,Auto" IsVisible="{Binding HasSpecificationSourceWarning}" Margin="0,4,0,0">
+                      <TextBlock Text="{Binding SpecificationSourceWarning}" Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center" />
+                      <Button x:Name="OpenCalculationArchive" Grid.Column="2" Classes="progress-link" Content="Открыть версию расчёта"
+                              Click="OnOpenCalculationArchive" IsEnabled="{Binding CanUse}" VerticalAlignment="Center" />
+                    </Grid>
+                    </StackPanel>
                     <ScrollViewer x:Name="WorkflowCalculationFields" Grid.Row="2" VerticalScrollBarVisibility="Auto">
                       <StackPanel Spacing="6" DataContext="{Binding SelectedDraft}" x:DataType="vm:SpecificationDraft">
                         <TextBlock Text="{Binding ImportNotice}" IsVisible="{Binding HasImportNotice}" TextWrapping="Wrap" Foreground="{DynamicResource JournalDangerForeground}" />

@@ -38,7 +38,9 @@ public partial class WorkflowViewModel
         " · изменить: Настройки → Общие → Технолог";
     partial void OnCurrentEmployeeChanged(Employee? oldValue, Employee? newValue)
     {
+        var changedActor = _connection.EmployeeId != newValue?.Id;
         _connection = _connection with { EmployeeId = newValue?.Id }; NotifyProfile(); NotifyOrderFilters();
+        if (changedActor) ResetOfficeOrderQueue();
         if (OnlyMyOrders && oldValue?.Id != newValue?.Id) OrderFiltersChanged();
     }
     private void NotifyProfile()

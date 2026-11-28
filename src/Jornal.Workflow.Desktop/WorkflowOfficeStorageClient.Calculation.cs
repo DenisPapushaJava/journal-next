@@ -41,7 +41,8 @@ internal sealed partial class WorkflowOfficeStorageClient
         return project;
     }
 
-    internal async Task RequireCalculationSupportAsync(CancellationToken token) => _ = await RequireOfficeCapabilitiesAsync(token);
+    internal async Task RequireCalculationSupportAsync(CancellationToken token, bool identifyConnectionLoss = false) =>
+        _ = await RequireOfficeCapabilitiesAsync(token, identifyConnectionLoss: identifyConnectionLoss);
 
     private async Task RequirePlannedBendingSupportAsync(CancellationToken token)
     {
@@ -49,7 +50,7 @@ internal sealed partial class WorkflowOfficeStorageClient
             throw new WorkflowValidationException("Для отметки гибки до расчёта обновите «Сервер заявок» на рабочем ПК.");
     }
 
-    private async Task<OfficeCapabilities> RequireOfficeCapabilitiesAsync(CancellationToken token, bool refresh = false)
+    private async Task<OfficeCapabilities> RequireOfficeCapabilitiesAsync(CancellationToken token, bool refresh = false, bool identifyConnectionLoss = false)
     {
         if (!refresh && _capabilities is { } cached) return cached;
         using var request = Request(HttpMethod.Get, "api/v1/storage/capabilities");
@@ -59,7 +60,7 @@ internal sealed partial class WorkflowOfficeStorageClient
             if (response.StatusCode == HttpStatusCode.NotFound) return new OfficeCapabilities(false, false);
             await CheckAsync(response, deadline);
             return await ReadAsync<OfficeCapabilities>(response, deadline);
-        }, token, TimeSpan.FromSeconds(30));
+        }, token, TimeSpan.FromSeconds(30), workingFiles: identifyConnectionLoss);
         if (!capabilities.GuardedCalculation) throw new WorkflowValidationException("Для удалённого расчёта обновите «Сервер заявок» на рабочем ПК.");
         return _capabilities = capabilities;
     }

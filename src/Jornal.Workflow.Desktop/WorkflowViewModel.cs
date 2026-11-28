@@ -108,6 +108,10 @@ public partial class WorkflowViewModel : ObservableObject
         (IsRemoteStorage ? SelectedProject?.Project.NativePath is not null : Path.IsPathFullyQualified(path)) &&
         WorkflowReportFiles.IsReport(WorkflowOfficeProjectPaths.FileName(path)) ? path : null;
     public bool CanOpenSpecificationSource => SpecificationSourcePath is not null;
+    [ObservableProperty] private string? _specificationSourceWarning;
+    public bool HasSpecificationSourceWarning => SpecificationSourceWarning is not null;
+    internal AcceptedReport? CalculationArchiveToOpen => !IsRemoteStorage && HasSpecificationSourceWarning ? SelectedDraft?.Saved?.Report : null;
+    partial void OnSpecificationSourceWarningChanged(string? value) => OnPropertyChanged(nameof(HasSpecificationSourceWarning));
     public bool CanUse => !IsBusy && !_readingDatabase && !_savingProjectInclusion && !Updates.IsApplying;
     public bool CanBrowseWorkspace => (!IsBusy || _savingProjectInclusion) && !Updates.IsApplying;
     public bool HasPendingEdits => HasCurrentCardEdits || HasPendingReportEdits || _workspace.Orders.Any(o => o.HasProjectRename) ||
@@ -141,37 +145,43 @@ public partial class WorkflowViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task ReloadAsync()
+    private async Task ReloadAsync(CancellationToken token)
     {
-        if (HasCurrentCardEdits && !RequiresDatabaseRefresh) { Error = "Сохраните или отмените изменения текущей карточки перед обновлением."; return; }
+        if (HasCurrentCardEdits && !RequiresDatabaseRefresh && !ShowOfflineJournal) { Error = "Сохраните или отмените изменения текущей карточки перед обновлением."; return; }
         CancelDatabaseSearch();
         await RunAsync(async () =>
         {
-            ClearOfflineOfficeFolders();
-            CaptureCard(); var restore = RequiresDatabaseRefresh && _openOrderId is { } oldId ? _cards.GetValueOrDefault(oldId) : null;
+            CaptureCard(); var restore = (RequiresDatabaseRefresh || ShowOfflineJournal) && _openOrderId is { } oldId ? _cards.GetValueOrDefault(oldId) : null;
             _loadedOrderSnapshot = CurrentOrder; ConfigureDatabaseQuery();
             try { if (!_startupPreferencesPrepared) LoadLocalPreferences(_preferences); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException)
             { Error = "Не удалось прочитать локальные настройки. Данные заявок доступны; проверьте профиль и списки."; }
             finally { _startupPreferencesPrepared = false; }
+            RefreshOfficeOrderQueue();
             _initialProfileReadFinished = false; NotifyProfile();
             WorkflowWorkspace workspace;
-            try { workspace = await _store.ReadAsync(); }
-            catch (WorkflowOfficeConnectionLostException) when (!_hasLoadedOrders && _connection.RemoteClient is not null)
+            try { workspace = await _store.ReadAsync(token); }
+            catch (WorkflowOfficeConnectionLostException) when (!token.IsCancellationRequested && _connection.RemoteClient is { } remote)
             {
-                await ReadOfflineOfficeFoldersAsync(_connection.RemoteClient!, CancellationToken.None);
+                await ShowOfficeOutageAsync(remote, token);
+                if (!ShowOfflineJournal && _hasLoadedOrders) throw;
                 return;
             }
+            catch (Exception) when (ShowOfflineJournal) { ClearOfflineOfficeFolders(); throw; }
             finally { _initialProfileReadFinished = true; NotifyProfile(); }
+            token.ThrowIfCancellationRequested();
+            ClearOfflineOfficeFolders();
             _reportReview = null; _reportImportOrderId = null;
             ResetCuttingTask();
             _workspace = workspace; _hasLoadedOrders = true; _orderQueryFailed = false; RecordListedSnapshot(workspace);
-            if (IsCurrentOrderMissing && string.IsNullOrEmpty(ResultText)) ForgetOpenCard();
+            if (IsCurrentOrderMissing && string.IsNullOrEmpty(ResultText) && restore?.HasEdits != true) ForgetOpenCard();
             RefreshEmployees(_connection.EmployeeId);
             Technologist ??= CurrentEmployee;
             RefreshOrders();
             NotifyPriceCatalog();
-            if (!await RecoverOfficeOrderAsync())
+            await RememberOfflineJournalAsync(workspace, token);
+            token.ThrowIfCancellationRequested();
+            if (!await RecoverOfficeOrderAsync(token))
             {
                 if (_store is WorkflowMdbStore { RecoveredOrderId: { } recovered } mdb && _workspace.Orders.SingleOrDefault(o => o.Id == recovered) is { } created)
                 { IsCreating = false; LoadOrder(created); mdb.AcknowledgeRecovery(); }
@@ -186,8 +196,7 @@ public partial class WorkflowViewModel : ObservableObject
     private void NewOrder()
     {
         if (!CanUse || IsCreating) return;
-        if (CurrentEmployee is null) { Error = "Выберите себя: Настройки → Общие → Технолог."; return; }
-        if (IsCreating) return;
+        if (OrderCreationAuthorProblem is { } problem) { Error = problem; return; }
         CaptureCard();
         IsCreating = true; NewCustomer = ""; NewManager = ""; Error = null;
         TryRestoreOfficeCreation(RestoreOfficeOrderForm);
@@ -198,16 +207,20 @@ public partial class WorkflowViewModel : ObservableObject
         IsCreating = false; Error = null;
         if (CurrentOrder is { } order && _cards.TryGetValue(order.Id, out var state)) RestoreCard(order, state);
     }
-    [RelayCommand(CanExecute = nameof(CanCreateOrder))]
+    [RelayCommand(CanExecute = nameof(CanCreateOrder), AllowConcurrentExecutions = true)]
     private async Task CreateOrderAsync()
     {
         if (!CanUse) return;
+        if (_connection.RemoteClient is { } client)
+        {
+            if (IsCreating && CanCreateOrder && (OfflineOrderActor ?? ActiveEmployee?.Id) is { } actor)
+                await QueueNewOfficeOrderAsync(client, actor);
+            return;
+        }
         await RunAsync(async () =>
         {
             var customer = NewCustomer; var manager = NewManager; var actorId = ActorId();
-            var created = _connection.RemoteClient is { } remote && _store is WorkflowMdbStore mdb
-                ? await CreateOfficeOrderAsync(remote, mdb, manager, customer, actorId)
-                : await _store.CreateOrderFromNamesAsync(manager, customer, actorId, DateTimeOffset.Now);
+            var created = await _store.CreateOrderFromNamesAsync(manager, customer, actorId, DateTimeOffset.Now);
             _workspace = created.Workspace;
             ShowCreatedOrder(_workspace.Orders.Single(o => o.Id == created.OrderId), actorId);
         });
@@ -309,7 +322,9 @@ public partial class WorkflowViewModel : ObservableObject
                 {
                     var values = incoming is null ? null : WorkflowReportCandidate.Values(FromReport(incoming.Parsed, incoming.SourcePath, _workspace.Machines));
                     var input = new WorkflowOfficeCalculationInput(draft.Id, documentNumber, date, parameters, rate, draft.ImportProfile, incoming, values);
-                    _workspace = await SaveOfficeCalculationAsync(remote, mdb, order with { Version = expected }, actorId, [input], CancellationToken.None);
+                    var result = await SaveOfficeCalculationAsync(remote, mdb, order with { Version = expected }, actorId, [input], CancellationToken.None);
+                    if (result is null) return;
+                    _workspace = result;
                 }
                 else
                 {
@@ -461,7 +476,7 @@ public partial class WorkflowViewModel : ObservableObject
         SelectedDraft = Drafts.FirstOrDefault(); ManagerName = EmployeeName(order.ManagerId); Technologist = Employees.Single(e => e.Id == order.TechnologistId);
         Blcb = order.Blcb; Error = null; RefreshProjects(selectProject); NotifyOrder();
         if (!sameOrder && !HasCalculationNotice && _connection.RemoteClient?.HasCalculationDraft(order.Id) == true)
-            SetCalculationNotice("Есть незавершённый расчёт. Нажмите «Рассчитать», чтобы сверить его с офисом.", CalculationTarget.Recalculate);
+            SetCalculationNotice("Есть незавершённый расчёт. «Рассчитать» запустит сверку с офисом.", CalculationTarget.Recalculate);
     }
     private void RefreshOrders(bool preserveRows = false)
     {
@@ -519,9 +534,10 @@ public partial class WorkflowViewModel : ObservableObject
     partial void OnBlcbChanged(string? value) => NotifyHeaderEdit();
     partial void OnNewCustomerChanged(string value) { OnPropertyChanged(nameof(HasPendingEdits)); NotifyNewOrderActions(); }
     partial void OnNewManagerChanged(string value) { OnPropertyChanged(nameof(HasPendingEdits)); NotifyNewOrderActions(); }
-    partial void OnIsCreatingChanged(bool value) { OnPropertyChanged(nameof(HasPendingEdits)); OnPropertyChanged(nameof(IsCardVisible)); OnPropertyChanged(nameof(IsNoCardSelected)); NotifyActionAvailability(); }
+    partial void OnIsCreatingChanged(bool value) { if (!value) { _openedSavedOrderDraft = null; _replacingQueuedOrder = null; } OnPropertyChanged(nameof(HasPendingEdits)); OnPropertyChanged(nameof(IsCardVisible)); OnPropertyChanged(nameof(IsNoCardSelected)); NotifyOfflineCardVisibility(); NotifyActionAvailability(); }
     partial void OnSelectedDraftChanged(SpecificationDraft? oldValue, SpecificationDraft? newValue)
     {
+        SpecificationSourceWarning = null;
         if (oldValue is not null) oldValue.PropertyChanged -= DraftChanged;
         if (newValue is not null) { newValue.PropertyChanged += DraftChanged; ConfigurePriceSuggestions(newValue); }
         if (newValue is not null) Projects.SingleOrDefault(p => p.Project.Id == newValue.Id)?.ApplyLocalChanges(newValue.IsDirty);
@@ -562,6 +578,7 @@ public partial class WorkflowViewModel : ObservableObject
         Orders.FirstOrDefault(r => r.Order.ManagerId == id)?.Manager ?? Orders.FirstOrDefault(r => r.Order.TechnologistId == id)?.Technologist ?? "Сотрудник недоступен";
     private void NotifyOrder()
     {
+        NotifyOfflineCardVisibility();
         NotifyManagerMapsNotice();
         NotifyProjectHandoffs();
         NotifyNavigation();
@@ -575,7 +592,7 @@ public partial class WorkflowViewModel : ObservableObject
         SaveSpecificationCommand.NotifyCanExecuteChanged();
     }
     partial void OnIsBusyChanged(bool value)
-    { if (value) DismissPreviousMapSigningNotice(); OnPropertyChanged(nameof(CanUse)); OnPropertyChanged(nameof(CanBrowseWorkspace)); OnPropertyChanged(nameof(CanEditPlan)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList(); NotifyCuttingTask(); NotifyResultState(); }
+    { if (value) DismissPreviousMapSigningNotice(); OnPropertyChanged(nameof(CanUse)); OnPropertyChanged(nameof(CanBrowseWorkspace)); OnPropertyChanged(nameof(CanEditPlan)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyNewOrderActions(); NotifyOrderList(); NotifyCuttingTask(); NotifyResultState(); }
     private async Task RunAsync(Func<Task> action, string? fileError = null, bool projectInclusion = false)
     {
         if (IsBusy || _readingDatabase || _savingProjectInclusion && !projectInclusion) return; CancelBackgroundRefresh(); IsBusy = true; Error = null;
@@ -594,7 +611,7 @@ public partial class WorkflowViewModel : ObservableObject
         }
         finally { IsBusy = false; NotifyDatabase(); }
     }
-    public void Detach() { _cuttingTaskDetached = true; CancelOfficeFileCheck(); ResetOfficePendingFiles(); CancelManagerMapJobs(); StopShopFolderChecks(); ResetShopTransfer(); _copiedCuttingTask = null; _cuttingTaskPreview = null; _bendingFolderFailures = null; CancelDatabaseSearch(); _reportReview = null; if (SelectedDraft is { } draft) draft.PropertyChanged -= DraftChanged; NotifyMapSigning(); }
+    public void Detach() { _cuttingTaskDetached = true; _officeOrderSync?.Cancel(); CancelOfficeFileCheck(); ResetOfficePendingFiles(); CancelManagerMapJobs(); StopShopFolderChecks(); ResetShopTransfer(); _copiedCuttingTask = null; _cuttingTaskPreview = null; _bendingFolderFailures = null; CancelDatabaseSearch(); _reportReview = null; if (SelectedDraft is { } draft) draft.PropertyChanged -= DraftChanged; NotifyMapSigning(); }
     public WorkflowRestartDraft CreateRestartDraft()
     {
         CaptureCard();

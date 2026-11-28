@@ -65,6 +65,10 @@ public static class OfficeServerApplication
             server.AddServerHeader = false;
         });
         builder.Services.AddSingleton<IWorkflowAccessTransport>(_ => accessTransport ?? new WorkflowAccessClient());
+        if (bindAddress is null && databasePath is not null && projectsRoot is not null && workAccess?.AllowWrites == true &&
+            settings["CalculationExchangeRoot"] is { } exchange && Path.IsPathFullyQualified(exchange))
+            builder.Services.AddHostedService(provider => new OfficeCalculationInbox(exchange, databasePath, projectsRoot,
+                provider.GetRequiredService<IWorkflowAccessTransport>(), provider.GetRequiredService<ILogger<OfficeCalculationInbox>>(), Diagnostics));
         builder.Services.AddSingleton(provider => new OfficeJournal(databasePath, projectsRoot,
             provider.GetRequiredService<IWorkflowAccessTransport>(), provider.GetRequiredService<ILogger<OfficeJournal>>(), Diagnostics));
         if (filePilotEnabled)
@@ -90,7 +94,11 @@ public static class OfficeServerApplication
         }
 
         var app = builder.Build();
-        app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+        app.MapGet("/health", (HttpResponse response) =>
+        {
+            response.Headers.CacheControl = "no-store";
+            return Results.Ok(new { status = "ok", version = Diagnostics.Version });
+        });
 
         var api = app.MapGroup("/api/v1");
         api.AddEndpointFilter(async (invocation, next) =>

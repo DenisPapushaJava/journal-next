@@ -29,6 +29,16 @@ internal sealed class MemoryMdb : IWorkflowAccessTransport, IWorkflowDatabaseSer
         token.ThrowIfCancellationRequested(); Requests.Add(r);
         if (r.DatabaseId is { } id && id != Id) throw new WorkflowValidationException("Другая база");
         var ids = r.OrderIds ?? []; Guid[] page = []; bool more = false; int total = 0;
+        if (r.Operation == WorkflowAccessOperation.PublishCalculationFile)
+        {
+            var file = r.CalculationFile!;
+            WorkflowCalculationExchange.PublishStaged(file, replace =>
+            {
+                if (Book.ProjectRoot != file.ProjectRoot || !Book.Orders.Any(order => order.Id == file.OrderId &&
+                    !order.IsDeleted && order.Version == file.OrderVersion)) throw new WorkflowConflictException();
+                replace();
+            });
+        }
         if (r.Operation == WorkflowAccessOperation.RecordShopHandoff)
         {
             var mark = r.ShopHandoff!;

@@ -855,8 +855,16 @@ public sealed partial class WorkflowOfficeStorageTests
             await model.CreateOrderCommand.ExecuteAsync(null);
             Assert.Null(model.Error);
             Assert.Empty(local.Book.Orders);
-            Assert.Contains(remote.Book.Orders, order => order.CreatedById == employee.Id &&
+            var created = Assert.Single(remote.Book.Orders, order => order.CreatedById == employee.Id &&
                 remote.Book.Customers.Single(customer => customer.Id == order.CustomerId).Name == "Заказчик из дома");
+            Assert.Contains(office.ReadOfflineJournal()!.Workspace.Orders, order => order.Id == created.Id);
+            Assert.Contains(model.Orders, row => row.Order.Id == created.Id);
+            model.SelectedOrder = Assert.Single(model.Orders, row => row.Order.Id == order.Id);
+            model.OpenOrderCommand.Execute(null);
+            model.Blcb = "010222";
+            await model.SaveHeaderCommand.ExecuteAsync(null);
+            Assert.Null(model.Error);
+            Assert.Contains(model.Orders, row => row.Order.Id == created.Id);
             Assert.Equal(report, remote.Book.Orders.Single(saved => saved.Id == order.Id).Specifications.Single().Current.Report);
             Assert.Null(await model.ConnectDatabaseAsync(localPath, false, token));
             Assert.False(model.IsRemoteStorage);
@@ -1085,15 +1093,16 @@ public sealed partial class WorkflowOfficeStorageTests
         public WorkflowOfficeStorageClient Client { get; }
         public Func<WorkflowAccessRequest, WorkflowAccessResponse>? ReadDatabase { get; set; }
         public HttpStatusCode? DatabaseStatus { get; set; }
+        public Func<WorkflowOfficeCalculationPreparation, CancellationToken, Task<WorkflowOfficePreparedCalculation>>? PrepareCalculation { get; set; }
         public Func<CancellationToken, Task>? BeforeUpload { get; set; }
         public bool ManifestUnavailable { get; set; }
         public HttpStatusCode? ManifestStatus { get; set; }
         public bool Offline { get; set; }
 
-        public WorkingFiles()
+        public WorkingFiles(Guid? databaseId = null)
         {
             _http = new HttpClient(new Handler(RespondAsync));
-            Client = new(new(Address, Guid.NewGuid(), Guid.NewGuid(), true), StorageToken, _temp.DirectoryPath, _http, _http);
+            Client = new(new(Address, databaseId ?? Guid.NewGuid(), Guid.NewGuid(), true), StorageToken, _temp.DirectoryPath, _http, _http);
         }
 
         public Task<WorkflowOfficeWorkingCopy> OpenAsync(CancellationToken token) => Client.OpenWorkingCopyAsync(Order, Project, token);
@@ -1110,6 +1119,12 @@ public sealed partial class WorkflowOfficeStorageTests
             {
                 var operation = (await request.Content!.ReadFromJsonAsync<WorkflowAccessRequest>(token))!;
                 return new(HttpStatusCode.OK) { Content = JsonContent.Create(database(operation)) };
+            }
+            if (PrepareCalculation is { } prepare)
+            {
+                if (route.AbsolutePath.EndsWith("/capabilities", StringComparison.Ordinal)) return Reply(new { guardedCalculation = true });
+                if (route.AbsolutePath.EndsWith("/calculation", StringComparison.Ordinal))
+                    return Reply(await prepare((await request.Content!.ReadFromJsonAsync<WorkflowOfficeCalculationPreparation>(token))!, token));
             }
             if (route.AbsolutePath.EndsWith("/files", StringComparison.Ordinal))
             {

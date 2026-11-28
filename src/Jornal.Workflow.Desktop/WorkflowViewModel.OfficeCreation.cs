@@ -7,6 +7,11 @@ public partial class WorkflowViewModel
 {
     private sealed class UnconfirmedOfficeOrderException : Exception { }
     private Guid? _officeProjectToRecover;
+    private WorkflowOfficeOrderCreation? _openedSavedOrderDraft;
+    private bool HasUnsavedNewOrderFields => _openedSavedOrderDraft is { } draft
+        ? NewManager.Trim() != draft.Manager || NewCustomer.Trim() != draft.Customer
+        : !string.IsNullOrWhiteSpace(NewManager) || !string.IsNullOrWhiteSpace(NewCustomer);
+    private Guid? OfflineOrderActor => _connection.EmployeeId is { } actor && OfflineJournal?.HasTechnologist(actor) == true ? actor : null;
 
     private void TryRestoreOfficeCreation(Action restore)
     {
@@ -15,69 +20,29 @@ public partial class WorkflowViewModel
         { Error = ex is WorkflowValidationException ? ex.Message : "Не удалось открыть локальные данные незавершённого создания."; }
     }
 
-    private async Task<(WorkflowWorkspace Workspace, Guid OrderId)> CreateOfficeOrderAsync(
-        WorkflowOfficeStorageClient remote, WorkflowMdbStore store, string manager, string customer, Guid actor)
-    {
-        using var lease = remote.LockCreation(actor);
-        var previous = remote.ReadOrderCreation(actor);
-        var pending = new WorkflowOfficeOrderCreation(previous?.Id ?? Guid.NewGuid(), manager.Trim(),
-            customer.Trim(), previous?.At ?? DateTimeOffset.Now, previous?.BaseRevision, previous is null || previous.NotSent);
-        if (pending.NotSent && pending != previous) remote.SaveCreation(actor, null, pending);
-        var savedAttempt = false;
-        if (store.RequiresRefresh)
-        {
-            ConfigureDatabaseQuery();
-            _workspace = await store.ReadAsync();
-        }
-        try
-        {
-            var created = await store.CreateOfficeOrderAsync(pending.Id, pending.Manager, pending.Customer, actor, pending.At, revision =>
-            {
-                if (!pending.NotSent && pending.BaseRevision != revision)
-                    throw new UnconfirmedOfficeOrderException();
-                var submitted = pending with { BaseRevision = revision, NotSent = false };
-                if (submitted != previous) remote.SaveCreation(actor, null, submitted);
-                savedAttempt = true;
-            });
-            if (!created.Workspace.Orders.Any(order => order.Id == pending.Id))
-                throw new WorkflowOutcomeUnknownException();
-            remote.CompleteCreation(actor);
-            return created;
-        }
-        catch (WorkflowOutcomeUnknownException)
-        {
-            throw new WorkflowValidationException("Сервер не подтвердил создание заявки. Нажмите «Создать» ещё раз, чтобы проверить результат.");
-        }
-        catch (UnconfirmedOfficeOrderException)
-        {
-            remote.CompleteCreation(actor);
-            CancelNewOrder();
-            throw new WorkflowValidationException("Прежней заявки нет в актуальной офисной базе, а база изменилась. Проверьте журнал. Если заявка нужна, начните с «Новая заявка».");
-        }
-        catch (WorkflowConflictException) when (pending.NotSent && savedAttempt)
-        {
-            remote.SaveCreation(actor, null, pending);
-            throw new WorkflowValidationException("Офисная база изменилась до создания заявки. Нажмите «Создать» ещё раз.");
-        }
-    }
-
     private void RestoreOfficeOrderForm()
     {
-        if (_connection.RemoteClient is { } remote && ActiveEmployee is { } actor &&
-            remote.ReadOrderCreation(actor.Id) is { } pending)
+        if (_connection.RemoteClient is { } remote && (OfflineOrderActor ?? ActiveEmployee?.Id) is { } actor &&
+            remote.ReadOrderCreation(actor) is { } pending)
             ShowOfficeOrderForm(pending);
     }
 
     private void ShowOfficeOrderForm(WorkflowOfficeOrderCreation pending)
     {
         IsCreating = true;
-        NewManager = pending.Manager;
-        NewCustomer = pending.Customer;
+        LoadSavedOrderFields(pending);
         Error = pending.NotSent ? "Заявка ещё не отправлена. Нажмите «Создать», чтобы продолжить." :
             "Создание заявки не подтверждено. Нажмите «Создать», чтобы продолжить.";
     }
 
-    private async Task<bool> RecoverOfficeOrderAsync()
+    private void LoadSavedOrderFields(WorkflowOfficeOrderCreation pending)
+    {
+        _openedSavedOrderDraft = pending is { SavedOffline: true, NotSent: true } ? pending : null;
+        NewManager = pending.Manager;
+        NewCustomer = pending.Customer;
+    }
+
+    private async Task<bool> RecoverOfficeOrderAsync(CancellationToken token)
     {
         if (_connection.RemoteClient is not { } remote || ActiveEmployee is not { } actor ||
             remote.ReadOrderCreation(actor.Id) is null)
@@ -86,7 +51,8 @@ public partial class WorkflowViewModel
         if (remote.ReadOrderCreation(actor.Id) is not { } current)
             return false;
         if (!_workspace.Orders.Any(order => order.Id == current.Id))
-            _workspace = await _store.ReadOrderAsync(current.Id);
+            _workspace = await _store.ReadOrderAsync(current.Id, token);
+        token.ThrowIfCancellationRequested();
         if (_workspace.Orders.SingleOrDefault(order => order.Id == current.Id) is not { } created)
         {
             if (!IsCreating) ShowOfficeOrderForm(current);

@@ -6,16 +6,23 @@ namespace Jornal.Workflow.Desktop;
 public partial class WorkflowViewModel
 {
     private (WorkflowOfficeStorageClient Client, WorkflowOfficeCalculationDraft Draft)? _officeCalculationDraftConflict;
+    private bool _syncOfficeCalculations = true;
 
     internal string? OfficeCalculationConflictFolder => _officeCalculationDraftConflict is { } conflict &&
         ReferenceEquals(conflict.Client, _connection.RemoteClient) && conflict.Draft.OrderId == CurrentOrder?.Id
         ? conflict.Client.ArchivedCalculationDraftFolder(conflict.Draft) : null;
 
-    private async Task<WorkflowWorkspace> SaveOfficeCalculationAsync(WorkflowOfficeStorageClient remote, WorkflowMdbStore store,
-        WorkflowOrder order, Guid actor, WorkflowOfficeCalculationInput[] inputs, CancellationToken token)
+    private async Task<WorkflowWorkspace?> SaveOfficeCalculationAsync(WorkflowOfficeStorageClient remote, WorkflowMdbStore store,
+        WorkflowOrder order, Guid actor, WorkflowOfficeCalculationInput[] inputs, CancellationToken token, bool offline = false)
     {
+        offline = offline || ShowOfflineJournal;
         using var lease = remote.LockCalculationDraft(order.Id);
-        var draft = await Task.Run(() => remote.PreserveCalculationDraftAsync(order, actor, inputs, token), token);
+        var draft = await Task.Run(() => remote.PreserveCalculationDraftAsync(order, actor, inputs, token, queuedForOffice: offline), token);
+        if (offline)
+        {
+            await QueueOfflineCalculationAsync(remote, draft, token);
+            return null;
+        }
         try
         {
             var latest = await remote.ReadActiveOrderForWorkingFilesAsync(order.Id, token);
@@ -23,20 +30,68 @@ public partial class WorkflowViewModel
                 throw new WorkflowValidationException("Заявка изменилась в офисе. Нажмите «Рассчитать», чтобы сверить сохранённый черновик.");
             return await CommitOfficeCalculationAsync(remote, store, latest, draft, inputs, token);
         }
-        catch (WorkflowOfficeSyncUnavailableException ex)
-        { throw new WorkflowValidationException(ex.Message + " Черновик расчёта сохранён на этом компьютере."); }
-        catch (Exception ex) when (ex is WorkflowOutcomeUnknownException or IOException)
-        { throw new WorkflowValidationException("Расчёт сохранён на этом компьютере. Нажмите «Рассчитать», чтобы проверить запись в офисе."); }
+        catch (Exception ex) when (OfficeCalculationInterrupted(ex))
+        {
+            await QueueOfflineCalculationAsync(remote, draft, token);
+            if (ex is not WorkflowOutcomeUnknownException) await ShowOfficeOutageAsync(remote, token);
+            return null;
+        }
+        catch (IOException)
+        { throw new WorkflowValidationException(await QueueCalculationExchangeAsync(remote, draft, token)); }
+    }
+
+    private static bool OfficeCalculationInterrupted(Exception ex) =>
+        ex is WorkflowOfficeSyncUnavailableException or WorkflowOutcomeUnknownException or
+        WorkflowValidationException { InnerException: WorkflowOfficeConnectException };
+
+    private async Task QueueOfflineCalculationAsync(WorkflowOfficeStorageClient remote, WorkflowOfficeCalculationDraft draft, CancellationToken token)
+    {
+        if (!draft.QueuedForOffice)
+        {
+            draft = draft with { QueuedForOffice = true };
+            await Task.Run(() => remote.SaveCalculationDraft(draft));
+        }
+        _syncOfficeCalculations = true;
+        OfflineJournal?.ShowPendingCalculation(draft);
+        var message = await QueueCalculationExchangeAsync(remote, draft, token);
+        CalculationExchangeStatus = message;
+        SetCalculationNotice($"К отправке · {SpecificationDraft.Money(draft.PendingOfficeTotal())} ₽ по готовым проектам. {message}");
+    }
+
+    // The draft lease is already held by the save or recovery operation.
+    private async Task<string> QueueCalculationExchangeAsync(WorkflowOfficeStorageClient remote,
+        WorkflowOfficeCalculationDraft draft, CancellationToken token)
+    {
+        if (CalculationExchangeRoot is { } folder)
+        {
+            try
+            {
+                var status = await Task.Run(() => WorkflowCalculationExport.ExportDraftAsync(remote, draft, folder, token), token);
+                CalculationExchangeStatus = status ?? CalculationExchangePending;
+                return CalculationExchangeStatus;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or WorkflowValidationException)
+            {
+                return draft.QueuedForOffice ? "Расчёт сохранён на этом компьютере. Яндекс Диск недоступен. Отправим расчёт, когда появится связь с офисом." :
+                    "Черновик сохранён на этом компьютере. Не удалось выгрузить его на Яндекс Диск. Проверьте папку обмена и повторите «Рассчитать».";
+            }
+        }
+        return draft.QueuedForOffice ? "Расчёт сохранён на этом компьютере. Отправим его, когда появится связь с офисом." :
+            "Расчёт сохранён на этом компьютере. Нажмите «Рассчитать», чтобы проверить запись в офисе.";
     }
 
     private async Task<WorkflowWorkspace> CommitOfficeCalculationAsync(WorkflowOfficeStorageClient remote, WorkflowMdbStore store,
-        WorkflowOrder order, WorkflowOfficeCalculationDraft pending, WorkflowOfficeCalculationInput[] inputs, CancellationToken token)
+        WorkflowOrder order, WorkflowOfficeCalculationDraft pending, WorkflowOfficeCalculationInput[] inputs, CancellationToken token,
+        bool interactive = true)
     {
         var accepted = new List<(WorkflowOfficeCalculationInput Input, WorkflowOfficePreparedCalculation Prepared)>(inputs.Length);
         foreach (var input in inputs)
         {
-            var prepared = await PrepareRemoteCalculationAsync(remote, order, input.ProjectId, pending.Actor, input.Snapshot,
-                input.Baseline, input.Parameters.HasBending, token);
+            var prepared = interactive
+                ? await PrepareRemoteCalculationAsync(remote, order, input.ProjectId, pending.Actor, input.Snapshot,
+                    input.Baseline, input.Parameters.HasBending, token)
+                : await remote.PrepareCalculationAsync(order, input.ProjectId, pending.Actor, input.Snapshot,
+                    input.Baseline, input.Parameters.HasBending, token);
             accepted.Add((input, prepared));
         }
         WorkflowWorkspace Update(WorkflowWorkspace book)
@@ -78,31 +133,19 @@ public partial class WorkflowViewModel
             using var lease = remote.LockCalculationDraft(orderId);
             var pending = await Task.Run(() => remote.ReadCalculationDraft(orderId), token);
             if (pending is null) { resumed = true; return; }
+            if (ShowOfflineJournal)
+            {
+                await QueueOfflineCalculationAsync(remote, pending, token);
+                return;
+            }
             _officeCalculationDraftConflict = null;
             try
             {
                 if (store.RequiresRefresh) await store.ReadAsync(token);
                 var latest = await store.ReadOrderAsync(orderId, token);
-                var order = latest.Orders.SingleOrDefault(candidate => candidate.Id == orderId);
                 if (HasNewerCalculationEdits(pending))
                     throw new WorkflowOfficeCalculationDraftConflictException("Параметры расчёта изменены после предыдущей отправки.");
-                if (order is not null && pending.IsSavedIn(order))
-                    await FinishOfficeCalculationDraftAsync(remote, pending);
-                else
-                {
-                    if (order is not { IsDeleted: false } || order.Version != pending.OrderVersion || order.HasProjectRename ||
-                        pending.Actor != ActorId() || pending.Entries.Any(entry => !order.ActiveProjects.Any(project => project.Id == entry.ProjectId)))
-                        throw new WorkflowOfficeCalculationDraftConflictException("В офисе изменилась заявка или состав расчёта.");
-                    try
-                    {
-                        foreach (var entry in pending.Entries)
-                            _ = WorkflowChanges.SaveSpecification(latest, order.Id, order.Version, entry.ProjectId, entry.Parameters,
-                                entry.Number, entry.Date, pending.Actor, DateTimeOffset.UtcNow, profile: entry.Profile, quotedRate: entry.Rate);
-                    }
-                    catch (WorkflowValidationException ex) { throw new WorkflowOfficeCalculationDraftConflictException(ex.Message); }
-                    var inputs = await remote.ReopenCalculationDraftAsync(pending, order, OfficeCopiesRoot, token);
-                    latest = await CommitOfficeCalculationAsync(remote, store, order, pending, inputs, token);
-                }
+                latest = await ConfirmOfficeCalculationAsync(remote, store, latest, pending, ActorId(), OfficeCopiesRoot, token, interactive: true);
                 if (!ReferenceEquals(remote, _connection.RemoteClient) || CurrentOrder?.Id != orderId) return;
                 _workspace = latest;
                 RefreshOrders(preserveRows: true);
@@ -116,14 +159,97 @@ public partial class WorkflowViewModel
                 Error = ex.Message + " Домашний черновик сохранён.";
                 SetCalculationNotice(Error, CalculationTarget.OfficeDraft);
             }
-            catch (Exception ex) when (ex is WorkflowOutcomeUnknownException or IOException)
+            catch (Exception ex) when (OfficeCalculationInterrupted(ex))
             {
-                Error = ex is WorkflowOfficeSyncUnavailableException ? ex.Message + " Черновик сохранён на этом компьютере." :
-                    "Не удалось проверить расчёт в офисе. Черновик сохранён на этом компьютере.";
+                await QueueOfflineCalculationAsync(remote, pending, token);
+                if (ex is not WorkflowOutcomeUnknownException) await ShowOfficeOutageAsync(remote, token);
+            }
+            catch (IOException)
+            {
+                Error = await QueueCalculationExchangeAsync(remote, pending, token);
                 SetCalculationNotice(Error, CalculationTarget.Recalculate);
             }
         });
         return resumed;
+    }
+
+    private async Task<WorkflowWorkspace> ConfirmOfficeCalculationAsync(WorkflowOfficeStorageClient remote, WorkflowMdbStore store,
+        WorkflowWorkspace latest, WorkflowOfficeCalculationDraft pending, Guid actor, string? copiesRoot, CancellationToken token, bool interactive)
+    {
+        var order = latest.Orders.SingleOrDefault(candidate => candidate.Id == pending.OrderId);
+        if (order is not null && pending.IsSavedIn(order))
+        {
+            await FinishOfficeCalculationDraftAsync(remote, pending);
+            return latest;
+        }
+        if (order is not { IsDeleted: false } || order.Version != pending.OrderVersion || order.HasProjectRename ||
+            pending.Actor != actor || pending.Entries.Any(entry => !order.ActiveProjects.Any(project => project.Id == entry.ProjectId)))
+            throw new WorkflowOfficeCalculationDraftConflictException("В офисе изменилась заявка или состав расчёта.");
+        try
+        {
+            foreach (var entry in pending.Entries)
+                _ = WorkflowChanges.SaveSpecification(latest, order.Id, order.Version, entry.ProjectId, entry.Parameters,
+                    entry.Number, entry.Date, pending.Actor, DateTimeOffset.UtcNow, profile: entry.Profile, quotedRate: entry.Rate);
+        }
+        catch (WorkflowValidationException ex) { throw new WorkflowOfficeCalculationDraftConflictException(ex.Message); }
+        var inputs = await remote.ReopenCalculationDraftAsync(pending, order, copiesRoot, token);
+        return await CommitOfficeCalculationAsync(remote, store, order, pending, inputs, token, interactive);
+    }
+
+    private async Task SynchronizeQueuedCalculationsAsync(WorkflowOfficeStorageClient remote, Guid actor, Func<bool> current, CancellationToken token)
+    {
+        var copiesRoot = OfficeCopiesRoot;
+        _syncOfficeCalculations = false;
+        Guid[] queued;
+        try { queued = await Task.Run(() => remote.PendingCalculationOrders(token), token); }
+        catch
+        {
+            if (current()) _syncOfficeCalculations = true;
+            throw;
+        }
+        if (!current()) return;
+        var confirmed = 0;
+        var needsReview = 0;
+        foreach (var id in queued)
+        {
+            if (!current()) return;
+            try
+            {
+                var completed = await Task.Run(async () =>
+                {
+                    using var lease = remote.LockCalculationDraft(id);
+                    if (remote.ReadQueuedCalculation(id, actor) is not { } draft)
+                        return false;
+                    var store = remote.CreateStore();
+                    var latest = await store.ReadOrderAsync(draft.OrderId, token);
+                    await ConfirmOfficeCalculationAsync(remote, store, latest, draft, actor, copiesRoot, token, interactive: false);
+                    return true;
+                }, token);
+                if (completed) confirmed++;
+            }
+            catch (Exception ex) when (OfficeCalculationInterrupted(ex))
+            {
+                if (current())
+                {
+                    _syncOfficeCalculations = true;
+                    if (ex is not WorkflowOutcomeUnknownException && CanUse && !IsCreating) await ShowOfficeOutageAsync(remote, token);
+                    if (current()) await RetryCalculationExchangeAsync(remote, actor, current, token);
+                }
+                break;
+            }
+            catch (WorkflowConflictException)
+            {
+                if (current()) _syncOfficeCalculations = true;
+            }
+            catch (Exception ex) when (ex is WorkflowOfficeCalculationDraftConflictException or WorkflowOfficeReportConflictException or
+                WorkflowValidationException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
+            { needsReview++; }
+        }
+        if (!current()) return;
+        if (needsReview > 0) CalculationExchangeStatus = "Некоторые домашние расчёты требуют сверки. Откройте заявку и нажмите «Рассчитать».";
+        else if (confirmed > 0) CalculationExchangeStatus = "Домашние расчёты подтверждены в офисной базе.";
+        if (confirmed > 0 && !ShowOfflineJournal && CanUse && !IsCreating && !HasCurrentCardEdits && !HasPendingReportEdits)
+            await ReloadCommand.ExecuteAsync(null);
     }
 
     private bool HasNewerCalculationEdits(WorkflowOfficeCalculationDraft pending)

@@ -57,6 +57,20 @@ public static partial class WorkflowReportFiles
         var hash = Convert.ToHexString(SHA256.HashData(bytes));
         if (candidate.LegacyBundleReceipt is { } receipt && await WorkflowManagerMapBundle.IsRecordedBundleAsync(receipt, hash, token))
             return null;
+        return await ParseCapturedAsync(path, bytes, hash, token);
+    }
+
+    public static Task<ReportFileSnapshot> ReadCapturedAsync(string path, byte[] bytes, string expectedHash, CancellationToken token = default)
+    {
+        if (!IsReport(path) || bytes.Length is <= 0 or > MaximumBytes)
+            throw new WorkflowValidationException("Недопустимый файл спецификации.");
+        var hash = Convert.ToHexString(SHA256.HashData(bytes));
+        if (hash != expectedHash) throw new InvalidDataException("Контрольная сумма спецификации не совпадает.");
+        return ParseCapturedAsync(path, bytes, hash, token);
+    }
+
+    private static async Task<ReportFileSnapshot> ParseCapturedAsync(string path, byte[] bytes, string hash, CancellationToken token)
+    {
         // The parser and hash see exactly the same bytes. DocumentReader remains unchanged for the old Journal.
         var temporary = Path.Combine(Path.GetTempPath(), "workflow-report-" + Guid.NewGuid().ToString("N") + Path.GetExtension(path));
         try
@@ -147,6 +161,7 @@ public static partial class WorkflowReportFiles
 
         var folder = Path.Combine(tempRoot, "JournalNext-Pdf");
         Directory.CreateDirectory(folder);
+        WorkflowServiceFiles.TryHide(folder);
         RemoveExpiredPreviews(folder);
         var path = Path.Combine(folder, Guid.NewGuid().ToString("N") + ".pdf");
         token.ThrowIfCancellationRequested();
@@ -186,7 +201,7 @@ public static partial class WorkflowReportFiles
         catch (UnauthorizedAccessException) { }
     }
 
-    private static async Task<byte[]> ReadVerifiedArchiveAsync(AcceptedReport report, CancellationToken token)
+    public static async Task<byte[]> ReadVerifiedArchiveAsync(AcceptedReport report, CancellationToken token = default)
     {
         report.Validate();
         if (!Path.IsPathFullyQualified(report.ArchivePath))

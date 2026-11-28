@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
+    <InternalsVisibleTo Include="Jornal.Workflow.Tests" />
     <ProjectReference Include="../Jornal.Workflow.Infrastructure/Jornal.Workflow.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
