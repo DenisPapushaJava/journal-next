@@ -21,6 +21,7 @@ public partial class WorkflowViewModel
     private static bool HasCloseWorkIn(CardState state) => state.HasEdits || HasManualResultTextIn(state) || state.TaskEdit is not null;
     public bool HasUnfinishedTaskText => HasCuttingTaskTextEdits || _cards.Any(p => p.Key != _openOrderId && p.Value.TaskEdit is not null);
     public bool CanCloseWorkspace => CanUse && !IsCopyingCuttingTask && !_isCopyingResult && !_searchPending;
+    internal bool CanCancelInitialOfficeRead => IsRemoteStorage && !_hasLoadedOrders && !HasPendingEdits && !HasUnfinishedTaskText;
     public bool CanCloseCard => CanCloseWorkspace && (IsCardVisible || IsCreating);
     public string CloseCardHint => CanCloseCard ? "Закрыть карточку" : "Дождитесь завершения операции";
     public bool IsCardOutsideFilter => IsCardVisible && IsCurrentOrderActive && !HasCardReview &&

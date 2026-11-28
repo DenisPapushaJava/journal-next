@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 from office_server_bundle import LOCAL, ROOT, publish_app
 
 
-VERSION = 22
+VERSION = 26
 NAME = f"JournalOfficeServer-Setup-win-x64-v{VERSION}.exe"
 
 

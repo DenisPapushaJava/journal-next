@@ -192,7 +192,7 @@ public partial class WorkflowViewModel
     {
         NotifyResultState();
         foreach (var name in new[] { nameof(WorkspacePath), nameof(IsMdb), nameof(IsRemoteStorage), nameof(CanConnectDatabase), nameof(DatabaseDescription),
-            nameof(HasMoreOrders), nameof(RequiresDatabaseRefresh) }) OnPropertyChanged(name);
+            nameof(HasMoreOrders), nameof(RequiresDatabaseRefresh), nameof(ShowCalculationExchange), nameof(ShowCalculationExchangeStatus) }) OnPropertyChanged(name);
         NotifyOrderList(); OnPropertyChanged(nameof(TrashCaption));
         NotifyCuttingTask();
     }
@@ -275,7 +275,9 @@ public partial class WorkflowViewModel
             ForgetOpenCard(); IsCreating = false; NewCustomer = ""; NewManager = "";
             _reportReview = null; _reportImportOrderId = null;
             ResetCuttingTask(); ResetOfficePendingFiles(); ClearOfflineOfficeFolders(); _bendingFolderFailures = null;
+            CalculationExchangeStatus = null;
             _cards.Clear(); SelectedOrder = null; _connection = candidateConnection with { EmployeeId = saved.EmployeeId }; _workspace = workspace;
+            ResetOfficeOrderQueue();
             CancelManagerMapJobs();
             _localPreferences = saved; _hasLoadedOrders = true; RecordListedSnapshot(workspace);
             _refreshing = true;
@@ -284,6 +286,7 @@ public partial class WorkflowViewModel
             RefreshOrders(); NotifyPriceCatalog(); NotifyDatabase();
             if (letters is not null) RestoreRestartDraft(letters);
             switched = true;
+            await RememberOfflineJournalAsync(workspace, token);
             await RememberStartupProfileAsync();
         }, "Не удалось подключиться. Проверьте доступ к хранилищу и локальным настройкам.");
         return switched ? null : Error ?? "Подключение не изменено. Проверьте источник и повторите попытку.";
@@ -352,7 +355,7 @@ public partial class WorkflowViewModel
             var source = _store;
             var book = more ? await store.ReadMoreAsync(token) : await store.ReadAsync(token);
             if (generation != _searchGeneration || !ReferenceEquals(source, _store)) return;
-            if (OfflineOfficeFolders is not null) { ClearOfflineOfficeFolders(); Error = null; }
+            if (_offlineOfficeFolders is not null) { ClearOfflineOfficeFolders(); Error = null; }
             _orderQueryFailed = false;
             CaptureCard(); var state = _openOrderId is { } id ? _cards.GetValueOrDefault(id) : null;
             _loadedOrderSnapshot = CurrentOrder; _workspace = book; _hasLoadedOrders = true; if (!more) RecordListedSnapshot(book);
@@ -360,7 +363,14 @@ public partial class WorkflowViewModel
             if (!IsCreating && CurrentOrder is { } order)
             { LoadOrder(order); if (state is not null) RestoreCard(order, state); }
             NotifyDatabase();
+            await RememberOfflineJournalAsync(book, token);
             await RememberStartupProfileAsync();
+        }
+        catch (WorkflowOfficeConnectionLostException) when (_connection.RemoteClient is { } remote && !token.IsCancellationRequested)
+        {
+            if (generation != _searchGeneration) return;
+            await ShowOfficeOutageAsync(remote, token);
+            if (!ShowOfflineJournal && _hasLoadedOrders) throw;
         }
         finally { _readingDatabase = false; OnPropertyChanged(nameof(CanUse)); SaveSpecificationCommand.NotifyCanExecuteChanged(); NotifyOrderList(); NotifyCuttingTask(); NotifyResultState(); }
     }

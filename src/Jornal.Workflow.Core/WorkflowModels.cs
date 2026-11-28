@@ -162,5 +162,5 @@ public sealed record WorkflowWorkspace(int SchemaVersion, long Version, Employee
     }
 }
 
-public sealed class WorkflowValidationException(string message) : Exception(message);
+public sealed class WorkflowValidationException(string message, Exception? inner = null) : Exception(message, inner);
 public sealed class WorkflowConflictException() : Exception("Данные изменились в другом окне. Обновите список; введённые параметры остались в форме.");

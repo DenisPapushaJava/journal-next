@@ -54,10 +54,13 @@ public partial class WorkflowWindow
             c is ComboBox { IsDropDownOpen: true } || c is Button { Flyout.IsOpen: true });
     }
     private async void OnJournalRefreshTick(object? sender, EventArgs e) => await TickJournalRefreshAsync();
-    internal Task TickJournalRefreshAsync()
+    internal async Task TickJournalRefreshAsync()
     {
-        return _journalRefresh?.TickAsync(IsVisible && WindowState != WindowState.Minimized,
-            Model?.CanRefreshAutomatically == true && OwnedWindows.Count == 0 && _pressedPointers.Count == 0) ?? Task.CompletedTask;
+        if (_journalRefresh is not null)
+            await _journalRefresh.TickAsync(IsVisible && WindowState != WindowState.Minimized,
+                Model?.CanRefreshAutomatically == true && OwnedWindows.Count == 0 && _pressedPointers.Count == 0);
+        if (IsVisible && !_lifetime.IsCancellationRequested && OwnedWindows.Count == 0 && Model is { IsRemoteStorage: true } model)
+            await model.SynchronizeOfficeOrdersAsync((_journalClock ?? TimeProvider.System).GetUtcNow(), _lifetime.Token);
     }
     private async void OnRefreshChangedCard(object? sender, RoutedEventArgs e)
     {

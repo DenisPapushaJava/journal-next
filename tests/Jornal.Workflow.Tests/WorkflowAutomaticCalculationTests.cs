@@ -114,6 +114,39 @@ public sealed class WorkflowAutomaticCalculationTests
     }
 
     [Fact]
+    public async Task OfflineBatchWaitsForBothPierceConfirmationsBeforeSaving()
+    {
+        using var f = new ProjectFixture(); await f.InitializeAsync();
+        var ready = await f.AddAsync(); await ProjectFixture.WriteAsync(ready);
+        var first = await f.AddAsync("ГАР"); WriteAwjc(first);
+        var second = await f.AddAsync("ГАР"); WriteAwjc(second);
+        var workspace = await f.Store.ReadAsync(Token);
+        var batches = new List<Guid[]>();
+        var review = new WorkflowReportReviewViewModel((candidates, _) =>
+        {
+            batches.Add(candidates.Select(candidate => candidate.Project.Id).ToArray());
+            foreach (var candidate in candidates) candidate.MarkAccepted();
+            return Task.FromResult<string?>(null);
+        }) { OfflineBatch = true };
+        foreach (var project in new[] { ready, first, second })
+        {
+            var path = Directory.EnumerateFiles(Path.GetDirectoryName(project.NativePath!)!).Single(WorkflowReportFiles.IsReport);
+            review.Candidates.Add(new(workspace, project, review.Candidates.Count + 1,
+                [await WorkflowReportFiles.ReadAsync(path, Token)], "", review.Changed, latestReportWins: true));
+        }
+        review.IsGuided = true;
+        await review.AcceptAutomaticAsync(Token);
+        Assert.Empty(batches);
+        review.Selected = review.Candidates.Single(candidate => candidate.Project.Id == first.Id);
+        await review.SaveCommand.ExecuteAsync(null);
+        Assert.Empty(batches);
+        Assert.Equal(second.Id, review.Selected?.Project.Id);
+        await review.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(new[] { ready.Id, first.Id, second.Id }, Assert.Single(batches));
+        Assert.True(review.WasSaved);
+    }
+
+    [Fact]
     public async Task ChangedReportAutomaticallyReplacesManualFieldsAndArchivesThePreviousCalculation()
     {
         using var f = new ProjectFixture(); await f.InitializeAsync(); var project = await f.AddAsync(); await ProjectFixture.WriteAsync(project); await f.AcceptAsync();

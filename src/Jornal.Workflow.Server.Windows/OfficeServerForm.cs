@@ -10,6 +10,7 @@ internal sealed class OfficeServerForm : Form
 {
     private readonly TextBox _database = new() { Dock = DockStyle.Fill };
     private readonly TextBox _projects = new() { Dock = DockStyle.Fill };
+    private readonly TextBox _calculationExchange = new() { Dock = DockStyle.Fill };
     private readonly TextBox _network = new() { Dock = DockStyle.Fill, MaxLength = 16 };
     private readonly TextBox _remoteAddress = new() { Dock = DockStyle.Fill, ReadOnly = true };
     private readonly CheckBox _autorun = new() { Text = "Запускать при входе в Windows", AutoSize = true };
@@ -45,16 +46,23 @@ internal sealed class OfficeServerForm : Form
         Text = "Сервер заявок";
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new(700, 454);
+        ClientSize = new(700, 520);
         MinimumSize = new(716, 493);
         Padding = new Padding(16, 12, 16, 12);
+        AutoScroll = true;
         MaximizeBox = false;
         Controls.Add(_layout);
 
         Add(new Label { Text = "База данных MDB", AutoSize = true });
         Add(Field(_database, "Выбрать…", () => { ChooseDatabase(); return Task.CompletedTask; }));
         Add(new Label { Text = "Рабочая папка проектов", AutoSize = true });
-        Add(Field(_projects, "Выбрать…", () => { ChooseProjects(); return Task.CompletedTask; }));
+        Add(Field(_projects, "Выбрать…", () => { ChooseFolder(_projects, "Выберите рабочую папку проектов"); return Task.CompletedTask; }));
+        Add(new Label { Text = "Папка обмена расчётами · необязательно", AutoSize = true });
+        Add(Field(_calculationExchange, "Выбрать…", () =>
+        {
+            ChooseFolder(_calculationExchange, "Выберите локальную папку обмена на Яндекс Диске");
+            return Task.CompletedTask;
+        }));
         var test = CreateButton("Создать тестовую MDB");
         var start = CreateButton("Сохранить и запустить");
         var refresh = CreateButton("Обновить состояние");
@@ -73,6 +81,7 @@ internal sealed class OfficeServerForm : Form
         _settings = OfficeInstallation.Load();
         _database.Text = _settings?.DatabasePath ?? "";
         _projects.Text = _settings?.ProjectsRoot ?? "";
+        _calculationExchange.Text = _settings?.CalculationExchangeRoot ?? "";
         _network.Text = _settings?.ZeroTierNetworkId ?? "";
         _autorun.Checked = _settings is null || OfficeInstallation.AutorunEnabled();
         _allowRemoteWrites.Checked = _settings?.AllowRemoteWrites == true;
@@ -213,10 +222,10 @@ internal sealed class OfficeServerForm : Form
         if (dialog.ShowDialog(this) == DialogResult.OK) _database.Text = dialog.FileName;
     }
 
-    private void ChooseProjects()
+    private void ChooseFolder(TextBox field, string title)
     {
-        using var dialog = new FolderBrowserDialog { Description = "Выберите рабочую папку проектов", UseDescriptionForTitle = true };
-        if (dialog.ShowDialog(this) == DialogResult.OK) _projects.Text = dialog.SelectedPath;
+        using var dialog = new FolderBrowserDialog { Description = title, UseDescriptionForTitle = true };
+        if (dialog.ShowDialog(this) == DialogResult.OK) field.Text = dialog.SelectedPath;
     }
 
     private async Task CreateTestAsync()
@@ -235,11 +244,15 @@ internal sealed class OfficeServerForm : Form
             throw new IOException("Выберите доступную MDB или создайте тестовую.");
         if (!Path.IsPathFullyQualified(projects) || !await Task.Run(() => Directory.Exists(projects)))
             throw new IOException("Выберите доступную рабочую папку проектов.");
+        var exchange = _calculationExchange.Text.Trim();
+        if (exchange.Length > 0 && (!Path.IsPathFullyQualified(exchange) || !await Task.Run(() => Directory.Exists(exchange))))
+            throw new IOException("Выберите доступную папку обмена расчётами.");
 
         var settings = _settings is { } previous
             ? previous.ForZeroTier() with { DatabasePath = database, ProjectsRoot = Path.GetFullPath(projects) }
             : OfficeSettings.Create(database, Path.GetFullPath(projects));
-        settings = settings with { AllowRemoteWrites = _allowRemoteWrites.Checked };
+        settings = settings with { AllowRemoteWrites = _allowRemoteWrites.Checked,
+            CalculationExchangeRoot = exchange.Length > 0 ? Path.GetFullPath(exchange) : null };
         OfficeInstallation.CheckDataLocations(settings);
         await ApplySettingsAsync(settings);
         OfficeInstallation.SetAutorun(_autorun.Checked);

@@ -125,6 +125,8 @@ public sealed partial class WorkflowMdbStore(string path, IWorkflowAccessTranspo
         await MergeAsync(await Send(WorkflowAccessOperation.ReadOrders, token, ids: [id]).ConfigureAwait(false), token, requested: [id]).ConfigureAwait(false), token);
     public Task<WorkflowWorkspace> ReadOrdersAsync(Guid[] ids, CancellationToken token = default) => Locked(async () =>
         await MergeAsync(await Send(WorkflowAccessOperation.ReadOrders, token, ids: ids).ConfigureAwait(false), token, requested: ids).ConfigureAwait(false), token);
+    internal Task PublishCalculationFileAsync(WorkflowCalculationFilePublication file, CancellationToken token) =>
+        _transport.SendAsync(new(1, WorkflowAccessOperation.PublishCalculationFile, FilePath, DatabaseId) { CalculationFile = file }, token);
     public Task<WorkflowWorkspace> ReadTrashAsync(CancellationToken token = default) => ReadTrash(false, token);
     public Task<WorkflowWorkspace> ReadMoreTrashAsync(CancellationToken token = default) => ReadTrash(true, token);
     private Task<WorkflowWorkspace> ReadTrash(bool more, CancellationToken token) => Locked(async () =>

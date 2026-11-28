@@ -7,27 +7,65 @@ namespace Jornal.Workflow.Desktop;
 internal sealed record WorkflowOfficeCalculationInput(Guid ProjectId, string Number, DateOnly Date, CuttingParameters Parameters,
     CuttingRate Rate, string? Profile, ReportFileSnapshot? Snapshot, ReportValues? Baseline);
 
-internal sealed record WorkflowOfficeCalculationDraft(Guid Id, Guid OrderId, long OrderVersion, Guid Actor,
-    WorkflowOfficeCalculationDraftEntry[] Entries)
-{
-    internal bool IsSavedIn(WorkflowOrder order) => !order.IsDeleted && order.Id == OrderId && Entries.All(entry =>
-        order.ActiveProjects.Any(project => project.Id == entry.ProjectId) &&
-        order.Specifications.Any(specification => specification.Id == entry.ProjectId && entry.Matches(specification.Current)));
-}
-
-internal sealed record WorkflowOfficeCalculationDraftEntry(Guid ProjectId, string Number, DateOnly Date, CuttingParameters Parameters,
-    CuttingRate Rate, string? Profile, string? ReportHash, AcceptedReport? Captured)
-{
-    internal bool Matches(SpecificationState state) => state.DocumentNumber == Number.Trim() && state.DocumentDate == Date &&
-        Parameters.SameInputs(state.Parameters) && state.Calculation == CuttingCalculation.Calculate(Parameters, Rate) &&
-        state.ImportProfile == Profile && state.Report?.Sha256 == ReportHash &&
-        (Captured is null || string.Equals(state.Report?.FileName, Captured.FileName, StringComparison.OrdinalIgnoreCase));
-}
-
 internal sealed partial class WorkflowOfficeStorageClient
 {
-    private string CalculationDraftRoot(Guid order) =>
-        Path.Combine(profileDirectory, "office-calculation-drafts", settings.DatabaseId.ToString("N"), order.ToString("N"));
+    private readonly object _pendingCalculationGate = new();
+    private HashSet<Guid>? _pendingCalculationOrders;
+    private long _nextCalculationOrderScan;
+    private string CalculationDraftsRoot => Path.Combine(profileDirectory, "office-calculation-drafts");
+    private string CalculationDraftsFolder => Path.Combine(CalculationDraftsRoot, settings.DatabaseId.ToString("N"));
+    private string CalculationDraftRoot(Guid order) => Path.Combine(CalculationDraftsFolder, order.ToString("N"));
+
+    internal Guid[] PendingCalculationOrders(CancellationToken token, bool refresh = false)
+    {
+        lock (_pendingCalculationGate)
+        {
+            var now = Environment.TickCount64;
+            if (refresh || _pendingCalculationOrders is null || now >= _nextCalculationOrderScan)
+            {
+                _pendingCalculationOrders = ScanPendingCalculationOrders(token).ToHashSet();
+                // Another instance can use the same profile.
+                _nextCalculationOrderScan = now + 60_000;
+            }
+            return [.. _pendingCalculationOrders];
+        }
+    }
+
+    private IEnumerable<Guid> ScanPendingCalculationOrders(CancellationToken token)
+    {
+        WorkflowOfficeProjectPaths.RequireOrdinaryCopyPath(CalculationDraftsFolder);
+        if (!Directory.Exists(CalculationDraftsFolder)) yield break;
+        WorkflowServiceFiles.TryHide(CalculationDraftsRoot);
+        foreach (var folder in Directory.EnumerateDirectories(CalculationDraftsFolder))
+        {
+            token.ThrowIfCancellationRequested();
+            if (Guid.TryParseExact(Path.GetFileName(folder), "N", out var id) && HasCalculationDraft(id)) yield return id;
+        }
+    }
+
+    internal WorkflowOfficeCalculationDraft[] ReadQueuedCalculations(CancellationToken token)
+    {
+        var queued = new List<WorkflowOfficeCalculationDraft>();
+        foreach (var id in PendingCalculationOrders(token))
+        {
+            token.ThrowIfCancellationRequested();
+            try
+            {
+                if (ReadQueuedCalculation(id) is { } draft) queued.Add(draft);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or WorkflowValidationException or OverflowException)
+            { /* The saved draft remains available for manual recovery. */ }
+        }
+        return queued.ToArray();
+    }
+
+    internal WorkflowOfficeCalculationDraft? ReadQueuedCalculation(Guid order, Guid? actor = null)
+    {
+        if (ReadCalculationDraft(order) is not { QueuedForOffice: true } draft || actor is { } owner && draft.Actor != owner)
+            return null;
+        _ = draft.PendingOfficeTotal();
+        return draft;
+    }
 
     private string CalculationDraftPath(Guid order) => Path.Combine(CalculationDraftRoot(order), "pending.json");
     internal bool HasCalculationDraft(Guid order) => File.Exists(CalculationDraftPath(order));
@@ -39,6 +77,7 @@ internal sealed partial class WorkflowOfficeStorageClient
         var path = Path.Combine(CalculationDraftRoot(order), ".lock");
         WorkflowOfficeProjectPaths.RequireOrdinaryCopyPath(path);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        WorkflowServiceFiles.TryHide(CalculationDraftsRoot);
         var lease = File.Open(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         WorkflowServiceFiles.TryHide(path);
         return lease;
@@ -62,11 +101,12 @@ internal sealed partial class WorkflowOfficeStorageClient
     }
 
     internal async Task<WorkflowOfficeCalculationDraft> PreserveCalculationDraftAsync(WorkflowOrder order, Guid actor,
-        WorkflowOfficeCalculationInput[] inputs, CancellationToken token)
+        WorkflowOfficeCalculationInput[] inputs, CancellationToken token, bool queuedForOffice = false)
     {
         if (HasCalculationDraft(order.Id))
             throw new WorkflowValidationException("Есть незавершённый расчёт. Нажмите «Рассчитать», чтобы сверить его с офисом.");
-        var pending = new WorkflowOfficeCalculationDraft(Guid.NewGuid(), order.Id, order.Version, actor, []);
+        var pending = new WorkflowOfficeCalculationDraft(Guid.NewGuid(), order.Id, order.Version, actor, [])
+        { OrderNumber = order.DisplayNumber, QueuedForOffice = queuedForOffice };
         var entries = new List<WorkflowOfficeCalculationDraftEntry>(inputs.Length);
         foreach (var input in inputs)
         {
@@ -83,8 +123,14 @@ internal sealed partial class WorkflowOfficeStorageClient
         }
         pending = pending with { Entries = entries.ToArray() };
         token.ThrowIfCancellationRequested();
-        WriteLocalState(CalculationDraftPath(order.Id), JsonSerializer.SerializeToUtf8Bytes(pending, JsonOptions));
+        SaveCalculationDraft(pending);
         return pending;
+    }
+
+    internal void SaveCalculationDraft(WorkflowOfficeCalculationDraft draft)
+    {
+        WriteLocalState(CalculationDraftPath(draft.OrderId), JsonSerializer.SerializeToUtf8Bytes(draft, JsonOptions));
+        lock (_pendingCalculationGate) _pendingCalculationOrders?.Add(draft.OrderId);
     }
 
     internal async Task<WorkflowOfficeCalculationInput[]> ReopenCalculationDraftAsync(WorkflowOfficeCalculationDraft pending,
@@ -116,7 +162,7 @@ internal sealed partial class WorkflowOfficeStorageClient
         return inputs.ToArray();
     }
 
-    private string DraftReportPath(WorkflowOfficeCalculationDraft pending, WorkflowOfficeCalculationDraftEntry entry, AcceptedReport captured)
+    internal string DraftReportPath(WorkflowOfficeCalculationDraft pending, WorkflowOfficeCalculationDraftEntry entry, AcceptedReport captured)
     {
         captured.Validate();
         var reports = Path.Combine(ArchivedCalculationDraftFolder(pending), entry.ProjectId.ToString("N"), ".workflow-reports");
@@ -131,10 +177,12 @@ internal sealed partial class WorkflowOfficeStorageClient
             WorkflowOfficeProjectPaths.RequireOrdinaryCopyPath(folder);
             Directory.CreateDirectory(folder);
             File.Move(CalculationDraftPath(pending.OrderId), Path.Combine(folder, "draft.json"));
+            lock (_pendingCalculationGate) _pendingCalculationOrders?.Remove(pending.OrderId);
             return;
         }
 
         File.Delete(CalculationDraftPath(pending.OrderId));
+        lock (_pendingCalculationGate) _pendingCalculationOrders?.Remove(pending.OrderId);
         foreach (var entry in pending.Entries)
         {
             if (entry.Captured is not { } captured) continue;

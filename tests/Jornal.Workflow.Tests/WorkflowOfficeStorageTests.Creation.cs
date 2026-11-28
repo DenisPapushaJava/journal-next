@@ -12,6 +12,8 @@ public sealed partial class WorkflowOfficeStorageTests
     [Theory]
     [InlineData("запись не началась")]
     [InlineData("обрыв до чтения")]
+    [InlineData("маршрут пропал до записи")]
+    [InlineData("офисная MDB недоступна при записи")]
     [InlineData("ответ потерян")]
     [InlineData("заявка в корзине")]
     [InlineData("заявка удалена окончательно")]
@@ -43,6 +45,10 @@ public sealed partial class WorkflowOfficeStorageTests
                 if (attempts.Count == 1 && idFromFailedRead is null)
                 {
                     Assert.Equal(office.Book.Version, request.Patch!.ExpectedVersion);
+                    if (failure == "маршрут пропал до записи")
+                        throw new HttpRequestException("Маршрут пропал.", new WorkflowOfficeConnectException("Проверьте адаптер", true));
+                    if (failure == "офисная MDB недоступна при записи")
+                        return new(HttpStatusCode.ServiceUnavailable);
                     if (failure is not ("запись не началась" or "база изменилась до записи"))
                         await office.SendAsync(request, cancellation);
                     throw new HttpRequestException("Ответ потерян.");
@@ -59,8 +65,9 @@ public sealed partial class WorkflowOfficeStorageTests
             first.NewManager = "Иванов";
             first.NewCustomer = "Заказчик при потере связи";
             await first.CreateOrderCommand.ExecuteAsync(null);
-            if (failure == "обрыв до чтения") Assert.Contains("сервер недоступен", first.Error);
-            else Assert.Contains("не подтвердил создание заявки", first.Error);
+            Assert.False(first.IsCreating);
+            Assert.Equal(failure is "обрыв до чтения" or "маршрут пропал до записи" ? "Ждёт связи" : "Ожидает подтверждения",
+                Assert.Single(first.QueuedOfficeOrderRows).Status);
         }
         finally { first.Detach(); }
 
@@ -73,7 +80,7 @@ public sealed partial class WorkflowOfficeStorageTests
             await office.SendAsync(new(1, WorkflowAccessOperation.Purge, "test.mdb", office.Id,
                 TrashTargets: [new(id, saved.Version + 1)], ActorId: actor), token);
         }
-        else if (failure is "база изменилась до записи" or "обрыв до чтения")
+        else if (failure is "база изменилась до записи" or "обрыв до чтения" or "маршрут пропал до записи")
         {
             var originalOrder = Assert.Single(office.Book.Orders);
             office.Book = office.Book with
@@ -102,34 +109,39 @@ public sealed partial class WorkflowOfficeStorageTests
         {
             await resumed.ReloadCommand.ExecuteAsync(null);
             Assert.Equal(idFromFailedRead is null ? 1 : 0, attempts.Count);
+            Assert.Equal("Заказчик при потере связи", Assert.Single(resumed.QueuedOfficeOrderRows).Customer);
+            await resumed.SynchronizeOfficeOrdersAsync(DateTimeOffset.UtcNow, token);
+            Assert.False(resumed.IsCreating);
+            Assert.Null(resumed.Error);
             if (failure is "заявка удалена окончательно" or "база изменилась до записи")
             {
-                Assert.True(resumed.IsCreating);
-                await resumed.CreateOrderCommand.ExecuteAsync(null);
-                Assert.Contains("база изменилась", resumed.Error);
+                var pending = Assert.Single(resumed.QueuedOfficeOrderRows);
+                Assert.Equal("Требуется проверка", pending.Status);
+                Assert.Contains("база изменилась", pending.Details);
                 Assert.Single(attempts);
                 Assert.DoesNotContain(office.Book.Orders, order => order.Id == id);
-                Assert.False(resumed.IsCreating);
-                resumed.NewOrderCommand.Execute(null);
-                Assert.True(resumed.IsCreating);
-                Assert.Empty(resumed.NewCustomer);
-                return;
-            }
-            if (failure is "запись не началась" or "обрыв до чтения")
-            {
+                await resumed.SynchronizeOfficeOrdersAsync(DateTimeOffset.UtcNow.AddMinutes(1), token);
+                Assert.Single(attempts);
+                Assert.True(resumed.CanStartNewOrder);
+                await resumed.ReviewQueuedOrderAsync(pending, token);
                 Assert.True(resumed.IsCreating);
                 Assert.Equal("Заказчик при потере связи", resumed.NewCustomer);
                 await resumed.CreateOrderCommand.ExecuteAsync(null);
-                Assert.Null(resumed.Error);
-                Assert.Equal(idFromFailedRead is null ? [id, id] : new[] { id }, attempts);
+                Assert.Empty(resumed.QueuedOfficeOrderRows);
+                Assert.Equal(2, attempts.Count);
+                Assert.NotEqual(id, attempts[1]);
+                return;
             }
+            Assert.Empty(resumed.QueuedOfficeOrderRows);
+            var confirmed = Assert.Single(office.Book.Orders, order => order.Id == id);
+            if (failure is "запись не началась" or "обрыв до чтения" or "маршрут пропал до записи" or "офисная MDB недоступна при записи")
+                Assert.Equal(idFromFailedRead is null ? [id, id] : new[] { id }, attempts);
             else
             {
-                Assert.Equal("010021", resumed.Blcb);
-                Assert.Equal(failure != "заявка в корзине", resumed.IsCurrentOrderActive);
+                Assert.Equal(id, Assert.Single(attempts));
+                Assert.Equal("010021", confirmed.Blcb);
+                Assert.Equal(failure == "заявка в корзине", confirmed.IsDeleted);
             }
-            Assert.False(resumed.IsCreating);
-            Assert.Contains(office.Book.Orders.Single(order => order.Id == id).DisplayNumber, resumed.OrderTitle);
             Assert.Equal(2, office.Book.Orders.Length);
         }
         finally { resumed.Detach(); }
@@ -331,6 +343,114 @@ public sealed partial class WorkflowOfficeStorageTests
             if (prepares.Count > 1) Assert.NotEqual(prepares[0].ProjectId, saved.Id);
         }
         finally { model.Detach(); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QueuedOrderResumesAfterOfficeAccessIsRestored(bool expiredKey)
+    {
+        using var fixture = new ProjectFixture();
+        await fixture.InitializeAsync();
+        var token = TestContext.Current.CancellationToken;
+        var original = await fixture.Store.ReadAsync(token);
+        var actor = Assert.Single(original.Orders).TechnologistId;
+        var office = new MemoryMdb { Book = original };
+        var permission = false;
+        var attempts = 0;
+        using var http = new HttpClient(new Handler(async (message, cancellation) =>
+        {
+            var request = (await message.Content!.ReadFromJsonAsync<WorkflowAccessRequest>(cancellation))!;
+            if (!permission && expiredKey && request is { Operation: WorkflowAccessOperation.ReadOrders, OrderIds.Length: 1 })
+                return new(HttpStatusCode.Unauthorized);
+            if (request.Operation == WorkflowAccessOperation.Apply)
+            {
+                attempts++;
+                if (!permission)
+                    return new(HttpStatusCode.Forbidden) { Content = JsonContent.Create(new { error = "remote-writes-disabled" }) };
+            }
+            return Reply(await office.SendAsync(request, cancellation));
+        }));
+        var profile = Directory.CreateDirectory(Path.Combine(fixture.DirectoryPath, "review")).FullName;
+        var first = RemoteCreationModel(office, actor, profile, http);
+        try
+        {
+            await first.ReloadCommand.ExecuteAsync(null);
+            first.NewOrderCommand.Execute(null);
+            first.NewManager = "Иванов";
+            first.NewCustomer = "Чья отправка ждёт";
+            await first.CreateOrderCommand.ExecuteAsync(null);
+            var pending = Assert.Single(first.QueuedOfficeOrderRows);
+            Assert.Equal("Ждёт доступа", pending.Status);
+            Assert.Contains(expiredKey ? "Ключ подключения" : "Удалённое сохранение", pending.Details);
+        }
+        finally { first.Detach(); }
+        permission = true;
+        var old = Assert.Single(office.Book.Orders);
+        office.Book = office.Book with { Version = office.Book.Version + 1,
+            Orders = [old with { Version = old.Version + 1, Blcb = "010283" }] };
+        var resumed = RemoteCreationModel(office, actor, profile, http);
+        try
+        {
+            await resumed.ReloadCommand.ExecuteAsync(null);
+            await resumed.SynchronizeOfficeOrdersAsync(DateTimeOffset.UtcNow.AddMinutes(1), token);
+            Assert.Empty(resumed.QueuedOfficeOrderRows);
+            Assert.Equal(expiredKey ? 1 : 2, attempts);
+            Assert.Equal("010283", office.Book.Orders.Single(order => order.Id == old.Id).Blcb);
+            Assert.Contains(office.Book.Orders, order => order.Id != old.Id);
+        }
+        finally { resumed.Detach(); }
+    }
+
+    [Fact]
+    public async Task LateSuccessfulResponseDoesNotReintroducePurgedOrder()
+    {
+        using var fixture = new ProjectFixture();
+        await fixture.InitializeAsync();
+        var token = TestContext.Current.CancellationToken;
+        var original = await fixture.Store.ReadAsync(token);
+        var actor = Assert.Single(original.Orders).TechnologistId;
+        var office = new MemoryMdb { Book = original };
+        var held = new TaskCompletionSource<Guid>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var offline = false;
+        using var http = new HttpClient(new Handler(async (message, cancellation) =>
+        {
+            var request = (await message.Content!.ReadFromJsonAsync<WorkflowAccessRequest>(cancellation))!;
+            if (offline) throw new HttpRequestException("Офис отключён.");
+            var response = await office.SendAsync(request, cancellation);
+            if (request.Operation == WorkflowAccessOperation.Apply)
+            {
+                held.SetResult(Assert.Single(request.Patch!.Orders).Id);
+                await release.Task.WaitAsync(cancellation);
+            }
+            return Reply(response);
+        }));
+        var profile = Directory.CreateDirectory(Path.Combine(fixture.DirectoryPath, "review")).FullName;
+        var model = RemoteCreationModel(office, actor, profile, http);
+        try
+        {
+            await model.ReloadCommand.ExecuteAsync(null);
+            model.NewOrderCommand.Execute(null);
+            model.NewManager = "Иванов";
+            model.NewCustomer = "Удалён до ответа";
+            var creation = model.CreateOrderCommand.ExecuteAsync(null);
+            var id = await held.Task.WaitAsync(TimeSpan.FromSeconds(10), token);
+            var saved = Assert.Single(office.Book.Orders, order => order.Id == id);
+            office.Book = WorkflowChanges.MoveOrderToTrash(office.Book, id, saved.Version, actor, DateTimeOffset.UtcNow);
+            await office.SendAsync(new(1, WorkflowAccessOperation.Purge, "test.mdb", office.Id,
+                TrashTargets: [new(id, saved.Version + 1)], ActorId: actor), token);
+            await model.ReloadCommand.ExecuteAsync(null);
+            Assert.DoesNotContain(model.Orders, row => row.Order.Id == id);
+            release.SetResult();
+            await creation;
+            Assert.DoesNotContain(office.Book.Orders, order => order.Id == id);
+            Assert.DoesNotContain(model.Orders, row => row.Order.Id == id);
+            offline = true;
+            await model.ReloadCommand.ExecuteAsync(null);
+            Assert.DoesNotContain(model.OfflineJournal!.Orders, row => row.Id == id);
+        }
+        finally { release.TrySetResult(); model.Detach(); }
     }
 
     private static WorkflowViewModel RemoteCreationModel(MemoryMdb office, Guid actor, string profile, HttpClient http)

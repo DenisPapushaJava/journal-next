@@ -52,6 +52,7 @@ public sealed class WorkflowWordMapProcess(string executable, string? assembly =
             throw new WorkflowValidationException("Файл не является картой Word DOC. Проверьте его вручную.");
         var folder = Path.Combine(Path.GetTempPath(), "JournalNext-word-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
+        WorkflowServiceFiles.TryHide(folder);
         try
         {
             await File.WriteAllBytesAsync(Path.Combine(folder, "input.doc"), source, token);

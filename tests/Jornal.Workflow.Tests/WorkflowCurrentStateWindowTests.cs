@@ -64,21 +64,27 @@ public sealed class WorkflowCurrentStateWindowTests
             var report = f.Model.SelectedDraft!.Saved!.Report!;
             var source = ProjectFixture.ReportPath(project);
             Click(open); await Until(() => window.OpenedReports.Count == 1); Assert.Equal(source, window.OpenedReports[0]);
+            var openArchive = window.FindControl<Button>("OpenCalculationArchive")!;
+            Assert.False(openArchive.IsEffectivelyVisible);
             f.Model.AddLegacySpecificationDraft(); Pump(); Assert.False(open.IsEffectivelyEnabled);
             f.Model.CancelDraftCommand.Execute(null); Pump(); Assert.True(open.IsEffectivelyEnabled);
             f.Model.ResultText = "Ручное письмо"; f.Model.IsResultExpanded = true; Pump(); Assert.Equal(1, f.Model.OrderTabIndex);
             f.Model.IsResultExpanded = false; Assert.Equal(0, f.Model.OrderTabIndex);
             f.Model.OrderTabIndex = 0; Pump();
             Save("ready");
-            File.Delete(report.ArchivePath);
             await ProjectFixture.WriteAsync(project, 20000);
             Click(open); await Until(() => window.OpenedReports.Count == 2);
             Assert.Equal(source, window.OpenedReports[1]);
+            Assert.Contains("Рабочий файл отличается", f.Model.SpecificationSourceWarning);
+            Assert.True(openArchive.IsEffectivelyVisible);
+            Click(openArchive); await Until(() => window.OpenedReports.Count == 3);
+            Assert.Equal(report.ArchivePath, window.OpenedReports[2]);
             Assert.Null(f.Model.Error);
 
+            File.Delete(report.ArchivePath);
             File.Delete(source);
             Click(open); await Until(() => f.Model.Error?.Contains("не найдена", StringComparison.Ordinal) == true);
-            Assert.Equal(2, window.OpenedReports.Count);
+            Assert.Equal(3, window.OpenedReports.Count);
             Save("missing"); Assert.Empty(log.Errors);
         }
         finally { WorkflowTestWindows.Close(window); }
@@ -106,6 +112,7 @@ public sealed class WorkflowCurrentStateWindowTests
         Assert.True(archive.Length >= 260);
 
         var preview = await WorkflowReportFiles.PrepareArchiveForOpeningAsync(report, true, f.DirectoryPath, token);
+        if (OperatingSystem.IsWindows()) Assert.True(File.GetAttributes(Path.GetDirectoryName(preview)!).HasFlag(FileAttributes.Hidden));
         Assert.True(preview.Length < 260);
         Assert.EndsWith(".pdf", preview);
         Assert.Equal(bytes, await File.ReadAllBytesAsync(preview, token));

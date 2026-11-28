@@ -37,8 +37,23 @@ public partial class WorkflowViewModel
         WorkflowReportReviewViewModel? review = null;
         await RunAsync(async () =>
         {
-            if (remote is not null) await remote.RequireCalculationSupportAsync(token);
-            var latest = await source.ReadOrderAsync(order.Id, token); var latestOrder = latest.Orders.Single(o => o.Id == order.Id);
+            var useDownloaded = calculation && remote is not null && ShowOfflineJournal;
+            var latest = _workspace;
+            if (!useDownloaded)
+            {
+                try
+                {
+                    if (remote is not null)
+                        await remote.RequireCalculationSupportAsync(token, identifyConnectionLoss: calculation);
+                    latest = await source.ReadOrderAsync(order.Id, token);
+                }
+                catch (WorkflowOfficeSyncUnavailableException) when (calculation && remote is not null)
+                {
+                    useDownloaded = true;
+                    await ShowOfficeOutageAsync(remote, token);
+                }
+            }
+            var latestOrder = latest.Orders.SingleOrDefault(o => o.Id == order.Id) ?? throw new WorkflowConflictException();
             if (!calculation && previous is not null && latestOrder.Version != previous.PreviewOrderVersion)
             {
                 // Reopen the original draft for inspection; never rebase it silently.
@@ -50,10 +65,10 @@ public partial class WorkflowViewModel
             if (calculation)
             {
                 foreach (var local in localDrafts.Values.Where(d => CalculationProjectIds(latestOrder).Contains(d.Id)))
-                    await PreservePendingCalculationAsync(order, local.Id, actorForHistory, local, local.SourcePath, remote, token);
+                    await PreservePendingCalculationAsync(order, local.Id, actorForHistory, local, local.SourcePath, remote, token, useDownloaded);
                 if (previous is not null)
                     foreach (var candidate in previous.Candidates.Where(c => !c.WasAccepted && c.HasUnpreservedEdits && c.Draft is not null))
-                        await PreservePendingCalculationAsync(order, candidate.Project.Id, actorForHistory, candidate.Draft!, candidate.Snapshot?.SourcePath, remote, token);
+                        await PreservePendingCalculationAsync(order, candidate.Project.Id, actorForHistory, candidate.Draft!, candidate.Snapshot?.SourcePath, remote, token, useDownloaded);
             }
             if (calculation && _reportReview is { } other && other.OrderId != order.Id)
             {
@@ -69,7 +84,8 @@ public partial class WorkflowViewModel
             review = new(async (candidates, cancellation) =>
                 {
                     if (calculation) CanRetryCalculation = false;
-                    var error = await ApplyReportReviewAsync(order, actor, candidates, source, cancellation, calculation);
+                    var (error, queued) = await ApplyReportReviewAsync(order, actor, candidates, source, cancellation, calculation, useDownloaded);
+                    review!.QueuedForOffice = queued;
                     review!.NeedsOfficeComparison = error is not null && _officeReportConflict is { } conflict && conflict.Conflict.OrderId == order.Id;
                     if (error is not null && calculation && CanRetryCalculation)
                     {
@@ -81,7 +97,7 @@ public partial class WorkflowViewModel
                         order = CurrentOrder!; review!.PreviewOrderVersion = order.Version;
                         foreach (var candidate in candidates) candidate.MarkAccepted();
                         if (review.Candidates.All(candidate => !candidate.NeedsAttention)) _reportReview = null;
-                        _reportImportOrderId = order.Id; _acceptedReports = candidates.Count;
+                        if (!queued) { _reportImportOrderId = order.Id; _acceptedReports = candidates.Count; }
                         NotifyCompleteness();
                     }
                     return error;
@@ -90,7 +106,7 @@ public partial class WorkflowViewModel
                 {
                     var renewed = await CreateReportReviewAsync(cancellation, prior, calculation);
                     return (renewed, renewed is null ? Error : null);
-                }, () => _workspace) { MaterialSuggestions = MaterialSuggestions, PreviewOrderVersion = order.Version, CurrentOrderVersion = () => CurrentOrder?.Version, IsContextCurrent = () => ReferenceEquals(source, _store) && CurrentOrder?.Id == requestedOrderId && !_cuttingTaskDetached };
+                }, () => _workspace) { OfflineBatch = useDownloaded, MaterialSuggestions = MaterialSuggestions, PreviewOrderVersion = order.Version, CurrentOrderVersion = () => CurrentOrder?.Version, IsContextCurrent = () => ReferenceEquals(source, _store) && CurrentOrder?.Id == requestedOrderId && !_cuttingTaskDetached };
             var scopes = await Task.Run(async () =>
             {
             var result = new List<(CuttingProject Project, ReportFileSnapshot[] Files, string State, bool RetryRequired)>();
@@ -107,13 +123,15 @@ public partial class WorkflowViewModel
                     string[] unavailable = [];
                     try
                     {
-                        if (remote is not null && project.NativePath is not null)
+                        if (useDownloaded && remote is not null)
+                            folder = remote.DownloadedCalculationFolder(project.Id);
+                        else if (remote is not null && project.NativePath is not null)
                             (folder, skipped, unavailable) = await remote.OpenCalculationFolderAsync(order.Id, project, OfficeCopiesRoot, token);
                         else folder = remote is null ? WorkflowCalculationSnapshots.ProjectFolder(order, project.Id) : null;
                     }
                     catch (Exception ex) when (ex is WorkflowValidationException or IOException or UnauthorizedAccessException or HttpRequestException)
                     { result.Add((project, [], ex is WorkflowValidationException ? ex.Message : "Не удалось обновить локальную папку проекта.", remote is not null)); continue; }
-                    if (folder is null) { result.Add((project, [], "Папка проекта не задана", false)); continue; }
+                    if (folder is null) { result.Add((project, [], useDownloaded ? "Папка проекта ещё не скачана" : "Папка проекта не задана", useDownloaded)); continue; }
                     if (calculation && existing is null && !localDrafts.ContainsKey(project.Id) && previous?.Candidates.SingleOrDefault(c => c.Project.Id == project.Id)?.Draft is null)
                     {
                         var history = await WorkflowCalculationHistory.ReadAsync(folder, order.Id, project.Id, token);
@@ -194,7 +212,7 @@ public partial class WorkflowViewModel
     }
 
     private async Task PreservePendingCalculationAsync(WorkflowOrder order, Guid projectId, Guid actor,
-        SpecificationDraft draft, string? sourcePath, WorkflowOfficeStorageClient? remote, CancellationToken token)
+        SpecificationDraft draft, string? sourcePath, WorkflowOfficeStorageClient? remote, CancellationToken token, bool useDownloaded = false)
     {
         if (remote is null)
         {
@@ -202,7 +220,9 @@ public partial class WorkflowViewModel
             return;
         }
         if (order.ActiveProjects.SingleOrDefault(project => project.Id == projectId) is not { NativePath: not null } project) return;
-        var (folder, _, _) = await remote.OpenCalculationFolderAsync(order.Id, project, OfficeCopiesRoot, token);
+        var folder = useDownloaded ? remote.DownloadedCalculationFolder(project.Id) :
+            (await remote.OpenCalculationFolderAsync(order.Id, project, OfficeCopiesRoot, token)).Folder;
+        if (folder is null) return;
         await Task.Run(() => WorkflowCalculationSnapshots.PreserveAsync(folder, order.Id, projectId, actor, null, draft,
             token, order.Version, localDraftOnly: true), token);
     }
@@ -225,10 +245,10 @@ public partial class WorkflowViewModel
         RefreshProjects(selected); NotifyOrder();
     }
 
-    private async Task<string?> ApplyReportReviewAsync(WorkflowOrder previewOrder, Guid actor,
-        IReadOnlyList<WorkflowReportCandidate> candidates, IWorkflowWorkspaceStore source, CancellationToken token, bool calculation = false)
+    private async Task<(string? Error, bool Queued)> ApplyReportReviewAsync(WorkflowOrder previewOrder, Guid actor,
+        IReadOnlyList<WorkflowReportCandidate> candidates, IWorkflowWorkspaceStore source, CancellationToken token, bool calculation, bool offline)
     {
-        var saved = false; var applied = false;
+        var saved = false; var applied = false; var queued = false;
         await RunAsync(async () =>
         {
             if (!ReferenceEquals(source, _store) || CurrentOrder?.Id != previewOrder.Id || _cuttingTaskDetached) throw new WorkflowConflictException();
@@ -249,7 +269,9 @@ public partial class WorkflowViewModel
             {
                 var inputs = changes.Select(change => new WorkflowOfficeCalculationInput(change.Draft.Id, change.Number, change.Date,
                     change.Parameters, change.Rate, change.Draft.ImportProfile, change.Snapshot, change.Baseline)).ToArray();
-                savedWorkspace = await SaveOfficeCalculationAsync(remote, mdb, previewOrder, actor, inputs, token);
+                var result = await SaveOfficeCalculationAsync(remote, mdb, previewOrder, actor, inputs, token, offline);
+                if (result is null) { queued = true; return; }
+                savedWorkspace = result;
             }
             else
             {
@@ -289,7 +311,7 @@ public partial class WorkflowViewModel
             var bending = changes.Where(entry => entry.Parameters.HasBending && entry.Draft.Saved?.Parameters.HasBending != true).Select(entry => entry.Draft.Id).ToArray();
             if (remote is null && bending.Length > 0) await EnsureSavedBendingFoldersAsync(CurrentOrder!, bending, token);
         });
-        if (!saved && Error is null) token.ThrowIfCancellationRequested();
-        return saved && applied ? null : Error ?? "Отчёты не сохранены; подбор остался в окне.";
+        if (!saved && !queued && Error is null) token.ThrowIfCancellationRequested();
+        return (queued || saved && applied ? null : Error ?? "Отчёты не сохранены; подбор остался в окне.", queued);
     }
 }

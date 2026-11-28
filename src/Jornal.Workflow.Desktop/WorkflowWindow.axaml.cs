@@ -15,6 +15,7 @@ public partial class WorkflowWindow : Window
     private readonly WorkflowRestartStore _restart;
     private readonly CancellationTokenSource _lifetime = new();
     private bool _loadingTheme = true;
+    private bool _loadingStartupJournal;
     private WorkflowViewModel? Model => DataContext as WorkflowViewModel;
     public WorkflowWindow() : this(new WorkflowPreferencesStore(WorkflowIdentity.PreferencesPath)) { }
     public WorkflowWindow(WorkflowPreferencesStore preferences, WorkflowPreferences? initialPreferences = null, TimeProvider? journalRefreshClock = null,
@@ -41,7 +42,9 @@ public partial class WorkflowWindow : Window
         model.UseLocalPreferencesStore(_preferences);
         model.Updates.ConfigureRestart(() => model.CanUse && !model.IsCopyingCuttingTask && !model.HasPendingEdits && !model.HasUnfinishedTaskText && OwnedWindows.All(w => w is WorkflowSettingsWindow { CanRestart: true } or WorkflowUpdatesWindow { CanClose: true }),
             () => _restart.Save(model.CreateRestartDraft()), Close);
-        await model.ReloadCommand.ExecuteAsync(null);
+        _loadingStartupJournal = true;
+        try { await model.ReloadCommand.ExecuteAsync(null); }
+        finally { _loadingStartupJournal = false; }
         if (!IsVisible || !ReferenceEquals(Model, model) || _lifetime.IsCancellationRequested) return;
         if (model.Error is null)
         {
@@ -67,10 +70,12 @@ public partial class WorkflowWindow : Window
                 _closeAfterOfficeCheck = true;
                 check.TrySetResult(false);
             }
-            else if (_closeDialogPending || OwnedWindows.Count > 0 || !model.CanCloseWorkspace) e.Cancel = true;
+            else if (_closeDialogPending || OwnedWindows.Count > 0) e.Cancel = true;
+            else if (!model.CanCloseWorkspace)
+                e.Cancel = !(_loadingStartupJournal && model.CanCancelInitialOfficeRead);
             else if (model.PrepareClose(application: true) is { } request)
             {
-                var checkOfficeFiles = model.HasOfficeWorkingCopies && e.CloseReason != WindowCloseReason.OSShutdown;
+                var checkOfficeFiles = model.HasOfficeWorkingCopies && !model.ShowOfflineJournal && e.CloseReason != WindowCloseReason.OSShutdown;
                 if (request.NeedsConfirmation || checkOfficeFiles)
                 { e.Cancel = true; _ = RequestCloseAsync(application: true, checkOfficeFiles); }
             }
@@ -80,6 +85,7 @@ public partial class WorkflowWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         Activated -= OnOfficeWorkspaceActivated;
+        Model?.ReloadCommand.Cancel();
         StopOrderContextMenu(); StopResultFeedback(); StopMapSigningStatus(); StopShopStatus(); StopJournalRefresh(); _pressedPointers.Clear(); _lifetime.Cancel(); Model?.Updates.ClearRestart(); Model?.Updates.CheckCommand.Cancel(); Model?.Updates.DownloadCommand.Cancel();
         Model?.Detach(); _lifetime.Dispose(); base.OnClosed(e);
     }
@@ -92,7 +98,10 @@ public partial class WorkflowWindow : Window
         if (e.Handled || Model is not { CanUse: true } model) return;
         if (e.Key == Key.F5) { model.ReloadCommand.Execute(null); e.Handled = true; }
         else if (e.Key == Key.F && e.KeyModifiers == KeyModifiers.Control && OwnedWindows.Count == 0)
-        { WorkflowSearchInput.Focus(); WorkflowSearchInput.SelectAll(); e.Handled = true; }
+        {
+            var search = model.ShowOfflineJournal ? OfflineJournalSearch : WorkflowSearchInput;
+            search.Focus(); search.SelectAll(); e.Handled = true;
+        }
     }
     private void OnClearSearch(object? sender, RoutedEventArgs e)
     {
@@ -150,17 +159,29 @@ public partial class WorkflowWindow : Window
         WorkflowSpecificationComment.CaretIndex = WorkflowSpecificationComment.Text?.Length ?? 0;
     }
     private void OnFocusNewOrder(object? sender, RoutedEventArgs e) => Dispatcher.UIThread.Post(() =>
-    { if (IsVisible && Model is { IsCreating: true, CanUse: true }) NewManagerInput.Focus(); });
+    {
+        if (IsVisible && Model is { IsCreating: true, CanUse: true } model)
+            NewManagerInput.Focus();
+    });
     private void OnFocusProject(object? sender, RoutedEventArgs e) => Dispatcher.UIThread.Post(() =>
     { if (IsVisible && Model is { IsPlanning: true, CanUse: true }) WorkflowProjectThickness.Focus(); });
     private async void OnCreateOrder(object? sender, RoutedEventArgs e)
     {
         if (Model is not { CanCreateOrder: true } model) return;
         await model.CreateOrderCommand.ExecuteAsync(null);
-        if (IsVisible && model.IsOrderOpen && model.Error is null)
+        if (IsVisible && !model.ShowOfflineJournal && !model.IsCreating && !model.HasQueuedOfficeOrders && model.IsOrderOpen && model.Error is null)
         { WorkflowOrderTabs.SelectedIndex = 0; Dispatcher.UIThread.Post(() => { if (IsVisible) PrepareWorkflowProject.Focus(); }); }
     }
     private async void OnSettings(object? sender, RoutedEventArgs e) => await ShowSettingsAsync(0);
+    private async void OnReviewQueuedOrder(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: WorkflowQueuedOrderRow row } && Model is { } model)
+            await model.ReviewQueuedOrderAsync(row, _lifetime.Token);
+    }
+    private async void OnOpenLastOfficeCreation(object? sender, RoutedEventArgs e)
+    {
+        if (Model is { } model) await model.OpenLastOfficeCreationAsync(_lifetime.Token);
+    }
     private async void OnProjectStorageSettings(object? sender, RoutedEventArgs e) => await ShowSettingsAsync(1);
     private async Task ShowSettingsAsync(int section)
     {
@@ -331,6 +352,10 @@ public partial class WorkflowWindow : Window
     {
         if (Model is not { CanUse: true, SpecificationSourcePath: { } path } model) return;
         var token = _lifetime.Token;
+        var draft = model.SelectedDraft;
+        var archive = model.IsRemoteStorage ? null : draft?.Saved?.Report;
+        bool Current() => !token.IsCancellationRequested && IsVisible && ReferenceEquals(Model, model) &&
+            ReferenceEquals(draft, model.SelectedDraft) && model.SpecificationSourcePath == path;
         model.Error = null;
         try
         {
@@ -339,14 +364,30 @@ public partial class WorkflowWindow : Window
             if (local is null) return;
             var attributes = await Task.Run(() => File.GetAttributes(local), token);
             if (attributes.HasFlag(FileAttributes.Directory)) throw new FileNotFoundException();
-            if (!token.IsCancellationRequested && IsVisible && model.SpecificationSourcePath == path &&
-                !await LaunchSpecificationAsync(local))
+            if (archive is not null)
+            {
+                string? warning;
+                try
+                {
+                    var same = await Task.Run(async () => new FileInfo(local).Length == archive.Length &&
+                        (await WorkflowOfficeProjectPaths.FingerprintAsync(local, token)).Hash.Equals(archive.Sha256, StringComparison.OrdinalIgnoreCase), token);
+                    warning = same ? null : "Рабочий файл отличается от спецификации, по которой сохранён расчёт.";
+                }
+                catch (Exception ex) when (ex is not FileNotFoundException and not DirectoryNotFoundException &&
+                    ex is IOException or UnauthorizedAccessException or WorkflowValidationException)
+                { warning = "Не удалось сверить рабочий файл с версией расчёта."; }
+                if (!Current()) return;
+                model.SpecificationSourceWarning = warning;
+            }
+            if (Current() && !await LaunchSpecificationAsync(local))
                 model.Error = "Не удалось открыть рабочую спецификацию. Проверьте приложение для PDF или HTML.";
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            if (!IsVisible || token.IsCancellationRequested || model.SpecificationSourcePath != path) return;
+            if (!Current()) return;
+            if (archive is not null && ex is FileNotFoundException or DirectoryNotFoundException)
+                model.SpecificationSourceWarning = "Рабочая спецификация не найдена. Можно открыть сохранённую версию расчёта.";
             model.Error = ex switch
             {
                 FileNotFoundException or DirectoryNotFoundException => "Рабочая спецификация не найдена. Проверьте файл в папке проекта.",
@@ -354,6 +395,23 @@ public partial class WorkflowWindow : Window
                 _ => "Не удалось открыть рабочую спецификацию. Проверьте приложение для PDF или HTML."
             };
         }
+    }
+
+    private async void OnOpenCalculationArchive(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { CanUse: true, CalculationArchiveToOpen: { } archive } model) return;
+        var token = _lifetime.Token;
+        bool Current() => IsVisible && !token.IsCancellationRequested && ReferenceEquals(Model, model) && model.CalculationArchiveToOpen == archive;
+        model.Error = null;
+        try
+        {
+            var path = await Task.Run(() => WorkflowReportFiles.PrepareArchiveForOpeningAsync(archive, token), token);
+            if (Current() && !await LaunchSpecificationAsync(path))
+                model.Error = "Не удалось открыть сохранённую спецификацию. Проверьте приложение для HTML/PDF.";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or WorkflowValidationException)
+        { if (Current()) model.Error = "Сохранённая спецификация недоступна или повреждена."; }
     }
     protected virtual Task<bool> LaunchSpecificationAsync(string path) => Launcher.LaunchFileInfoAsync(new FileInfo(path));
 }

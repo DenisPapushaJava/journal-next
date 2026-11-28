@@ -1,0 +1,645 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Сервер заявок",
+    "version": "1.0.0",
+    "description": "Основные маршруты внутреннего HTTP API клиента «Заявки» для диагностики, подключения к MDB, чтения и записи заявок и работы со спецификациями и файлами проектов. Укажите адрес сервера из панели «Сервер заявок»."
+  },
+  "servers": [
+    { "url": "http://127.0.0.1:5197", "description": "Локальный адрес по умолчанию. Для удалённой работы подставьте приватный адрес и порт из панели." }
+  ],
+  "tags": [
+    { "name": "Диагностика" },
+    { "name": "Хранилище" },
+    { "name": "Проекты" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "tags": ["Диагностика"],
+        "summary": "Проверить доступность HTTP-сервера",
+        "description": "Готовность MDB и рабочей папки проверяет GET /api/v1/status. Версия сборки возвращается с v24.",
+        "responses": {
+          "200": {
+            "description": "HTTP-сервер отвечает.",
+            "headers": { "Cache-Control": { "description": "Начиная с v24.", "schema": { "type": "string", "enum": ["no-store"] } } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Health" },
+                "examples": {
+                  "versioned": { "value": { "status": "ok", "version": "v24" } },
+                  "legacy": { "value": { "status": "ok" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/status": {
+      "get": {
+        "operationId": "getStatus",
+        "tags": ["Диагностика"],
+        "summary": "Проверить доступ к MDB и рабочей папке",
+        "security": [{ "AdminKey": [] }],
+        "responses": {
+          "200": {
+            "description": "MDB и рабочая папка доступны.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StorageStatus" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "503": {
+            "description": "MDB или рабочая папка недоступна. Причину возвращают поля database и projects.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StorageStatus" },
+                "example": { "ready": false, "database": "file-unavailable", "projects": "available", "revision": null, "schemaVersion": null }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/diagnostics": {
+      "get": {
+        "operationId": "getDiagnostics",
+        "tags": ["Диагностика"],
+        "summary": "Получить версию сервера и последние ошибки",
+        "security": [{ "AdminKey": [] }],
+        "responses": {
+          "200": {
+            "description": "Сведения о сборке и до 64 записей журнала текущего процесса.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Diagnostics" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/orders": {
+      "get": {
+        "operationId": "getRecentOrders",
+        "tags": ["Хранилище"],
+        "summary": "Прочитать последние активные заявки",
+        "security": [{ "AdminKey": [] }],
+        "responses": {
+          "200": {
+            "description": "До 20 заявок с краткими реквизитами.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecentOrders" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": { "description": "Снимок изменился во время чтения. Запрос можно повторить.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/api/v1/storage-connect": {
+      "post": {
+        "operationId": "connectStorage",
+        "tags": ["Хранилище"],
+        "summary": "Получить токен для работы с конкретной MDB",
+        "security": [{ "AdminKey": [] }],
+        "responses": {
+          "200": {
+            "description": "Токен хранилища на 30 дней и признак разрешённой записи.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StorageConnection" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": { "$ref": "#/components/responses/DatabaseConflict" },
+          "422": { "description": "Не поддерживается схема MDB или недоступна рабочая папка.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/api/v1/storage/capabilities": {
+      "get": {
+        "operationId": "getStorageCapabilities",
+        "tags": ["Хранилище"],
+        "summary": "Получить поддерживаемые сервером операции",
+        "security": [{ "StorageToken": [] }],
+        "responses": {
+          "200": {
+            "description": "Признаки поддержки операций. Разрешение на запись возвращается при подключении.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Capabilities" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/storage/database": {
+      "post": {
+        "operationId": "executeStorageOperation",
+        "tags": ["Хранилище"],
+        "summary": "Прочитать заявки или выполнить условную запись",
+        "description": "Тело выбирает операцию протокола. При записи передаются ожидаемые версии. Для операции Apply (5) передайте patch. Окончательное удаление доступно из офисных «Заявок». Поля операций передачи в цех и вложенные доменные модели здесь описаны частично.",
+        "security": [{ "StorageToken": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DatabaseRequest" },
+              "example": {
+                "protocol": 1,
+                "operation": 2,
+                "path": "",
+                "databaseId": "10000000-0000-4000-8000-000000000001",
+                "query": { "limit": 30 }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Результат операции и версия снимка MDB.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DatabaseResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/WritesDisabled" },
+          "409": { "$ref": "#/components/responses/DatabaseConflict" },
+          "422": { "$ref": "#/components/responses/Rejected" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/api/v1/storage/orders/{orderId}/projects/prepare": {
+      "parameters": [{ "$ref": "#/components/parameters/OrderId" }],
+      "post": {
+        "operationId": "prepareProject",
+        "tags": ["Проекты"],
+        "summary": "Подготовить рабочую папку и заготовку проекта",
+        "description": "Сохраняйте тот же projectId при повторе подготовки. Запись проекта в MDB выполняется отдельной операцией Apply.",
+        "security": [{ "StorageToken": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectPreparation" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Подготовленный проект с путём к заготовке на сервере.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PreparedProject" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/WritesDisabled" },
+          "404": { "$ref": "#/components/responses/FileNotFound" },
+          "409": { "$ref": "#/components/responses/DatabaseConflict" },
+          "422": { "$ref": "#/components/responses/Rejected" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/api/v1/storage/orders/{orderId}/projects/{projectId}/calculation": {
+      "parameters": [{ "$ref": "#/components/parameters/OrderId" }, { "$ref": "#/components/parameters/ProjectId" }],
+      "post": {
+        "operationId": "prepareCalculation",
+        "tags": ["Проекты"],
+        "summary": "Подготовить спецификацию и архив для записи расчёта",
+        "description": "При передаче report рабочий файл должен совпадать по SHA-256. Сам расчёт клиент сохраняет отдельной операцией Apply с officeReportVersions.",
+        "security": [{ "StorageToken": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CalculationPreparation" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Рабочий путь и сведения об архивном снимке.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PreparedCalculation" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/WritesDisabled" },
+          "404": { "$ref": "#/components/responses/FileNotFound" },
+          "409": { "$ref": "#/components/responses/DatabaseConflict" },
+          "422": { "$ref": "#/components/responses/Rejected" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/api/v1/storage/orders/{orderId}/projects/{projectId}/files": {
+      "parameters": [{ "$ref": "#/components/parameters/OrderId" }, { "$ref": "#/components/parameters/ProjectId" }],
+      "get": {
+        "operationId": "listProjectFiles",
+        "tags": ["Проекты"],
+        "summary": "Получить список файлов и их SHA-256",
+        "security": [{ "StorageToken": [] }],
+        "parameters": [
+          { "name": "reportProfile", "in": "query", "schema": { "type": "string" }, "description": "Если передан, выбрать только спецификации данного профиля." },
+          { "name": "reportName", "in": "query", "schema": { "type": "string" }, "description": "При переданном reportProfile ограничить проверку одним именем файла." }
+        ],
+        "responses": {
+          "200": {
+            "description": "Папки, файлы и, при отборе спецификаций, их недоступные имена.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FileList" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/FileNotFound" },
+          "409": { "$ref": "#/components/responses/OperationConflict" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/api/v1/storage/orders/{orderId}/projects/{projectId}/file": {
+      "parameters": [
+        { "$ref": "#/components/parameters/OrderId" },
+        { "$ref": "#/components/parameters/ProjectId" },
+        { "name": "path", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Относительный путь внутри проекта. Используйте путь из списка файлов." }
+      ],
+      "get": {
+        "operationId": "downloadProjectFile",
+        "tags": ["Проекты"],
+        "summary": "Скачать файл проекта",
+        "security": [{ "StorageToken": [] }],
+        "responses": {
+          "200": {
+            "description": "Байты файла.",
+            "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/FileNotFound" },
+          "409": { "$ref": "#/components/responses/OperationConflict" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      },
+      "put": {
+        "operationId": "uploadProjectFile",
+        "tags": ["Проекты"],
+        "summary": "Загрузить новый файл или условно заменить существующий",
+        "description": "Передайте ровно один из If-Match и If-None-Match. Для замены используйте SHA-256 из списка файлов в двойных кавычках. Для нового файла передайте If-None-Match: *. После 409 или 412 сверяйте актуальный файл перед повторной записью.",
+        "security": [{ "StorageToken": [] }],
+        "parameters": [
+          { "name": "If-Match", "in": "header", "schema": { "type": "string", "pattern": "^\"[0-9a-fA-F]{64}\"$" }, "description": "SHA-256 ожидаемой офисной версии в двойных кавычках." },
+          { "name": "If-None-Match", "in": "header", "schema": { "type": "string", "enum": ["*"] }, "description": "Разрешает создание только при отсутствии файла." },
+          { "name": "Content-Length", "in": "header", "required": true, "schema": { "type": "integer", "format": "int64", "minimum": 0, "maximum": 1073741824 }, "description": "Размер тела запроса, до 1 ГиБ." },
+          { "name": "X-Journal-Working-File", "in": "header", "schema": { "type": "string", "enum": ["1"] }, "description": "Пометка обычной отправки рабочих файлов. Связанную с расчётом спецификацию сервер направляет в сценарий «Рассчитать»." }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Подтверждённые путь и SHA-256 файла.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FileReceipt" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/WritesDisabled" },
+          "404": { "$ref": "#/components/responses/FileNotFound" },
+          "409": { "$ref": "#/components/responses/OperationConflict" },
+          "411": { "description": "Требуется Content-Length.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "412": {
+            "description": "Файл уже существует при создании или его версия отличается при замене.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" }, "example": { "error": "file-version-conflict" } } }
+          },
+          "413": { "description": "Превышен допустимый размер файла.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "428": { "description": "Требуется корректный If-Match или If-None-Match.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "AdminKey": { "type": "http", "scheme": "bearer", "description": "Ключ администратора из панели «Сервер заявок»." },
+      "StorageToken": { "type": "http", "scheme": "bearer", "description": "Токен, выданный POST /api/v1/storage-connect для конкретной MDB." }
+    },
+    "parameters": {
+      "OrderId": { "name": "orderId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/Id" }, "description": "ID заявки." },
+      "ProjectId": { "name": "projectId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/Id" }, "description": "ID рабочего проекта." }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Ключ или токен отсутствует, истёк или отклонён.",
+        "headers": { "WWW-Authenticate": { "schema": { "type": "string", "example": "Bearer" } } }
+      },
+      "BadRequest": { "description": "Неверные параметры или тело запроса. При ошибке привязки параметров ответ может быть без тела.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "WritesDisabled": { "description": "Удалённое сохранение выключено на сервере.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Rejected": { "description": "Проверка данных запроса не пройдена.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Unavailable": { "description": "MDB или рабочие файлы временно недоступны.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "FileNotFound": { "description": "Проект, его папка или запрошенный файл недоступны.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "DatabaseConflict": {
+        "description": "Версия изменилась, запрос относится к другой MDB или исход записи неизвестен. При неизвестном исходе сначала прочитайте запись по её ID.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "oneOf": [
+                { "$ref": "#/components/schemas/Error" },
+                { "type": "object", "required": ["conflict"], "properties": { "conflict": { "type": "boolean", "enum": [true] } } },
+                { "type": "object", "required": ["outcomeUnknown"], "properties": { "outcomeUnknown": { "type": "boolean", "enum": [true] } } }
+              ]
+            },
+            "examples": {
+              "changed": { "value": { "conflict": true } },
+              "unconfirmed": { "value": { "outcomeUnknown": true } }
+            }
+          }
+        }
+      },
+      "OperationConflict": {
+        "description": "Состояние проекта изменилось, операция отклонена или запись не подтверждена. Поле error содержит причину.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      }
+    },
+    "schemas": {
+      "Id": { "type": "string", "format": "uuid" },
+      "Version": { "type": "integer", "format": "int64", "minimum": 0 },
+      "Hash": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string" },
+          "backup": { "type": "string", "description": "Имя резервной копии, если сервер вернул его после замены файла." },
+          "projectPreparationRejected": { "type": "boolean", "description": "Подготовка проекта была явно отклонена." }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": { "type": "string", "enum": ["ok"] },
+          "version": { "type": "string", "nullable": true, "description": "Версия сборки сервера. В прежних сборках поле отсутствует." }
+        }
+      },
+      "StorageStatus": {
+        "type": "object",
+        "required": ["ready", "database", "projects", "revision", "schemaVersion"],
+        "properties": {
+          "ready": { "type": "boolean" },
+          "database": { "type": "string", "enum": ["ready", "not-configured", "file-unavailable", "windows-required", "changed-during-read", "read-failed"] },
+          "projects": { "type": "string", "enum": ["available", "not-configured", "folder-unavailable"] },
+          "revision": { "type": "integer", "format": "int64", "nullable": true },
+          "schemaVersion": { "type": "integer", "nullable": true }
+        }
+      },
+      "Diagnostics": {
+        "type": "object",
+        "required": ["startedAt", "version", "buildId", "events"],
+        "properties": {
+          "startedAt": { "type": "string", "format": "date-time" },
+          "version": { "type": "string", "nullable": true },
+          "buildId": { "type": "string", "nullable": true },
+          "events": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "properties": {
+                "at": { "type": "string", "format": "date-time" },
+                "code": { "type": "string" },
+                "operation": { "type": "string" },
+                "exception": { "type": "string" },
+                "errorCode": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "RecentOrders": {
+        "type": "object",
+        "required": ["revision", "totalCount", "hasMore", "orders"],
+        "properties": {
+          "revision": { "$ref": "#/components/schemas/Version" },
+          "totalCount": { "type": "integer", "minimum": 0 },
+          "hasMore": { "type": "boolean" },
+          "orders": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "required": ["id", "number", "customer", "version", "updatedAt"],
+              "properties": {
+                "id": { "$ref": "#/components/schemas/Id" },
+                "number": { "type": "string" },
+                "customer": { "type": "string", "nullable": true },
+                "version": { "$ref": "#/components/schemas/Version" },
+                "updatedAt": { "type": "string", "format": "date-time" }
+              }
+            }
+          }
+        }
+      },
+      "StorageConnection": {
+        "type": "object",
+        "required": ["databaseId", "token", "canWrite"],
+        "properties": {
+          "databaseId": { "$ref": "#/components/schemas/Id" },
+          "token": { "type": "string", "description": "Значение Bearer для маршрутов хранилища." },
+          "canWrite": { "type": "boolean" }
+        }
+      },
+      "Capabilities": {
+        "type": "object",
+        "properties": {
+          "calculation": { "type": "boolean" },
+          "guardedCalculation": { "type": "boolean" },
+          "plannedBending": { "type": "boolean" },
+          "shopTransfer": { "type": "boolean" },
+          "shopPublicationJournal": { "type": "boolean" }
+        }
+      },
+      "DatabaseRequest": {
+        "type": "object",
+        "required": ["protocol", "operation", "databaseId"],
+        "properties": {
+          "protocol": { "type": "integer", "enum": [1] },
+          "operation": {
+            "type": "integer",
+            "enum": [1, 2, 3, 4, 5, 7, 8, 9, 10],
+            "description": "1 Inspect, 2 Read, 3 ReadOrders, 4 ReadTrash, 5 Apply, 7 ReadRevision, 8 RecordShopHandoff, 9 ClearShopHandoff, 10 RecordProjectHandoffs."
+          },
+          "path": { "type": "string", "description": "Клиент передаёт пустую строку. Путь MDB выбирает сервер." },
+          "databaseId": { "$ref": "#/components/schemas/Id" },
+          "query": { "$ref": "#/components/schemas/OrderQuery" },
+          "orderIds": { "type": "array", "nullable": true, "items": { "$ref": "#/components/schemas/Id" } },
+          "knownCatalogVersion": { "type": "integer", "format": "int64", "nullable": true },
+          "patch": { "$ref": "#/components/schemas/DatabasePatch" }
+        }
+      },
+      "OrderQuery": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "from": { "type": "string", "format": "date-time", "nullable": true },
+          "until": { "type": "string", "format": "date-time", "nullable": true },
+          "search": { "type": "string" },
+          "limit": { "type": "integer", "minimum": 1, "default": 100 },
+          "beforeUpdated": { "type": "string", "format": "date-time", "nullable": true },
+          "beforeNumber": { "type": "integer", "format": "int64", "nullable": true },
+          "retainIds": { "type": "array", "nullable": true, "items": { "$ref": "#/components/schemas/Id" } },
+          "filter": { "type": "object", "nullable": true }
+        }
+      },
+      "DatabasePatch": {
+        "type": "object",
+        "nullable": true,
+        "required": ["expectedCatalogVersion", "orders"],
+        "properties": {
+          "expectedVersion": { "type": "integer", "format": "int64", "nullable": true, "description": "Если задано, сервер сверяет ревизию MDB перед записью." },
+          "expectedCatalogVersion": { "$ref": "#/components/schemas/Version" },
+          "catalog": { "type": "object", "nullable": true, "description": "Обновлённый справочник, если операция его меняет." },
+          "orders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "value"],
+              "properties": {
+                "id": { "$ref": "#/components/schemas/Id" },
+                "expectedVersion": { "type": "integer", "format": "int64", "nullable": true, "description": "Версия заявки. Для новой записи null." },
+                "value": { "type": "object", "description": "Снимок изменённой заявки." },
+                "allowTrashed": { "type": "boolean" }
+              }
+            }
+          },
+          "officeReportVersions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["projectId", "sha256"],
+              "properties": {
+                "projectId": { "$ref": "#/components/schemas/Id" },
+                "sha256": { "$ref": "#/components/schemas/Hash" }
+              }
+            }
+          },
+          "supportsPlannedBending": { "type": "boolean" }
+        }
+      },
+      "DatabaseResponse": {
+        "type": "object",
+        "required": ["protocol", "databaseId", "revision", "catalogVersion", "orders"],
+        "properties": {
+          "protocol": { "type": "integer", "enum": [1] },
+          "databaseId": { "$ref": "#/components/schemas/Id" },
+          "revision": { "$ref": "#/components/schemas/Version" },
+          "catalogVersion": { "$ref": "#/components/schemas/Version" },
+          "catalog": { "type": "object", "nullable": true },
+          "orders": { "type": "array", "items": { "type": "object" } },
+          "totalCount": { "type": "integer" },
+          "trashCount": { "type": "integer" },
+          "hasMore": { "type": "boolean" },
+          "pageIds": { "type": "array", "nullable": true, "items": { "$ref": "#/components/schemas/Id" } },
+          "officeSchemaVersion": { "type": "integer" }
+        }
+      },
+      "ProjectPreparation": {
+        "type": "object",
+        "required": ["projectId", "orderVersion", "actorId", "machineId", "thicknessMm"],
+        "properties": {
+          "projectId": { "$ref": "#/components/schemas/Id" },
+          "orderVersion": { "$ref": "#/components/schemas/Version" },
+          "actorId": { "$ref": "#/components/schemas/Id" },
+          "machineId": { "$ref": "#/components/schemas/Id" },
+          "thicknessMm": { "type": "number", "minimum": 0, "exclusiveMinimum": true },
+          "itemId": { "type": "string", "format": "uuid", "nullable": true },
+          "hasPlannedBending": { "type": "boolean", "default": false }
+        }
+      },
+      "PreparedProject": {
+        "type": "object",
+        "required": ["id", "itemId", "variant", "name", "nativePath", "machineId", "thicknessMm"],
+        "properties": {
+          "id": { "$ref": "#/components/schemas/Id" },
+          "itemId": { "$ref": "#/components/schemas/Id" },
+          "variant": { "type": "integer" },
+          "name": { "type": "string" },
+          "nativePath": { "type": "string" },
+          "machineId": { "$ref": "#/components/schemas/Id" },
+          "thicknessMm": { "type": "number" },
+          "importProfile": { "type": "string", "nullable": true },
+          "hasPlannedBending": { "type": "boolean" }
+        }
+      },
+      "CalculationPreparation": {
+        "type": "object",
+        "required": ["orderVersion", "actorId", "ensureBending"],
+        "properties": {
+          "orderVersion": { "$ref": "#/components/schemas/Version" },
+          "actorId": { "$ref": "#/components/schemas/Id" },
+          "ensureBending": { "type": "boolean" },
+          "beforeFirstCalculation": { "type": "boolean", "default": false },
+          "supportsPlannedBending": { "type": "boolean" },
+          "report": {
+            "type": "object",
+            "nullable": true,
+            "required": ["fileName", "sha256", "baseline"],
+            "properties": {
+              "fileName": { "type": "string" },
+              "sha256": { "$ref": "#/components/schemas/Hash" },
+              "baseline": { "$ref": "#/components/schemas/ReportValues" }
+            }
+          }
+        }
+      },
+      "PreparedCalculation": {
+        "type": "object",
+        "required": ["sourcePath", "report"],
+        "properties": {
+          "sourcePath": { "type": "string", "nullable": true },
+          "report": {
+            "type": "object",
+            "nullable": true,
+            "required": ["id", "sha256", "length", "fileName", "archivePath", "parsed"],
+            "properties": {
+              "id": { "$ref": "#/components/schemas/Id" },
+              "sha256": { "$ref": "#/components/schemas/Hash" },
+              "length": { "type": "integer", "format": "int64" },
+              "fileName": { "type": "string" },
+              "archivePath": { "type": "string" },
+              "parsed": { "$ref": "#/components/schemas/ReportValues" }
+            }
+          }
+        }
+      },
+      "ReportValues": {
+        "type": "object",
+        "description": "Распознанные значения спецификации. Для отсутствующих данных используется пустая строка.",
+        "required": ["documentNumber", "documentDate", "material", "materialGroup", "thickness", "blankSize", "quantity", "length", "pierces", "weight", "duration"],
+        "properties": {
+          "documentNumber": { "type": "string" },
+          "documentDate": { "type": "string" },
+          "material": { "type": "string" },
+          "materialGroup": { "type": "string" },
+          "thickness": { "type": "string" },
+          "blankSize": { "type": "string" },
+          "quantity": { "type": "string" },
+          "length": { "type": "string" },
+          "pierces": { "type": "string" },
+          "weight": { "type": "string" },
+          "duration": { "type": "string" }
+        }
+      },
+      "FileList": {
+        "type": "object",
+        "required": ["name", "directories", "files"],
+        "properties": {
+          "name": { "type": "string" },
+          "directories": { "type": "array", "items": { "type": "string" } },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["path", "length", "sha256"],
+              "properties": {
+                "path": { "type": "string" },
+                "length": { "type": "integer", "format": "int64", "minimum": 0 },
+                "sha256": { "$ref": "#/components/schemas/Hash" }
+              }
+            }
+          },
+          "unavailableFiles": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "FileReceipt": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": { "type": "string" },
+          "sha256": { "$ref": "#/components/schemas/Hash" }
+        }
+      }
+    }
+  }
+}

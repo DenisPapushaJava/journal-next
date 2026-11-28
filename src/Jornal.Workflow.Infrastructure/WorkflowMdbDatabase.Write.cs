@@ -9,6 +9,36 @@ public sealed partial class WorkflowMdbDatabase
 {
     private static readonly string[] CatalogTables = ["employees", "customers", "machines", "cutting_rates", "price_import_keys"];
     private static readonly string[] OrderTables = ["orders", "order_items", "cutting_projects", "project_shop_handoffs", "project_shop_handoff_inputs", "order_item_selections", "specifications", "accepted_reports", "project_renames", "order_shop_handoffs"];
+    private const string AcquireWriteToken = "UPDATE [app_metadata] SET [revision]=[revision]+1 WHERE [singleton]=1 AND [database_id]=?";
+
+    private static WorkflowAccessResponse PublishCalculationFile(string path, WorkflowAccessRequest request)
+    {
+        var file = request.CalculationFile ?? throw new WorkflowValidationException("Не указана рабочая спецификация.");
+        var database = request.DatabaseId ?? throw new WorkflowValidationException("Не указана база расчёта.");
+        WorkflowAccessResponse? response = null;
+        try
+        {
+            WorkflowCalculationExchange.PublishStaged(file, replace =>
+            {
+                using var session = new WorkflowMdbSession(path, true);
+                session.Begin();
+                if (session.Execute(AcquireWriteToken, (WorkflowMdbSession.GuidColumn, database)) != 1)
+                    throw new WorkflowConflictException();
+                var metadata = ReadWorkspaceMetadata(session, request);
+                var version = session.Scalar("SELECT [row_version] FROM [orders] WHERE [id]=? AND [deleted_at] IS NULL",
+                    (WorkflowMdbSession.GuidColumn, file.OrderId));
+                if (version is null || Convert.ToInt64(version, CultureInfo.InvariantCulture) != file.OrderVersion ||
+                    metadata.Root != file.ProjectRoot) throw new WorkflowConflictException();
+                // The write token prevents another MDB save during the rename. No revision is committed.
+                replace();
+                session.Rollback();
+                response = new(1, metadata.DatabaseId, metadata.CatalogVersion, metadata.Revision - 1, Orders: []);
+            });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Data.OleDb.OleDbException)
+        { throw new WorkflowOutcomeUnknownException(ex); }
+        return response!;
+    }
 
     private static WorkflowAccessResponse Apply(string path, WorkflowAccessRequest request)
     {
@@ -23,7 +53,7 @@ public sealed partial class WorkflowMdbDatabase
             var original = ReadWorkspaceMetadata(session, request); session.Begin();
             if (patch.ExpectedVersion is { } version && original.Revision != version) throw new WorkflowConflictException();
             // Acquire one short write token before touching business rows. Never hold it for UI or report I/O.
-            var sql = "UPDATE [app_metadata] SET [revision]=[revision]+1 WHERE [singleton]=1 AND [database_id]=?";
+            var sql = AcquireWriteToken;
             var args = new List<(WorkflowMdbColumn, object?)> { (WorkflowMdbSession.GuidColumn, original.DatabaseId) };
             if (patch.ExpectedVersion is { } expected) { sql += " AND [revision]=?"; args.Add((WorkflowMdbSession.LongColumn, (decimal)expected)); }
             if (session.Execute(sql, args.ToArray()) != 1) throw new WorkflowConflictException();

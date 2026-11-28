@@ -27,6 +27,7 @@ public sealed record WorkflowPreferences(bool DarkTheme = false)
     public WorkflowOfficeSetupDraft? OfficeSetup { get; init; }
     public bool UseOfficeStorage { get; init; }
     public string? OfficeCopiesRoot { get; init; }
+    public string? CalculationExchangeRoot { get; init; }
     public Dictionary<string, Guid?>? DatabaseEmployees { get; init; }
     [System.Text.Json.Serialization.JsonIgnore] public WorkflowOfficeStorageSettings? ActiveOfficeStorage => UseOfficeStorage ? OfficeStorage : null;
     [System.Text.Json.Serialization.JsonIgnore] public string SourceKey => (ActiveOfficeStorage?.DatabaseId ?? DatabaseId)?.ToString("N") ?? "local";
@@ -45,6 +46,8 @@ public sealed record WorkflowPreferences(bool DarkTheme = false)
             throw new InvalidDataException("Проверьте настройки удалённого хранилища.");
         if (OfficeCopiesRoot is { } copiesRoot && (!Path.IsPathFullyQualified(copiesRoot) || copiesRoot.Any(char.IsControl)))
             throw new InvalidDataException("Проверьте папку для локальных копий проектов.");
+        if (CalculationExchangeRoot is { } exchangeRoot && (!Path.IsPathFullyQualified(exchangeRoot) || exchangeRoot.Any(char.IsControl)))
+            throw new InvalidDataException("Проверьте папку обмена расчётами.");
         try { EntrySuggestions?.Normalize(); }
         catch (ArgumentException ex) { throw new InvalidDataException("Проверьте локальные списки ввода: " + ex.Message, ex); }
     }

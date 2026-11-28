@@ -468,6 +468,12 @@
           "System.Security.Cryptography.Pkcs": "[10.0.13, )"
         }
       },
+      "jornal.workflow.server": {
+        "type": "Project",
+        "dependencies": {
+          "Jornal.Workflow.Infrastructure": "[2026.1.0-dev, )"
+        }
+      },
       "AngleSharp": {
         "type": "CentralTransitive",
         "requested": "[1.8.5, )",

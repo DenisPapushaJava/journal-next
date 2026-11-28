@@ -15,10 +15,14 @@ public partial class WorkflowViewModel
         (!ManagerName.Trim().Equals(EmployeeName(order.ManagerId), StringComparison.OrdinalIgnoreCase) || Technologist?.Id != order.TechnologistId ||
          (string.IsNullOrWhiteSpace(Blcb) ? null : Blcb.Trim()) != order.Blcb);
 
-    public bool CanStartNewOrder => CanUse && !IsCreating && AuthorProblem is null;
-    public string NewOrderHint => !CanUse ? "Дождитесь завершения операции." : IsCreating ? "Завершите создание текущей заявки." : AuthorProblem ?? "Создать заявку";
-    private string? CreateOrderProblem => !CanUse ? "Дождитесь завершения операции." : AuthorProblem ??
-        (string.IsNullOrWhiteSpace(NewManager) ? "Укажите менеджера." : string.IsNullOrWhiteSpace(NewCustomer) ? "Укажите заказчика." : null);
+    private string? OrderCreationAuthorProblem => !ShowOfflineJournal || _connection.Office is { CanWrite: false } ? AuthorProblem :
+        OfflineOrderActor is null ? "Выберите технолога при подключении к офису." : null;
+    public bool CanStartNewOrder => CanUse && !IsCreating && OrderCreationAuthorProblem is null;
+    public string NewOrderHint => !CanUse ? "Дождитесь завершения операции." : IsCreating ? "Завершите создание текущей заявки." : OrderCreationAuthorProblem ?? "Создать заявку";
+    private string? CreateOrderProblem => !CanUse ? "Дождитесь завершения операции." : OrderCreationAuthorProblem ??
+        (string.IsNullOrWhiteSpace(NewManager) ? "Укажите менеджера." : string.IsNullOrWhiteSpace(NewCustomer) ? "Укажите заказчика." :
+         NewManager.Trim().Length > 255 || NewManager.Trim().Any(char.IsControl) ? "Укажите менеджера — до 255 символов, без переносов строк." :
+         NewCustomer.Trim().Length > 255 || NewCustomer.Trim().Any(char.IsControl) ? "Укажите заказчика — до 255 символов, без переносов строк." : null);
     public bool CanCreateOrder => CreateOrderProblem is null;
     public string CreateOrderHint => CreateOrderProblem ?? "Создать заявку";
 

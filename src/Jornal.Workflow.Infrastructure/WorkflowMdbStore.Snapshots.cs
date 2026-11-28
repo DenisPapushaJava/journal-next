@@ -4,6 +4,17 @@ namespace Jornal.Workflow.Infrastructure;
 
 public sealed partial class WorkflowMdbStore
 {
+    public Task<WorkflowWorkspace> AdoptOfficeCreationAsync(WorkflowMdbStore creation, Guid orderId, CancellationToken token) => Locked(async () =>
+    {
+        if (DatabaseId is not { } database || database != creation.DatabaseId) throw new WorkflowConflictException();
+        if (RequiresRefresh || _snapshot.Version > creation._snapshot.Version)
+            return await MergeAsync(await Send(WorkflowAccessOperation.ReadOrders, token, ids: [orderId]).ConfigureAwait(false),
+                token, requested: [orderId]).ConfigureAwait(false);
+        var reply = new WorkflowAccessResponse(1, database, creation._catalogVersion, creation._snapshot.Version,
+            creation._catalog, creation._snapshot.Orders, TrashCount: creation.TrashCount, OfficeSchemaVersion: creation.OfficeSchemaVersion);
+        return await MergeAsync(reply, token, requested: [orderId]).ConfigureAwait(false);
+    }, token);
+
     private async Task<WorkflowWorkspace> MergeCommittedAsync(WorkflowAccessResponse response, Guid[] requested)
     {
         try { return await MergeAsync(response, CancellationToken.None, requested: requested).ConfigureAwait(false); }

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Jornal.Workflow.Core;
 using Jornal.Workflow.Infrastructure;
 
 namespace Jornal.Workflow.Desktop;
@@ -11,6 +13,59 @@ internal sealed record WorkflowOfflineFolders(WorkflowOfflineFolder[] Items, boo
 
 internal sealed partial class WorkflowOfficeStorageClient
 {
+    private const int MaximumOfflineJournal = 32 * 1024 * 1024;
+    private string OfflineJournalPath => Path.Combine(profileDirectory, $".office-journal-{settings.DatabaseId:N}.json");
+    private readonly object _offlineJournalWrite = new();
+    private volatile bool _offlineJournalAccessRejected;
+
+    internal void RememberOfflineJournal(WorkflowWorkspace workspace, DateTimeOffset savedAt, Guid? confirmedOrder = null)
+    {
+        lock (_offlineJournalWrite)
+        {
+            _offlineJournalAccessRejected = false;
+            var saved = ReadOfflineJournal();
+            if (saved is not null && saved.Workspace.Version > workspace.Version) return;
+            if (confirmedOrder is { } id)
+                workspace = MergeConfirmedOfficeOrder(saved?.Workspace ?? WorkflowWorkspace.Empty, workspace, id);
+            var orders = workspace.Orders.Where(order => !order.IsDeleted).OrderByDescending(order => order.UpdatedAt)
+                .ThenByDescending(order => order.Number).Take(100).ToArray();
+            if (orders.Length == 0 && confirmedOrder is null && saved is not null) return;
+            var snapshot = new WorkflowOfflineJournalSnapshot(1, settings.DatabaseId, settings.CredentialId, settings.Address,
+                savedAt, workspace with { Orders = orders });
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(snapshot, JsonOptions);
+            if (bytes.Length > MaximumOfflineJournal) return;
+            WorkflowOfficeProjectPaths.RequireOrdinaryCopyPath(OfflineJournalPath);
+            Directory.CreateDirectory(profileDirectory);
+            WriteLocalState(OfflineJournalPath, bytes);
+        }
+    }
+
+    internal static WorkflowWorkspace MergeConfirmedOfficeOrder(WorkflowWorkspace before, WorkflowWorkspace fresh, Guid id)
+    {
+        if (before.Version > fresh.Version) return before;
+        return fresh with { Orders = [.. before.Orders.Where(candidate => candidate.Id != id), .. fresh.Orders.Where(candidate => candidate.Id == id)] };
+    }
+
+    internal WorkflowOfflineJournalSnapshot? ReadOfflineJournal()
+    {
+        if (_offlineJournalAccessRejected) return null;
+        try
+        {
+            WorkflowOfficeProjectPaths.RequireOrdinaryCopyPath(OfflineJournalPath);
+            using var input = new FileStream(OfflineJournalPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+            if (input.Length is <= 0 or > MaximumOfflineJournal) return null;
+            var snapshot = JsonSerializer.Deserialize<WorkflowOfflineJournalSnapshot>(input, JsonOptions);
+            if (snapshot is not { Format: 1, Workspace.Orders.Length: <= 100 } || snapshot.DatabaseId != settings.DatabaseId ||
+                snapshot.CredentialId != settings.CredentialId || snapshot.Address != settings.Address || snapshot.SavedAt == default ||
+                snapshot.Workspace.Orders.Any(order => order is null || order.IsDeleted)) return null;
+            snapshot.Workspace.Validate();
+            return snapshot;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or WorkflowValidationException or
+            ArgumentException or NotSupportedException or NullReferenceException)
+        { return null; }
+    }
+
     internal WorkflowOfflineFolders ListDownloadedFolders(CancellationToken token)
     {
         var items = new List<WorkflowOfflineFolder>();
@@ -42,6 +97,8 @@ internal sealed partial class WorkflowOfficeStorageClient
             return null;
         return folder;
     }
+
+    internal string? DownloadedCalculationFolder(Guid project) => FindDownloadedFolder(project, DriveInfo.GetDrives());
 
     private string? FindDownloadedFolder(Guid project, DriveInfo[] drives)
     {

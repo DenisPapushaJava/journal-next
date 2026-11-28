@@ -8,9 +8,11 @@ public partial class WorkflowSettingsViewModel
 {
     private string? _originalShopRoot;
     private string? _originalOfficeCopiesRoot;
+    private string? _originalCalculationExchangeRoot;
     private (bool Combine, bool AsPdf) _originalHansMaps;
     [ObservableProperty] private string _shopRoot = "";
     [ObservableProperty] private string _officeCopiesRoot = "";
+    [ObservableProperty] private string _calculationExchangeRoot = "";
     [ObservableProperty] private bool _combineHansMaps = true;
     private bool _hansMapsAsPdf;
     public bool HansMapsPdf
@@ -34,6 +36,7 @@ public partial class WorkflowSettingsViewModel
     partial void OnCombineHansMapsChanged(bool value) => InputChanged();
     public bool HasShopRootChanges => ShopRoot != (_originalShopRoot ?? "");
     private bool HasOfficeCopiesRootChanges => IsRemoteStorage && OfficeCopiesRoot != (_originalOfficeCopiesRoot ?? "");
+    private bool HasCalculationExchangeRootChanges => CalculationExchangeRoot != (_originalCalculationExchangeRoot ?? "");
     private bool HasHansMapChanges => (CombineHansMaps, _hansMapsAsPdf) != _originalHansMaps;
     public string ShopFolderPreview => Journal.ShopFolderPreview(ShopRoot);
     private void ReloadShopRoot()
@@ -53,6 +56,15 @@ public partial class WorkflowSettingsViewModel
     }
 
     partial void OnOfficeCopiesRootChanged(string value) => InputChanged();
+    partial void OnCalculationExchangeRootChanged(string value) => InputChanged();
+
+    private void ReloadCalculationExchangeRoot()
+    {
+        _loading = true;
+        try { _originalCalculationExchangeRoot = Journal.CalculationExchangeRoot; CalculationExchangeRoot = _originalCalculationExchangeRoot ?? ""; }
+        finally { _loading = false; }
+        Changed();
+    }
 
     private void ReloadHansMaps()
     {
@@ -91,6 +103,16 @@ public partial class WorkflowSettingsViewModel
             if (!await Task.Run(() => Directory.Exists(copiesRoot), token))
                 throw new WorkflowValidationException("Папка для локальных копий недоступна. Выберите существующую папку.");
         }
+        string? exchangeRoot = null;
+        if (HasCalculationExchangeRootChanges && !string.IsNullOrWhiteSpace(CalculationExchangeRoot))
+        {
+            var path = CalculationExchangeRoot.Trim();
+            if (!Path.IsPathFullyQualified(path) || path.Any(char.IsControl))
+                throw new WorkflowValidationException("Укажите полный путь к папке обмена расчётами или оставьте поле пустым.");
+            exchangeRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+            if (!await Task.Run(() => Directory.Exists(exchangeRoot), token))
+                throw new WorkflowValidationException("Выберите существующую папку обмена расчётами.");
+        }
         Status = null;
         if (HasRootChanges)
         {
@@ -111,6 +133,13 @@ public partial class WorkflowSettingsViewModel
             if (Error is not null) return;
             ReloadOfficeCopiesRoot();
             Status = Status is null ? "Папка для локальных копий сохранена." : Status + " Папка для локальных копий сохранена.";
+        }
+        if (HasCalculationExchangeRootChanges)
+        {
+            Error = await Journal.SaveCalculationExchangeRootAsync(_originalCalculationExchangeRoot, exchangeRoot, token);
+            if (Error is not null) return;
+            ReloadCalculationExchangeRoot();
+            Status = "Папка обмена расчётами сохранена на этом компьютере.";
         }
     }
 }

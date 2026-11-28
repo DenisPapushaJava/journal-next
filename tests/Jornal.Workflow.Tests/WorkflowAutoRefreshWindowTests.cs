@@ -24,7 +24,8 @@ public sealed class WorkflowAutoRefreshWindowTests
     public async Task BackgroundInsertionPreservesVisibleAnchorFocusInputAndPopupDefersReading(bool dark, int width)
     {
         using var f = await WorkflowAutoRefreshTests.Fixture.Create();
-        var template = f.Memory.Book.Orders.Single(); var at = DateTimeOffset.Now;
+        var template = f.Memory.Book.Orders.Single();
+        var at = new DateTimeOffset(Assert.IsType<DateTime>(f.Model.FilterDate).AddHours(12));
         var orders = Enumerable.Range(1, 80).Select(i => template with { Id = Guid.NewGuid(), Number = i, ReferenceNumber = at.AddSeconds(-i).ToString("yyyy-MM-dd-HHmmss"), CreatedAt = at.AddSeconds(-i), UpdatedAt = at.AddSeconds(-i) }).ToArray();
         f.Memory.Book = f.Memory.Book with { Version = f.Memory.Book.Version + 1, Orders = orders };
         f.Preferences.Update(p => p with { DarkTheme = dark }); var clock = new JournalClock();

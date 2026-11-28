@@ -88,6 +88,13 @@ internal sealed partial class WorkflowOfficeStorageClient(WorkflowOfficeStorageS
         try
         {
             using var response = await SendAsync(http, message, deadline.Token);
+            if (write && response.StatusCode == HttpStatusCode.ServiceUnavailable) throw new WorkflowOutcomeUnknownException();
+            if (!write && !workingFiles)
+            {
+                if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) _offlineJournalAccessRejected = true;
+                if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+                    throw new WorkflowOfficeConnectionLostException("Офисная база заявок временно недоступна.");
+            }
             if (workingFiles) await CheckWorkingFileResponseAsync(response, deadline.Token);
             else await CheckAsync(response, deadline.Token);
             var data = await ReadAsync<WorkflowAccessResponse>(response, deadline.Token);
@@ -101,7 +108,7 @@ internal sealed partial class WorkflowOfficeStorageClient(WorkflowOfficeStorageS
         {
             cancellation.ThrowIfCancellationRequested();
             if (workingFiles || !write) throw new WorkflowOfficeConnectionLostException(connection.Message, ex);
-            throw new WorkflowValidationException(connection.Message);
+            throw new WorkflowValidationException(connection.Message, connection);
         }
         catch (Exception ex) when (write && ex is HttpRequestException or IOException or JsonException or InvalidDataException or OperationCanceledException)
         { throw new WorkflowOutcomeUnknownException(ex); }
@@ -137,7 +144,8 @@ internal sealed partial class WorkflowOfficeStorageClient(WorkflowOfficeStorageS
         if (response.IsSuccessStatusCode) return;
         if (response.StatusCode == HttpStatusCode.Unauthorized)
             throw new WorkflowValidationException(connecting ? "Сервер не принял ключ администратора." :
-                "Ключ подключения истёк. Подключитесь к серверу заново в настройках.");
+                "Ключ подключения истёк. Подключитесь к серверу заново в настройках.",
+                new HttpRequestException(null, null, response.StatusCode));
         if (response.StatusCode == HttpStatusCode.NotFound && connecting)
             throw new WorkflowValidationException("Обновите «Сервер заявок» до версии с удалённым хранилищем.");
         ServerError? problem = null;
@@ -163,6 +171,7 @@ internal sealed partial class WorkflowOfficeStorageClient(WorkflowOfficeStorageS
         };
         if (problem?.ProjectPreparationRejected == true)
             throw new WorkflowOfficeProjectNotStartedException(message);
-        throw new WorkflowValidationException(message);
+        throw new WorkflowValidationException(message, response.StatusCode == HttpStatusCode.Forbidden
+            ? new HttpRequestException(null, null, response.StatusCode) : null);
     }
 }

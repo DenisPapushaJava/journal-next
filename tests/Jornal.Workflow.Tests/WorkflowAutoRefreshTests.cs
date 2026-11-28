@@ -93,7 +93,8 @@ public sealed class WorkflowAutoRefreshTests
     [AvaloniaFact]
     public async Task RefreshKeepsLoadedPagesAndChecksChangedFirstPageAfterLoadMore()
     {
-        using var f = await Fixture.Create(); var template = f.Memory.Book.Orders.Single(); var at = DateTimeOffset.Now;
+        using var f = await Fixture.Create(); var template = f.Memory.Book.Orders.Single();
+        var at = new DateTimeOffset(Assert.IsType<DateTime>(f.Model.FilterDate).AddHours(12));
         var orders = Enumerable.Range(1, 240).Select(i => template with { Id = Guid.NewGuid(), Number = i, ReferenceNumber = at.AddSeconds(-i).ToLocalTime().ToString("yyyy-MM-dd-HHmmss"), CreatedAt = at.AddSeconds(-i), UpdatedAt = at.AddSeconds(-i) }).ToArray();
         f.Memory.Book = f.Memory.Book with { Orders = orders, Version = f.Memory.Book.Version + 1 };
         await f.Model.ReloadCommand.ExecuteAsync(null); Assert.Equal(100, f.Model.Orders.Count);

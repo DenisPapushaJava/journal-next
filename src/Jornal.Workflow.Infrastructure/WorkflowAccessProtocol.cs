@@ -3,7 +3,7 @@ using Jornal.Workflow.Core;
 
 namespace Jornal.Workflow.Infrastructure;
 
-public enum WorkflowAccessOperation { Create, Inspect, Read, ReadOrders, ReadTrash, Apply, Purge, ReadRevision, RecordShopHandoff, ClearShopHandoff, RecordProjectHandoffs, ReadOfficeOrders, ReadOfficeRevision, ReadOfficeProjects, ReadOfficeTechnologists }
+public enum WorkflowAccessOperation { Create, Inspect, Read, ReadOrders, ReadTrash, Apply, Purge, ReadRevision, RecordShopHandoff, ClearShopHandoff, RecordProjectHandoffs, ReadOfficeOrders, ReadOfficeRevision, ReadOfficeProjects, ReadOfficeTechnologists, PublishCalculationFile }
 public sealed record WorkflowOfficeOrder(Guid Id, string Number, string? Customer, long Version, DateTimeOffset UpdatedAt);
 public sealed record WorkflowOfficeProject(Guid Id, string Name, string NativePath);
 public sealed record WorkflowOfficeReportInput(string FileName, string Sha256, ReportValues Baseline);
@@ -15,6 +15,8 @@ public sealed record WorkflowOfficeCalculationPreparation(long OrderVersion, Gui
     public bool SupportsPlannedBending { get; init; }
 }
 public sealed record WorkflowOfficePreparedCalculation(string? SourcePath, AcceptedReport? Report);
+public sealed record WorkflowCalculationFilePublication(Guid OrderId, long OrderVersion, string ProjectRoot,
+    string Path, Guid StagedId, string Sha256, string? PreviousHash);
 public sealed record WorkflowOfficeProjectPreparation(Guid ProjectId, long OrderVersion, Guid ActorId, Guid MachineId, decimal ThicknessMm, Guid? ItemId,
     bool HasPlannedBending = false);
 public sealed record WorkflowOfficeTechnologist(Guid Id, string Name);
@@ -55,7 +57,11 @@ public sealed record WorkflowAccessPatch(long? ExpectedVersion, long ExpectedCat
 public sealed record WorkflowAccessRequest(int Protocol, WorkflowAccessOperation Operation, string Path,
     Guid? DatabaseId = null, WorkflowReadQuery? Query = null, Guid[]? OrderIds = null, WorkflowAccessPatch? Patch = null, long? KnownCatalogVersion = null,
     WorkflowTrashTarget[]? TrashTargets = null, Guid? ActorId = null, WorkflowShopHandoffRequest? ShopHandoff = null, WorkflowShopHandoffClearRequest? ClearShopHandoff = null, WorkflowProjectHandoffRequest? ProjectHandoffs = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool OfficeSchema6 = false);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool OfficeSchema6 = false)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public WorkflowCalculationFilePublication? CalculationFile { get; init; }
+}
 public sealed record WorkflowAccessResponse(int Protocol, Guid DatabaseId = default, long CatalogVersion = 0, long Revision = 0,
     WorkflowCatalog? Catalog = null, WorkflowOrder[]? Orders = null, int TotalCount = 0, int TrashCount = 0, bool HasMore = false,
     string? Error = null, bool Conflict = false, bool OutcomeUnknown = false, Guid[]? PageIds = null,
